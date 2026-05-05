@@ -5,7 +5,7 @@ description = "Storage lifecycle management with tiered archival support"
 authors = ["Nexus Team"]
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/nexus-blockchain/nexus.git"
+repository = "https://github.com/nexusmalls/nexus.git"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

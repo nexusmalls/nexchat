@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Nexus Team"]
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/nexus-blockchain/nexus.git"
+repository = "https://github.com/nexusmalls/nexus.git"
 description = "GroupRobot Rewards — 节点奖励累积 + 领取 + Era 奖励记录"
 
 [package.metadata.docs.rs]

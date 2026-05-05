@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Nexus Team"]
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/nexus-blockchain/nexus.git"
+repository = "https://github.com/nexusmalls/nexus.git"
 description = "GroupRobot Community — 社区管理 + 群规则配置 + 节点准入策略 + 动作日志"
 
 [package.metadata.docs.rs]

@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Nexus Team"]
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/nexus-blockchain/nexus.git"
+repository = "https://github.com/nexusmalls/nexus.git"
 description = "Ads Entity Adapter — Entity DApp 广告适配层: 展示量验证 + 双方分成 + Shop 级广告位"
 
 [package.metadata.docs.rs]

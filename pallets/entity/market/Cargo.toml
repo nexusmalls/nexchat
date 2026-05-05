@@ -5,7 +5,7 @@ description = "实体代币 P2P 交易市场模块"
 authors = ["Nexus Team"]
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/nexus-blockchain/nexus.git"
+repository = "https://github.com/nexusmalls/nexus.git"
 
 [dependencies]
 codec = { features = ["derive"], workspace = true }

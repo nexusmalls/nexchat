@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Nexus Team"]
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/nexus-blockchain/nexus.git"
+repository = "https://github.com/nexusmalls/nexus.git"
 description = "Ads Core — 通用广告引擎 (Campaign CRUD, Escrow, 偏好, Slash, 收入提取)"
 
 [package.metadata.docs.rs]

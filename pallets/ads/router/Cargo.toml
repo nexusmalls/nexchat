@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Nexus Team"]
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/nexus-blockchain/nexus.git"
+repository = "https://github.com/nexusmalls/nexus.git"
 description = "Ads Router — 路由适配层: 根据 PlacementId 分发到 Entity 或 GroupRobot 适配器"
 
 [package.metadata.docs.rs]

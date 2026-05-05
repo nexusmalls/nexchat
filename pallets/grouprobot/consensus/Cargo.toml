@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Nexus Team"]
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/nexus-blockchain/nexus.git"
+repository = "https://github.com/nexusmalls/nexus.git"
 description = "GroupRobot Consensus — 节点质押 + TEE 加权奖励 + 消息去重 + 订阅管理 + Equivocation"
 
 [package.metadata.docs.rs]

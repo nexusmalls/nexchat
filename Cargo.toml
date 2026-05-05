@@ -2,7 +2,7 @@
 license = "MIT-0"
 authors = ["Nexus Team"]
 homepage = "https://nexuschain.network/"
-repository = "https://github.com/nexus-blockchain/nexus.git"
+repository = "https://github.com/nexusmalls/nexus.git"
 edition = "2021"
 
 [workspace]

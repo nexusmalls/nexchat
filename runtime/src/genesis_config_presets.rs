@@ -225,7 +225,7 @@ pub fn development_config_genesis() -> Value {
 			stakers: initial_authorities.iter().map(|x| {
 				(x.0.clone(), x.0.clone(), 500_000 * UNIT, pallet_staking::StakerStatus::Validator)
 			}).collect(),
-			invulnerables: initial_authorities.iter().map(|x| x.0.clone()).collect(),
+			invulnerables: vec![],
 			slash_reward_fraction: Perbill::from_percent(10),
 			min_nominator_bond: 100 * UNIT,
 			min_validator_bond: 500_000 * UNIT,
@@ -489,7 +489,7 @@ fn mainnet_genesis(
 			stakers: initial_authorities.iter().map(|x| {
 				(x.0.clone(), x.0.clone(), 500_000 * UNIT, pallet_staking::StakerStatus::Validator)
 			}).collect(),
-			invulnerables: initial_authorities.iter().map(|x| x.0.clone()).collect(),
+			invulnerables: vec![],
 			slash_reward_fraction: Perbill::from_percent(10),
 			min_nominator_bond: 100 * UNIT,
 			min_validator_bond: 500_000 * UNIT,

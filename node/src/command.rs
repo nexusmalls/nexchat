@@ -28,7 +28,7 @@ impl SubstrateCli for Cli {
     }
 
     fn support_url() -> String {
-        "https://github.com/nexus-blockchain/nexus/issues".into()
+        "https://github.com/nexusmalls/nexus/issues".into()
     }
 
     fn copyright_start_year() -> i32 {
