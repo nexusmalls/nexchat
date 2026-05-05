@@ -98,12 +98,12 @@ fn testnet_genesis(
 			validator_count: initial_authorities.len() as u32,
 			minimum_validator_count: initial_authorities.len().saturating_sub(1) as u32,
 			stakers: initial_authorities.iter().map(|x| {
-				(x.0.clone(), x.0.clone(), 10_000 * UNIT, pallet_staking::StakerStatus::Validator)
+				(x.0.clone(), x.0.clone(), 500_000 * UNIT, pallet_staking::StakerStatus::Validator)
 			}).collect(),
 			invulnerables: vec![],
 			slash_reward_fraction: Perbill::from_percent(10),
 			min_nominator_bond: 100 * UNIT,
-			min_validator_bond: 1_000 * UNIT,
+			min_validator_bond: 500_000 * UNIT,
 			..Default::default()
 		},
 		sudo: SudoConfig { key: Some(root) },
@@ -198,7 +198,7 @@ pub fn development_config_genesis() -> Value {
     )];
 
     // 创始者保留大部分初始供应量，同时为 dev validator Alice 预留足够质押余额
-    let alice_genesis_balance = 100_000 * UNIT;
+    let alice_genesis_balance = 600_000 * UNIT;
     let balances = vec![
         (creator, INITIAL_SUPPLY.saturating_sub(alice_genesis_balance)),
         (alice.clone(), alice_genesis_balance),
@@ -223,12 +223,12 @@ pub fn development_config_genesis() -> Value {
 			validator_count: 1,
 			minimum_validator_count: 1,
 			stakers: initial_authorities.iter().map(|x| {
-				(x.0.clone(), x.0.clone(), 10_000 * UNIT, pallet_staking::StakerStatus::Validator)
+				(x.0.clone(), x.0.clone(), 500_000 * UNIT, pallet_staking::StakerStatus::Validator)
 			}).collect(),
 			invulnerables: initial_authorities.iter().map(|x| x.0.clone()).collect(),
 			slash_reward_fraction: Perbill::from_percent(10),
 			min_nominator_bond: 100 * UNIT,
-			min_validator_bond: 1_000 * UNIT,
+			min_validator_bond: 500_000 * UNIT,
 			..Default::default()
 		},
 		sudo: SudoConfig { key: Some(alice) },
@@ -453,7 +453,7 @@ fn mainnet_genesis(
 ) -> Value {
     // 验证者需要足够余额来 staking + 支付交易费
     // Validators need enough balance for staking + transaction fees
-    let validator_balance = 100_000 * UNIT;
+    let validator_balance = 600_000 * UNIT;
     let mut validator_balances: Vec<(AccountId, u128)> = Vec::new();
     let mut validator_total: u128 = 0;
     for authority in &initial_authorities {
@@ -487,12 +487,12 @@ fn mainnet_genesis(
 			validator_count: initial_authorities.len() as u32,
 			minimum_validator_count: 1,
 			stakers: initial_authorities.iter().map(|x| {
-				(x.0.clone(), x.0.clone(), 10_000 * UNIT, pallet_staking::StakerStatus::Validator)
+				(x.0.clone(), x.0.clone(), 500_000 * UNIT, pallet_staking::StakerStatus::Validator)
 			}).collect(),
 			invulnerables: initial_authorities.iter().map(|x| x.0.clone()).collect(),
 			slash_reward_fraction: Perbill::from_percent(10),
 			min_nominator_bond: 100 * UNIT,
-			min_validator_bond: 1_000 * UNIT,
+			min_validator_bond: 500_000 * UNIT,
 			..Default::default()
 		},
 		sudo: SudoConfig { key: Some(root) },
