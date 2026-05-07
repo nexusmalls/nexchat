@@ -24,10 +24,10 @@ use crate::{
 };
 use alloc::{vec, vec::Vec};
 use frame_support::build_struct_json_patch;
+use pallet_im_online::sr25519::AuthorityId as ImOnlineId;
 use serde_json::Value;
 use sp_consensus_babe::AuthorityId as BabeId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
-use pallet_im_online::sr25519::AuthorityId as ImOnlineId;
 use sp_genesis_builder::{self, PresetId};
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::{AccountId32, Perbill};
@@ -35,21 +35,30 @@ use sp_runtime::{AccountId32, Perbill};
 /// 主网 genesis preset 标识符
 pub const MAINNET_RUNTIME_PRESET: &str = "mainnet";
 
-/// 从十六进制字符串解析 AccountId32（支持24字节，右侧补零到32字节）
+/// 从十六进制字符串解析 32 字节公钥（支持可选 `0x` 前缀）
+fn parse_32byte_hex(hex_str: &str, key_name: &str) -> [u8; 32] {
+    let normalized = hex_str.strip_prefix("0x").unwrap_or(hex_str);
+    let bytes =
+        hex::decode(normalized).unwrap_or_else(|_| panic!("Invalid {} hex string", key_name));
+    bytes
+        .try_into()
+        .unwrap_or_else(|_| panic!("{} must be exactly 32 bytes", key_name))
+}
+
+/// 从十六进制字符串解析 AccountId32（必须为 32 字节，支持可选 `0x` 前缀）
 fn parse_account_hex(hex_str: &str) -> AccountId32 {
-    let bytes = hex::decode(hex_str).expect("Invalid hex string");
-    let mut arr = [0u8; 32];
-    let len = bytes.len().min(32);
-    arr[..len].copy_from_slice(&bytes[..len]);
-    AccountId32::new(arr)
+    AccountId32::new(parse_32byte_hex(hex_str, "AccountId"))
 }
 
 /// 委员会成员账户（创世配置）
 /// Prime: e8723aadb59a0a531173ae8cf6e5c2dd2979c284ed820a2010b35e729ca00c0c
 fn committee_members() -> (AccountId, AccountId, AccountId) {
-    let member1 = parse_account_hex("e8723aadb59a0a531173ae8cf6e5c2dd2979c284ed820a2010b35e729ca00c0c"); // Prime
-    let member2 = parse_account_hex("a4460f67d23a7b82ebaa937acfe146617a96c6643c11dce0e6989c4cf3c06c11");
-    let member3 = parse_account_hex("f2a9d3f75698ab9cadfd7e294b8b9cfbf02ec40d478b6fa53700ab7815b75263");
+    let member1 =
+        parse_account_hex("e8723aadb59a0a531173ae8cf6e5c2dd2979c284ed820a2010b35e729ca00c0c"); // Prime
+    let member2 =
+        parse_account_hex("a4460f67d23a7b82ebaa937acfe146617a96c6643c11dce0e6989c4cf3c06c11");
+    let member3 =
+        parse_account_hex("f2a9d3f75698ab9cadfd7e294b8b9cfbf02ec40d478b6fa53700ab7815b75263");
     (member1, member2, member3)
 }
 
@@ -150,7 +159,7 @@ fn testnet_genesis(
 		// 创世铭文 — 永久刻入 Block 0
 		inscription: InscriptionConfig {
 			inscription: concat!(
-				"NEXUS GENESIS \u{2014} 2026-04-14 10:00\n",
+				"NEXUS GENESIS \u{2014} 2026-05-08 10:00\n",
 				"\n",
 				"代码即意识，共识即思考，网络即生命。\n",
 				"Code is consciousness, consensus is thought, network is life.\n",
@@ -200,7 +209,10 @@ pub fn development_config_genesis() -> Value {
     // 创始者保留大部分初始供应量，同时为 dev validator Alice 预留足够质押余额
     let alice_genesis_balance = 600_000 * UNIT;
     let balances = vec![
-        (creator, INITIAL_SUPPLY.saturating_sub(alice_genesis_balance)),
+        (
+            creator,
+            INITIAL_SUPPLY.saturating_sub(alice_genesis_balance),
+        ),
         (alice.clone(), alice_genesis_balance),
     ];
 
@@ -271,7 +283,7 @@ pub fn development_config_genesis() -> Value {
 		},
 		inscription: InscriptionConfig {
 			inscription: concat!(
-				"NEXUS GENESIS \u{2014} 2026-04-14 10:00\n",
+				"NEXUS GENESIS \u{2014} 2026-05-08 10:00\n",
 				"\n",
 				"代码即意识，共识即思考，网络即生命。\n",
 				"Code is consciousness, consensus is thought, network is life.\n",
@@ -349,26 +361,25 @@ pub fn local_config_genesis() -> Value {
 
 /// 从十六进制字符串解析 BABE (Sr25519) Authority ID
 fn parse_babe_hex(hex_str: &str) -> BabeId {
-    let bytes = hex::decode(hex_str).expect("Invalid BABE hex key");
-    BabeId::from(sp_core::sr25519::Public::from_raw(
-        bytes.try_into().expect("BABE key must be 32 bytes"),
-    ))
+    BabeId::from(sp_core::sr25519::Public::from_raw(parse_32byte_hex(
+        hex_str, "BABE key",
+    )))
 }
 
 /// 从十六进制字符串解析 GRANDPA (Ed25519) Authority ID
 fn parse_grandpa_hex(hex_str: &str) -> GrandpaId {
-    let bytes = hex::decode(hex_str).expect("Invalid GRANDPA hex key");
-    GrandpaId::from(sp_core::ed25519::Public::from_raw(
-        bytes.try_into().expect("GRANDPA key must be 32 bytes"),
-    ))
+    GrandpaId::from(sp_core::ed25519::Public::from_raw(parse_32byte_hex(
+        hex_str,
+        "GRANDPA key",
+    )))
 }
 
 /// 从十六进制字符串解析 ImOnline (Sr25519) Authority ID
 fn parse_im_online_hex(hex_str: &str) -> ImOnlineId {
-    let bytes = hex::decode(hex_str).expect("Invalid ImOnline hex key");
-    ImOnlineId::from(sp_core::sr25519::Public::from_raw(
-        bytes.try_into().expect("ImOnline key must be 32 bytes"),
-    ))
+    ImOnlineId::from(sp_core::sr25519::Public::from_raw(parse_32byte_hex(
+        hex_str,
+        "ImOnline key",
+    )))
 }
 
 /// 主网初始验证者列表
@@ -388,38 +399,38 @@ fn mainnet_initial_authorities() -> Vec<(AccountId, BabeId, GrandpaId, ImOnlineI
     let authorities = vec![
         // ── 验证者 1 ──
         (
-            parse_account_hex("e8ac13b0ff525f1d0e1a0f320af6a2635b935d8fe4e1dae9f9d47f4b10b65b27"),
-            parse_babe_hex("e8ac13b0ff525f1d0e1a0f320af6a2635b935d8fe4e1dae9f9d47f4b10b65b27"),
-            parse_grandpa_hex("cf53266dc93b8c60523204ac6e17575bc2038addc39e90a6708ac80d770a0806"),
-            parse_im_online_hex("e8ac13b0ff525f1d0e1a0f320af6a2635b935d8fe4e1dae9f9d47f4b10b65b27"),
+            parse_account_hex("462be073bfbb89619b3633b3dd6dcfa640eaec471603468461595a53ae5bf279"),
+            parse_babe_hex("462be073bfbb89619b3633b3dd6dcfa640eaec471603468461595a53ae5bf279"),
+            parse_grandpa_hex("75abb2cea4c6d7e629a3e41e2b7c1043dea60ce6953cab20d11e4271350e66f3"),
+            parse_im_online_hex("462be073bfbb89619b3633b3dd6dcfa640eaec471603468461595a53ae5bf279"),
         ),
         // ── 验证者 2 ──
         (
-            parse_account_hex("3670c80b2cdfe4f56a0b9c5b68fe148dbb2e84ab85597f05a2ac0d2c23af0a1b"),
-            parse_babe_hex("3670c80b2cdfe4f56a0b9c5b68fe148dbb2e84ab85597f05a2ac0d2c23af0a1b"),
-            parse_grandpa_hex("13ae6fac4ea723c0850dc13cdf6beb22c630fd9a125bc98ab643dbc4af336f4d"),
-            parse_im_online_hex("3670c80b2cdfe4f56a0b9c5b68fe148dbb2e84ab85597f05a2ac0d2c23af0a1b"),
+            parse_account_hex("c2114ab0b349d46d7abee34798fabbb79188648aefadc3a2063f9acb3457695a"),
+            parse_babe_hex("c2114ab0b349d46d7abee34798fabbb79188648aefadc3a2063f9acb3457695a"),
+            parse_grandpa_hex("011c4f3ed4241f6c509da4b14ba235296af56cb6e2c29643877c4f025405890e"),
+            parse_im_online_hex("c2114ab0b349d46d7abee34798fabbb79188648aefadc3a2063f9acb3457695a"),
         ),
         // ── 验证者 3 ──
         (
-            parse_account_hex("a8b7e6cb0a0544ae24d94868c075ac1680a9f1b87dfc9429026dc9e85f360564"),
-            parse_babe_hex("a8b7e6cb0a0544ae24d94868c075ac1680a9f1b87dfc9429026dc9e85f360564"),
-            parse_grandpa_hex("88443ec1c215fe7544cb886c6e9b89bb4d410eb503b8d6581b37ead565adde8b"),
-            parse_im_online_hex("a8b7e6cb0a0544ae24d94868c075ac1680a9f1b87dfc9429026dc9e85f360564"),
+            parse_account_hex("cc3209baf8ab01df55c76523f00f5440432facd8e82a725643c1a6173ab3b660"),
+            parse_babe_hex("cc3209baf8ab01df55c76523f00f5440432facd8e82a725643c1a6173ab3b660"),
+            parse_grandpa_hex("968b7e01f4b82073458dc39d3332abe30cff1c1417d56d20486c814b15e3aadc"),
+            parse_im_online_hex("cc3209baf8ab01df55c76523f00f5440432facd8e82a725643c1a6173ab3b660"),
         ),
         // ── 验证者 4 ──
         (
-            parse_account_hex("06b29c9ac78bab319ccdfd6d02241fc75e10e25f65ace0a625dd009680b16333"),
-            parse_babe_hex("06b29c9ac78bab319ccdfd6d02241fc75e10e25f65ace0a625dd009680b16333"),
-            parse_grandpa_hex("b09afc359a0d14e95617c02d2ee5ead14ab33a16af213c860996acd64ce5b144"),
-            parse_im_online_hex("06b29c9ac78bab319ccdfd6d02241fc75e10e25f65ace0a625dd009680b16333"),
+            parse_account_hex("989af54c4872b9a00e2862e24407fc9f54af4ab7ad40b506674ec29af27db747"),
+            parse_babe_hex("989af54c4872b9a00e2862e24407fc9f54af4ab7ad40b506674ec29af27db747"),
+            parse_grandpa_hex("7cc276640fcdb95ad12bd105a841f47b24525a34a65cc0416980e40b1f213f62"),
+            parse_im_online_hex("989af54c4872b9a00e2862e24407fc9f54af4ab7ad40b506674ec29af27db747"),
         ),
         // ── 验证者 5 ──
         (
-            parse_account_hex("c231d8e99e618ce8f7d8e966850a9fd376031cc5e2caad3a7126af24b6b71756"),
-            parse_babe_hex("c231d8e99e618ce8f7d8e966850a9fd376031cc5e2caad3a7126af24b6b71756"),
-            parse_grandpa_hex("626b724f2367bc618b0c46179e7a603c9fde0f530dd2ac31f58a962c323b505e"),
-            parse_im_online_hex("c231d8e99e618ce8f7d8e966850a9fd376031cc5e2caad3a7126af24b6b71756"),
+            parse_account_hex("d83ef0147b6eb0b922c7cbf87033f42aed9de93d758b6c1fe70f99e359ab8809"),
+            parse_babe_hex("d83ef0147b6eb0b922c7cbf87033f42aed9de93d758b6c1fe70f99e359ab8809"),
+            parse_grandpa_hex("ea43db7693b5f092657dc82296f34bef6938169551e2c6fd189d2a040de26827"),
+            parse_im_online_hex("d83ef0147b6eb0b922c7cbf87033f42aed9de93d758b6c1fe70f99e359ab8809"),
         ),
     ];
 
@@ -489,7 +500,7 @@ fn mainnet_genesis(
 			stakers: initial_authorities.iter().map(|x| {
 				(x.0.clone(), x.0.clone(), 500_000 * UNIT, pallet_staking::StakerStatus::Validator)
 			}).collect(),
-			invulnerables: vec![],
+			invulnerables: initial_authorities.iter().map(|x| x.0.clone()).collect(),
 			slash_reward_fraction: Perbill::from_percent(10),
 			min_nominator_bond: 100 * UNIT,
 			min_validator_bond: 500_000 * UNIT,
@@ -539,7 +550,7 @@ fn mainnet_genesis(
 		// 创世铭文 — 永久刻入 Block 0
 		inscription: InscriptionConfig {
 			inscription: concat!(
-				"NEXUS GENESIS \u{2014} 2026-04-14 10:00\n",
+				"NEXUS GENESIS \u{2014} 2026-05-08 10:00\n",
 				"\n",
 				"代码即意识，共识即思考，网络即生命。\n",
 				"Code is consciousness, consensus is thought, network is life.\n",

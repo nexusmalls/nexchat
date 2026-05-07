@@ -170,3 +170,4 @@ secrets.yaml
 # Root-level personal Chinese markdown notes
 /[一-龥]*.md
 /*[一-龥]*.md
+/docs/
