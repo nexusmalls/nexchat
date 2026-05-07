@@ -321,9 +321,29 @@ cd nexus
 
 ### 环境要求
 
+- **Linux / macOS** 开发环境（推荐 Ubuntu 22.04+）
 - **Rust** stable（含 `wasm32-unknown-unknown` target）
+- **Clang / LLVM**、`libssl-dev`、`pkg-config`、`build-essential`
+- **protobuf-compiler**（部分依赖与工具链需要）
 - **Node.js** 18+（E2E 测试脚本）
 - **Docker**（可选，容器化部署）
+
+### 安装 Substrate 标准开发环境
+
+```bash
+# Ubuntu / Debian
+sudo apt update
+sudo apt install -y git clang curl libssl-dev llvm libudev-dev make protobuf-compiler pkg-config build-essential
+
+# 安装 Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# 安装 WASM target
+rustup target add wasm32-unknown-unknown
+```
+
+如使用 macOS，可先安装 Xcode Command Line Tools 与 Homebrew，再安装 `llvm`、`openssl`、`protobuf`、`pkg-config` 等依赖。
 
 ### 构建与运行
 
