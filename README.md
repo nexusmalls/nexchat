@@ -312,6 +312,13 @@ nexus/
 
 ## 快速开始
 
+### 获取源码
+
+```bash
+git clone https://github.com/nexusmalls/nexus.git
+cd nexus
+```
+
 ### 环境要求
 
 - **Rust** stable（含 `wasm32-unknown-unknown` target）
