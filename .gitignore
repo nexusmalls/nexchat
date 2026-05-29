@@ -88,9 +88,6 @@ entity-accounts.json
 /criterion/
 /benchmarks/
 
-# Local scripts (E2E, deploy helpers, secrets)
-/scripts/
-
 # Logs / crash dumps
 *.log
 /logs/
@@ -116,6 +113,7 @@ hs_err_pid*
 /.next/
 
 # Standalone apps or local worktrees
+/scripts/
 /nexus-com-dapp/
 /nexus-ERNV-dapp/
 /nexus-entity-dapp/
