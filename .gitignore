@@ -87,7 +87,9 @@ entity-accounts.json
 /test-results/
 /criterion/
 /benchmarks/
-scripts/e2e/mytests/reports/
+
+# Local scripts (E2E, deploy helpers, secrets)
+/scripts/
 
 # Logs / crash dumps
 *.log
