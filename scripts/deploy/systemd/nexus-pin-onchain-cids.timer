@@ -1,0 +1,5 @@
+[Unit]
+Description=Enable Nexus IPFS CID query+pin daemon (5-minute loop)
+
+[Install]
+WantedBy=multi-user.target

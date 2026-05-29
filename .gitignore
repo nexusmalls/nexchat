@@ -20,7 +20,7 @@
 /my-chain-state/
 
 # Node.js / package managers
-/node_modules/
+node_modules/
 .npm/
 .yarn/
 pnpm-lock.yaml
@@ -60,7 +60,12 @@ desktop.ini
 *.pem
 *.key
 *.crt
-/secrets/
+**/secrets/
+setup-result-*.json
+test-accounts-*.json
+generated-wallet-*.json
+deployment-accounts.json
+entity-accounts.json
 
 # Build / cache artifacts
 *.o
@@ -82,6 +87,7 @@ desktop.ini
 /test-results/
 /criterion/
 /benchmarks/
+scripts/e2e/mytests/reports/
 
 # Logs / crash dumps
 *.log
@@ -107,9 +113,13 @@ hs_err_pid*
 /frontend/.vercel
 /.next/
 
-# Standalone apps or local worktrees if added later
+# Standalone apps or local worktrees
+/nexus-com-dapp/
+/nexus-ERNV-dapp/
 /nexus-entity-dapp/
 /nexus-community-dapp/
+/nexus-pitch/
+/investors/
 
 # Telegram bot local data
 /telegram/

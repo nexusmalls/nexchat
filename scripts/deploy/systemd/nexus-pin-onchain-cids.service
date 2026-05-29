@@ -1,0 +1,21 @@
+[Unit]
+Description=Nexus on-chain IPFS CID query+pin loop (query-pin mode)
+Documentation=file:///opt/nexus/scripts/e2e/mytests/pin-onchain-cids.ts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nexus
+Group=nexus
+WorkingDirectory=/opt/nexus/scripts
+EnvironmentFile=-/etc/nexus/pin-onchain-cids.env
+ExecStart=/usr/bin/node --import tsx e2e/mytests/pin-onchain-cids.ts --scan-mode query-pin --interval-minutes 5 --fail-on-error
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexus-pin-onchain-cids
+
+[Install]
+WantedBy=multi-user.target

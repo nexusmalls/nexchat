@@ -1,0 +1,133 @@
+{
+  "startedAt": "2026-05-29T00:50:34.783Z",
+  "finishedAt": "2026-05-29T00:50:35.202Z",
+  "wsUrl": "wss://rpc.nexusmall.net",
+  "phase": "query",
+  "scanMode": "fast",
+  "outputFile": "/home/xiaodong/文档/nexus/scripts/all-cids-query.json",
+  "cidCount": 16,
+  "cids": [
+    {
+      "cid": "QmaBE9nKeDDpC3od7d196dXHLbx8kVtm9upmQV6GHtLaEe",
+      "sources": [
+        "entityRegistry.entities(100010).logoCid"
+      ]
+    },
+    {
+      "cid": "QmaQszm8oLVxFZV5whcZr3m79Z9HQ6PXTZfVKzqR1JXhUY",
+      "sources": [
+        "entityProduct.products(24).nameCid",
+        "entityProduct.products(24).detailCid"
+      ]
+    },
+    {
+      "cid": "Qmb3RS7MrWBwBvNPZ969XRxANHexX42D5atQ3G3dtjsPF3",
+      "sources": [
+        "entityProduct.products(21).nameCid",
+        "entityProduct.products(21).detailCid"
+      ]
+    },
+    {
+      "cid": "QmdDJjtpSN9Exz159VUb7cmJEnwSrpqwD6q42eJVxeNQgB",
+      "sources": [
+        "entityProduct.products(27).nameCid",
+        "entityProduct.products(27).detailCid"
+      ]
+    },
+    {
+      "cid": "Qmdh4R4f9JyKYhDLn7em9Uqzns758tgHZcqotYjNy5Ahmm",
+      "sources": [
+        "entityProduct.products(26).nameCid",
+        "entityProduct.products(26).detailCid"
+      ]
+    },
+    {
+      "cid": "QmP5jSNfr8fhbiZFWaA9MT2H5bbHFmPcR3JZPrL6yFwf7R",
+      "sources": [
+        "entityProduct.products(25).nameCid",
+        "entityProduct.products(25).detailCid"
+      ]
+    },
+    {
+      "cid": "QmPUveQEX6AJ1yD49tquXs7fbKe1pqkRuAiw6Q1HPn3mQR",
+      "sources": [
+        "entityProduct.products(22).nameCid",
+        "entityProduct.products(22).detailCid"
+      ]
+    },
+    {
+      "cid": "QmRgK5f7X1fnTPpbV6pyrZJ3FzDbuUyxL7URpE1nKwbG6D",
+      "sources": [
+        "entityProduct.products(14).nameCid",
+        "entityProduct.products(14).detailCid"
+      ]
+    },
+    {
+      "cid": "QmSb1X1UNwurMUnSRuZjBdnDsAg25CPNyXVA51yqwunTH2",
+      "sources": [
+        "entityProduct.products(27).imagesCid",
+        "entityProduct.products(26).imagesCid",
+        "entityProduct.products(24).imagesCid",
+        "entityProduct.products(25).imagesCid",
+        "entityProduct.products(23).imagesCid",
+        "entityProduct.products(21).imagesCid",
+        "entityProduct.products(22).imagesCid"
+      ]
+    },
+    {
+      "cid": "QmT2EuAkP7ivfRi2RT4buZT6JThcL7LGWTGPeoe9fBg1go",
+      "sources": [
+        "entityProduct.products(19).nameCid",
+        "entityProduct.products(19).detailCid",
+        "entityProduct.products(18).nameCid",
+        "entityProduct.products(20).nameCid",
+        "entityProduct.products(20).detailCid"
+      ]
+    },
+    {
+      "cid": "QmT4qYSZLKUHJRcYoMzMeJpM1yBscdk8bHHp8kAMtL4ACL",
+      "sources": [
+        "entityProduct.products(23).nameCid",
+        "entityProduct.products(23).detailCid"
+      ]
+    },
+    {
+      "cid": "QmTDviS4n4xQukgz2V4wnPTUg3T4g7kgnBxcCiPp8NJkDG",
+      "sources": [
+        "entityProduct.products(16).nameCid",
+        "entityProduct.products(16).detailCid"
+      ]
+    },
+    {
+      "cid": "QmUVsSWM6sruf2scwBTj5o866QEFhoPfGFsdvzSmf3fnW5",
+      "sources": [
+        "entityProduct.products(19).imagesCid",
+        "entityProduct.products(15).imagesCid",
+        "entityProduct.products(16).imagesCid",
+        "entityProduct.products(17).imagesCid",
+        "entityProduct.products(18).imagesCid",
+        "entityProduct.products(14).imagesCid",
+        "entityProduct.products(20).imagesCid"
+      ]
+    },
+    {
+      "cid": "QmYJ5ow48iCmjek1VKBu4nT9P3B6fJ9xQAnCHU6W6N9SND",
+      "sources": [
+        "entityProduct.products(15).nameCid"
+      ]
+    },
+    {
+      "cid": "QmYKDUs3TH8475ynmibAs7PUuiRS4SzC6RrYEt7RE9NQ7W",
+      "sources": [
+        "entityProduct.products(17).nameCid",
+        "entityProduct.products(17).detailCid"
+      ]
+    },
+    {
+      "cid": "QmZoXXg8tn6aj5QsY3GPrWD2NBuEh7GDeEeSgSFBLFXhH1",
+      "sources": [
+        "entityProduct.products(18).detailCid"
+      ]
+    }
+  ]
+}

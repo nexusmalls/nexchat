@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Nexus IPFS CID audit query daily
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=600
+Unit=nexus-query-onchain-cids.service
+
+[Install]
+WantedBy=timers.target

@@ -323,7 +323,7 @@ cd nexus
 
 - **Linux / macOS** 开发环境（推荐 Ubuntu 22.04+）
 - **Rust** stable（含 `wasm32-unknown-unknown` target）
-- **Clang / LLVM**、`libssl-dev`、`pkg-config`、`build-essential`
+- **Clang / LLVM**、`libclang-dev`、`libssl-dev`、`pkg-config`、`build-essential`
 - **protobuf-compiler**（部分依赖与工具链需要）
 - **Node.js** 18+（E2E 测试脚本）
 - **Docker**（可选，容器化部署）
@@ -332,8 +332,8 @@ cd nexus
 
 ```bash
 # Ubuntu / Debian
-sudo apt update
-sudo apt install -y git clang curl libssl-dev llvm libudev-dev make protobuf-compiler pkg-config build-essential
+sudo apt update && sudo apt install -y clang libclang-dev
+sudo apt install -y git curl libssl-dev llvm libudev-dev make protobuf-compiler pkg-config build-essential
 
 # 安装 Rust toolchain
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -394,7 +394,7 @@ docker run -p 9944:9944 -p 30333:30333 nexus-node --dev --rpc-external
 |------|-----|
 | **代币符号** | NEX |
 | **精度** | 12 位小数（1 NEX = 10¹² 单位） |
-| **初始供应** | 100,000,000,000 NEX |
+| **初始供应** | 10,000,000,000 NEX（100 亿） |
 | **存在性押金** | 0.001 NEX |
 | **出块时间** | 6 秒 |
 | **出块共识** | Aura |
