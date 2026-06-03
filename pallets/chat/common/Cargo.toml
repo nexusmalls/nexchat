@@ -1,0 +1,37 @@
+[package]
+name = "pallet-chat-common"
+version = "0.1.0"
+description = "聊天系统共享类型和工具"
+authors = ["Stardust Team"]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/lao-sha/stardust"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+# Parity 编解码
+codec = { features = ["derive"], workspace = true }
+scale-info = { features = ["derive"], workspace = true }
+
+# Substrate 核心依赖
+frame-support = { workspace = true }
+sp-std = { workspace = true }
+sp-runtime = { workspace = true }
+sp-api = { workspace = true }
+
+[dev-dependencies]
+sp-core = { workspace = true }
+sp-io = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "codec/std",
+    "scale-info/std",
+    "frame-support/std",
+    "sp-std/std",
+    "sp-runtime/std",
+    "sp-api/std",
+]

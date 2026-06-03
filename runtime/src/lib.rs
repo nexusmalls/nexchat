@@ -320,6 +320,22 @@ mod runtime {
     #[runtime::pallet_index(65)]
     pub type StorageLifecycle = pallet_storage_lifecycle;
 
+    #[runtime::pallet_index(66)]
+    pub type TaskBounty = pallet_task_bounty;
+
+    // ============================================================================
+    // Chat (聊天系统：场景授权 + 加密私聊)
+    // ============================================================================
+
+    #[runtime::pallet_index(67)]
+    pub type ChatPermission = pallet_chat_permission;
+
+    #[runtime::pallet_index(68)]
+    pub type ChatCore = pallet_chat_core;
+
+    #[runtime::pallet_index(69)]
+    pub type ChatGroup = pallet_chat_group;
+
     // ============================================================================
     // Smart Contracts
     // ============================================================================

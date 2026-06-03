@@ -3,6 +3,7 @@
 
 mod benchmarking;
 mod chain_spec;
+mod chat_rpc;
 mod cli;
 mod command;
 mod rpc;

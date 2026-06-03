@@ -74,4 +74,12 @@ frame_benchmarking::define_benchmarks!(
     [pallet_ads_core, AdsCore]
     [pallet_ads_entity, AdsEntity]
     [pallet_ads_grouprobot, AdsGroupRobot]
+
+    // Task
+    [pallet_task_bounty, TaskBounty]
+
+    // Chat
+    [pallet_chat_group, ChatGroup]
+    [pallet_chat_core, ChatCore]
+    [pallet_chat_permission, ChatPermission]
 );

@@ -75,6 +75,11 @@ pallet-commission-pool-reward = { workspace = true }
 pallet-entity-commission = { workspace = true }
 pallet-entity-product = { workspace = true }
 pallet-entity-order = { workspace = true }
+pallet-task-bounty = { workspace = true }
+pallet-chat-common = { workspace = true }
+pallet-chat-permission = { workspace = true }
+pallet-chat-core = { workspace = true }
+pallet-chat-group = { workspace = true }
 pallet-entity-market = { workspace = true }
 pallet-entity-review = { workspace = true }
 pallet-entity-disclosure = { workspace = true }
@@ -183,6 +188,11 @@ std = [
 	"pallet-entity-commission/std",
 	"pallet-entity-product/std",
 	"pallet-entity-order/std",
+	"pallet-task-bounty/std",
+	"pallet-chat-common/std",
+	"pallet-chat-permission/std",
+	"pallet-chat-core/std",
+	"pallet-chat-group/std",
 	"pallet-entity-market/std",
 	"pallet-entity-review/std",
 	"pallet-entity-disclosure/std",
@@ -261,6 +271,10 @@ runtime-benchmarks = [
 	"pallet-entity-shop/runtime-benchmarks",
 	"pallet-entity-product/runtime-benchmarks",
 	"pallet-entity-order/runtime-benchmarks",
+	"pallet-task-bounty/runtime-benchmarks",
+	"pallet-chat-permission/runtime-benchmarks",
+	"pallet-chat-core/runtime-benchmarks",
+	"pallet-chat-group/runtime-benchmarks",
 	"pallet-entity-review/runtime-benchmarks",
 	"pallet-entity-token/runtime-benchmarks",
 	"pallet-entity-governance/runtime-benchmarks",
@@ -318,6 +332,10 @@ try-runtime = [
 	"sp-runtime/try-runtime",
 	# Commission pallets try-runtime
 	"pallet-commission-common/try-runtime",
+	"pallet-task-bounty/try-runtime",
+	"pallet-chat-permission/try-runtime",
+	"pallet-chat-core/try-runtime",
+	"pallet-chat-group/try-runtime",
 ]
 
 # Enable the metadata hash generation.

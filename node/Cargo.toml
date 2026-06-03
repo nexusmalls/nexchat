@@ -37,6 +37,9 @@ sc-telemetry = { default-features = true, workspace = true }
 sc-transaction-pool-api = { default-features = true, workspace = true }
 sc-transaction-pool = { default-features = true, workspace = true }
 nexus-runtime = { workspace = true }
+pallet-chat-common = { default-features = true, workspace = true }
+pallet-chat-permission = { default-features = true, workspace = true }
+serde = { default-features = true, workspace = true }
 sp-api = { default-features = true, workspace = true }
 sp-block-builder = { default-features = true, workspace = true }
 sp-blockchain = { default-features = true, workspace = true }

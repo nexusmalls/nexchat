@@ -70,6 +70,9 @@ use super::{
     EntityTokenSale,
     EntityTransaction,
     Escrow,
+    Evidence,
+    TaskBounty,
+    ChatPermission,
     Hash,
     Historical,
     Nonce,
@@ -1014,6 +1017,9 @@ impl pallet_dispute_evidence::Config for Runtime {
 /// 商城订单域标识（8字节）
 const DOMAIN_ENTITY_ORDER: [u8; 8] = *b"entorder";
 
+/// 任务悬赏域标识（8字节）/ Task-bounty arbitration domain id.
+const DOMAIN_TASK_BOUNTY: [u8; 8] = *b"taskbnty";
+
 /// 统一仲裁域路由器
 ///
 /// 将仲裁决议路由到各业务模块执行
@@ -1029,6 +1035,9 @@ impl pallet_dispute_arbitration::pallet::ArbitrationRouter<AccountId, Balance>
         use pallet_entity_common::OrderProvider;
         if domain == DOMAIN_ENTITY_ORDER {
             <EntityTransaction as OrderProvider<AccountId, Balance>>::can_dispute(id, who)
+        } else if domain == DOMAIN_TASK_BOUNTY {
+            use pallet_task_bounty::BountyInfoProvider;
+            <TaskBounty as BountyInfoProvider<AccountId, Balance>>::can_dispute(id, who)
         } else {
             // MVP: 非 ENTITY_ORDER 域暂不开放，待 nex-market/ads 等模块集成后逐步启用
             false
@@ -1068,6 +1077,36 @@ impl pallet_dispute_arbitration::pallet::ArbitrationRouter<AccountId, Balance>
                     )
                 }
             }
+        } else if domain == DOMAIN_TASK_BOUNTY {
+            // 悬赏域：buyer=poster，seller=contested solver；先结算 escrow，再回写悬赏状态。
+            // Bounty domain: buyer=poster, seller=contested solver; settle escrow then sync bounty.
+            use pallet_task_bounty::{ArbitrationOutcome, BountyInfoProvider};
+            let poster = <TaskBounty as BountyInfoProvider<AccountId, Balance>>::poster(id)
+                .ok_or(sp_runtime::DispatchError::Other("bounty not found"))?;
+            let solver =
+                <TaskBounty as BountyInfoProvider<AccountId, Balance>>::contested_solver(id)
+                    .ok_or(sp_runtime::DispatchError::Other("no contested solver"))?;
+
+            let _ = <Escrow as EscrowTrait<AccountId, Balance>>::set_resolved(id);
+
+            let (res, outcome) = match decision {
+                pallet_dispute_arbitration::pallet::Decision::Release => (
+                    <Escrow as EscrowTrait<AccountId, Balance>>::release_all(id, &solver),
+                    ArbitrationOutcome::Release,
+                ),
+                pallet_dispute_arbitration::pallet::Decision::Refund => (
+                    <Escrow as EscrowTrait<AccountId, Balance>>::refund_all(id, &poster),
+                    ArbitrationOutcome::Refund,
+                ),
+                pallet_dispute_arbitration::pallet::Decision::Partial(bps) => (
+                    <Escrow as EscrowTrait<AccountId, Balance>>::split_partial(
+                        id, &solver, &poster, bps,
+                    ),
+                    ArbitrationOutcome::Partial(bps),
+                ),
+            };
+            res?;
+            pallet_task_bounty::Pallet::<Runtime>::settle_from_arbitration(id, outcome)
         } else {
             Ok(())
         }
@@ -1093,6 +1132,20 @@ impl pallet_dispute_arbitration::pallet::ArbitrationRouter<AccountId, Balance>
             } else {
                 Err(sp_runtime::DispatchError::Other("not a party"))
             }
+        } else if domain == DOMAIN_TASK_BOUNTY {
+            use pallet_task_bounty::BountyInfoProvider;
+            let poster = <TaskBounty as BountyInfoProvider<AccountId, Balance>>::poster(id)
+                .ok_or(sp_runtime::DispatchError::Other("bounty not found"))?;
+            let solver =
+                <TaskBounty as BountyInfoProvider<AccountId, Balance>>::contested_solver(id)
+                    .ok_or(sp_runtime::DispatchError::Other("no contested solver"))?;
+            if *initiator == poster {
+                Ok(solver)
+            } else if *initiator == solver {
+                Ok(poster)
+            } else {
+                Err(sp_runtime::DispatchError::Other("not a party"))
+            }
         } else {
             Ok(TreasuryAccountId::get())
         }
@@ -1104,6 +1157,10 @@ impl pallet_dispute_arbitration::pallet::ArbitrationRouter<AccountId, Balance>
         if domain == DOMAIN_ENTITY_ORDER {
             <EntityTransaction as OrderProvider<AccountId, Balance>>::order_amount(id)
                 .ok_or(sp_runtime::DispatchError::Other("order not found"))
+        } else if domain == DOMAIN_TASK_BOUNTY {
+            use pallet_task_bounty::BountyInfoProvider;
+            <TaskBounty as BountyInfoProvider<AccountId, Balance>>::amount(id)
+                .ok_or(sp_runtime::DispatchError::Other("bounty not found"))
         } else {
             Ok(10 * UNIT)
         }
@@ -1147,6 +1204,218 @@ impl pallet_dispute_arbitration::pallet::Config for Runtime {
     type AppealWindowBlocks = ConstU32<{ 3 * DAYS }>; // 3 days appeal window
     type AutoEscalateBlocks = ConstU32<{ 14 * DAYS }>; // 14 days auto-escalation
     type MaxActivePerUser = ConstU32<50>;
+}
+
+// -------------------- Task Bounty (任务悬赏) --------------------
+
+parameter_types! {
+    /// 悬赏 id 预留高位区间基址，确保与订单等低位 escrow id 不冲突。
+    /// Reserved high id-space base so bounty ids never collide with order ids.
+    pub const BountyEscrowIdOffset: u64 = 1u64 << 60;
+    /// 悬赏 Quota 单份赏金上限：5000 NEX，限制大额走 Quota 逃避仲裁。
+    pub const BountyMaxQuotaUnitReward: Balance = 5_000 * UNIT;
+    /// 最小单份赏金：0.1 NEX，防垃圾任务。
+    pub const BountyMinReward: Balance = UNIT / 10;
+    /// 大额发布方声誉门槛触发阈值：总锁仓 ≥ 1000 NEX 时校验发布方声誉。
+    /// Poster reputation is gated only when total locked reward reaches 1000 NEX.
+    pub const BountyPosterRepThreshold: Balance = 1_000 * UNIT;
+    /// 悬赏模块账户派生 id。/ Task-bounty pallet account id.
+    pub const TaskBountyPalletId: frame_support::PalletId = frame_support::PalletId(*b"py/tbnty");
+    /// 强制填写地区的类目：CAT_GROUND_PROMO_PROJECT（地推项目，§5.5）。
+    /// Category requiring a region: ground-promotion project (CAT_GROUND_PROMO_PROJECT).
+    pub const BountyGroundPromoCategory: u16 = 1;
+}
+
+/// Adapter exposing dispute-evidence ownership to the bounty pallet's `coop_profile_ref`
+/// validation. / 将 dispute-evidence 的归属信息适配给悬赏模块的 `coop_profile_ref` 校验。
+pub struct BountyEvidenceOwnership;
+impl pallet_task_bounty::EvidenceOwnership<AccountId> for BountyEvidenceOwnership {
+    fn is_owner(evidence_id: u64, who: &AccountId) -> bool {
+        use pallet_dispute_evidence::EvidenceProvider;
+        <Evidence as EvidenceProvider<AccountId>>::get(evidence_id)
+            .map(|info| &info.owner == who)
+            .unwrap_or(false)
+    }
+}
+
+/// Adapter mapping the bounty pallet's chat hooks to chat-permission scene authorizations
+/// (`source = *b"taskbnty"`, `scene_id = Numeric(bounty_id)`). Errors are swallowed so chat
+/// wiring never aborts a bounty extrinsic. / 将悬赏聊天钩子映射为 chat-permission 场景授权；
+/// 吞掉错误，确保聊天接线不会中断悬赏交易。
+pub struct BountyChatAuthorizer;
+impl BountyChatAuthorizer {
+    fn bounty_scene() -> pallet_chat_permission::SceneType {
+        pallet_chat_permission::SceneType::Custom(
+            b"taskbnty".to_vec().try_into().unwrap_or_default(),
+        )
+    }
+}
+impl pallet_task_bounty::ChatAuthorizer<AccountId> for BountyChatAuthorizer {
+    fn grant(bounty_id: u64, poster: &AccountId, solver: &AccountId) {
+        use pallet_chat_permission::SceneAuthorizationManager;
+        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::grant_bidirectional_scene_authorization(
+            *b"taskbnty",
+            poster,
+            solver,
+            Self::bounty_scene(),
+            pallet_chat_permission::SceneId::Numeric(bounty_id),
+            None,
+            alloc::vec::Vec::new(),
+        );
+    }
+    fn revoke(bounty_id: u64, poster: &AccountId, solver: &AccountId) {
+        use pallet_chat_permission::SceneAuthorizationManager;
+        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::revoke_scene_authorization(
+            *b"taskbnty",
+            poster,
+            solver,
+            Self::bounty_scene(),
+            pallet_chat_permission::SceneId::Numeric(bounty_id),
+        );
+    }
+}
+
+impl pallet_task_bounty::Config for Runtime {
+    type Currency = Balances;
+    type Escrow = pallet_dispute_escrow::Pallet<Runtime>;
+    type EscrowIdOffset = BountyEscrowIdOffset;
+    type PalletId = TaskBountyPalletId;
+    type StakeBps = ConstU16<1000>; // 求解方质押 10%
+    type FeeBps = ConstU16<500>; // 平台费 5%
+    type FeeCollector = TreasuryAccountId;
+    type MaxSubmissions = ConstU32<200>;
+    type MaxSlots = ConstU32<500>;
+    type MinReward = BountyMinReward;
+    type MaxQuotaUnitReward = BountyMaxQuotaUnitReward;
+    type DefaultDuration = ConstU32<{ 14 * DAYS }>;
+    type MinOpenWindow = ConstU32<{ 10 * MINUTES }>; // 防秒接自刷
+    type MinKycLevelForPayout = ConstU8<0>; // MVP: 平台级 KYC 暂不强制
+    type Kyc = (); // 平台级 KYC 端口（MVP 空实现，待接入后替换）
+    type Evidence = BountyEvidenceOwnership; // coop_profile_ref 证据归属校验
+    type GroundPromoCategory = BountyGroundPromoCategory; // 地推类目需 region
+    type Chat = BountyChatAuthorizer; // 生命周期 grant/revoke → chat-permission 场景授权
+    type BountyReputation = TaskBounty; // 本模块自实现声誉
+    // 加性中性声誉：新人=5000。门槛取 1000，仅过滤有真实负面历史的账户，不误伤新人。
+    // Additive newcomer-neutral reputation (=5000); gate at 1000 filters genuinely bad
+    // actors without blocking honest newcomers.
+    type MinSolverReputation = ConstU32<1000>;
+    type MinPosterReputation = ConstU32<1000>;
+    type PosterReputationRewardThreshold = BountyPosterRepThreshold;
+    type WeightInfo = pallet_task_bounty::weights::SubstrateWeight<Runtime>;
+}
+
+// -------------------- Chat (聊天系统) --------------------
+
+impl pallet_chat_permission::Config for Runtime {
+    type MaxBlockListSize = ConstU32<256>;
+    type MaxWhitelistSize = ConstU32<256>;
+    // 单对用户最大并存场景授权数（多订单 / 多悬赏 / 群聊等共存）。
+    type MaxScenesPerPair = ConstU32<64>;
+    // 单账户最大待处理收件好友申请数（防刷）。
+    type MaxFriendRequests = ConstU32<256>;
+    // 好友申请附言（验证消息）字节上限 / friend-request greeting byte cap.
+    type MaxFriendRequestMsgLen = ConstU32<256>;
+    // 好友备注字节上限 / per-friend remark byte cap.
+    type MaxFriendRemarkLen = ConstU32<64>;
+    // 好友分组标签字节上限 / per-friend group-label byte cap.
+    type MaxFriendGroupLen = ConstU32<64>;
+    // 平台合规：Root 或技术委员会多数可禁言账号、处理举报。
+    // Compliance: Root or technical-committee majority can mute / resolve reports.
+    type GovernanceOrigin = RootOrTechnicalMajority;
+    // 举报证据 CID 字节上限 / report evidence CID byte cap.
+    type MaxReportCidLen = ConstU32<128>;
+    // 链上未处理举报硬上限 / on-chain open-report hard cap.
+    type MaxOpenReports = ConstU32<10_000>;
+    // 举报冷却 ~1 分钟 / report cooldown ~1 minute.
+    type ReportCooldown = ConstU32<MINUTES>;
+    type WeightInfo = pallet_chat_permission::weights::SubstrateWeight<Runtime>;
+}
+
+impl pallet_chat_core::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = pallet_chat_core::SubstrateWeight<Runtime>;
+    type MaxCidLen = ConstU32<96>; // 加密 IPFS CID
+    type RateLimitWindow = ConstU32<{ 10 * MINUTES }>;
+    type MaxMessagesPerWindow = ConstU32<60>;
+    type MessageExpirationTime = ConstU32<{ 180 * DAYS }>;
+    // 撤回时间窗口：2 分钟（对齐常见 IM）。/ recall window: ~2 minutes.
+    type MessageRecallWindow = ConstU32<{ 2 * MINUTES }>;
+    type Randomness = CollectiveFlipRandomness;
+    type UnixTime = TimestampProvider;
+    type MaxNicknameLength = ConstU32<64>;
+    type MaxSignatureLength = ConstU32<256>;
+    // 发送前权限校验：场景授权 / 好友 / 黑白名单 / 隐私级别。
+    type ChatPermission = ChatPermission;
+}
+
+/// Adapter mapping `pallet-chat-group` membership hooks to `chat-permission`
+/// scene authorizations (`source = *b"chatgrp "`, `SceneType::Group`,
+/// `scene_id = Numeric(group_id)`). Each member is related to the group owner so
+/// they gain optional 1:1 DM rights (O(1) per event, not the O(N²) full mesh).
+/// Errors are swallowed so group lifecycle ops never abort on chat wiring.
+///
+/// 将群成员钩子映射为 chat-permission 场景授权（成员↔群主），获得可选 1:1 私聊权限；
+/// 每事件 O(1)，非 O(N²) 全网格。吞错以免聊天接线中断群生命周期操作。
+pub struct GroupChatAuthorizer;
+impl pallet_chat_group::GroupChatHook<AccountId> for GroupChatAuthorizer {
+    fn on_member_added(group_id: u64, member: &AccountId, counterparty: &AccountId) {
+        use pallet_chat_permission::SceneAuthorizationManager;
+        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::grant_bidirectional_scene_authorization(
+            *b"chatgrp ",
+            member,
+            counterparty,
+            pallet_chat_permission::SceneType::Group,
+            pallet_chat_permission::SceneId::Numeric(group_id),
+            None,
+            Default::default(),
+        );
+    }
+    fn on_member_removed(group_id: u64, member: &AccountId, counterparty: &AccountId) {
+        use pallet_chat_permission::SceneAuthorizationManager;
+        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::revoke_scene_authorization(
+            *b"chatgrp ",
+            member,
+            counterparty,
+            pallet_chat_permission::SceneType::Group,
+            pallet_chat_permission::SceneId::Numeric(group_id),
+        );
+    }
+}
+
+parameter_types! {
+    /// 建群押金 / group creation deposit (1 NEX)
+    pub const GroupDeposit: Balance = UNIT;
+    /// KeyPackage 押金 / per-KeyPackage deposit (0.1 NEX)
+    pub const KeyPackageDeposit: Balance = UNIT / 10;
+}
+
+impl pallet_chat_group::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Currency = Balances;
+    type GroupDeposit = GroupDeposit;
+    type KeyPackageDeposit = KeyPackageDeposit;
+    type MaxPendingJoins = ConstU32<256>;
+    // 成员↔群主场景授权（可选 1:1 私聊）/ member↔owner scene auth
+    type ChatHook = GroupChatAuthorizer;
+    type MaxGroupMembers = ConstU32<256>; // 对齐 XMTP 群上限量级
+    type MaxGroupsPerUser = ConstU32<500>;
+    type MaxKeyPackageLen = ConstU32<4096>;
+    type MaxHandshakeLen = ConstU32<16384>;
+    type MaxWelcomeLen = ConstU32<8192>;
+    type MaxCidLen = ConstU32<96>;
+    type MaxGroupNameLen = ConstU32<128>;
+    type MaxGroupAnnouncementLen = ConstU32<2048>;
+    type MaxGroupNicknameLen = ConstU32<64>;
+    type MaxKeyPackagesPerUser = ConstU32<16>;
+    type GroupCreationCooldown = ConstU32<{ 10 * MINUTES }>;
+    // 写入型 MLS 操作（commit/anchor）每账户每分钟最多 30 次，防 HandshakeLog/锚点滥用。
+    // Write-heavy MLS actions: ≤30 per account per minute (anti-spam for logs/anchors).
+    type MlsActionWindow = ConstU32<MINUTES>;
+    type MaxMlsActionsPerWindow = ConstU32<30>;
+    // 平台合规：Root 或技术委员会多数可强制解散/冻结群。
+    // Compliance: Root or technical-committee majority can force-disband/freeze.
+    type GovernanceOrigin = RootOrTechnicalMajority;
+    type WeightInfo = pallet_chat_group::weights::SubstrateWeight<Runtime>;
 }
 
 // ============================================================================

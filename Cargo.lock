@@ -5955,6 +5955,8 @@ dependencies = [
  "futures",
  "jsonrpsee",
  "nexus-runtime",
+ "pallet-chat-common",
+ "pallet-chat-permission",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc",
  "sc-basic-authorship",
@@ -5970,6 +5972,7 @@ dependencies = [
  "sc-telemetry",
  "sc-transaction-pool",
  "sc-transaction-pool-api",
+ "serde",
  "sp-api 41.0.0",
  "sp-block-builder",
  "sp-blockchain",
@@ -6010,6 +6013,10 @@ dependencies = [
  "pallet-authorship",
  "pallet-babe",
  "pallet-balances",
+ "pallet-chat-common",
+ "pallet-chat-core",
+ "pallet-chat-group",
+ "pallet-chat-permission",
  "pallet-collective",
  "pallet-commission-common",
  "pallet-commission-core",
@@ -6058,6 +6065,7 @@ dependencies = [
  "pallet-storage-lifecycle",
  "pallet-storage-service",
  "pallet-sudo",
+ "pallet-task-bounty",
  "pallet-timestamp",
  "pallet-trading-common",
  "pallet-transaction-payment",
@@ -6586,6 +6594,73 @@ dependencies = [
  "sp-arithmetic",
  "sp-core 40.0.0",
  "sp-runtime 46.0.0",
+]
+
+[[package]]
+name = "pallet-chat-common"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api 41.0.0",
+ "sp-core 40.0.0",
+ "sp-io 45.0.0",
+ "sp-runtime 46.0.0",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-chat-core"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-chat-common",
+ "pallet-chat-permission",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core 40.0.0",
+ "sp-io 45.0.0",
+ "sp-runtime 46.0.0",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-chat-group"
+version = "1.0.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "pallet-balances",
+ "pallet-chat-common",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core 40.0.0",
+ "sp-io 45.0.0",
+ "sp-runtime 46.0.0",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-chat-permission"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-chat-common",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api 41.0.0",
+ "sp-core 40.0.0",
+ "sp-io 45.0.0",
+ "sp-runtime 46.0.0",
+ "sp-std",
 ]
 
 [[package]]
@@ -7522,6 +7597,22 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-io 45.0.0",
+ "sp-runtime 46.0.0",
+]
+
+[[package]]
+name = "pallet-task-bounty"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-balances",
+ "pallet-dispute-escrow",
  "parity-scale-codec",
  "scale-info",
  "sp-io 45.0.0",

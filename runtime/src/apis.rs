@@ -43,11 +43,14 @@ use sp_version::RuntimeVersion;
 
 // Local module imports
 use super::{
-    AccountId, Arbitration, Babe, Balance, Block, BlockNumber, CommissionPoolReward, EntityMarket,
-    EntityRegistry, Evidence, Executive, Grandpa, Historical, InherentDataExt, NexMarket, Nonce,
-    Runtime, RuntimeCall, RuntimeGenesisConfig, SessionKeys, StorageService, System,
-    TransactionPayment, VERSION,
+    AccountId, Arbitration, Babe, Balance, Block, BlockNumber, ChatCore, ChatGroup, ChatPermission,
+    CommissionPoolReward, EntityMarket, EntityRegistry, Evidence, Executive, Grandpa, Hash,
+    Historical, InherentDataExt, NexMarket, Nonce, Runtime, RuntimeCall, RuntimeGenesisConfig,
+    SessionKeys, StorageService, System, TransactionPayment, VERSION,
 };
+// EN: `is_friend` is exposed via the FriendshipChecker trait impl on the pallet.
+// CN: `is_friend` 经 pallet 上的 FriendshipChecker trait 实现暴露。
+use pallet_chat_permission::FriendshipChecker;
 
 impl_runtime_apis! {
     impl sp_api::Core<Block> for Runtime {
@@ -772,6 +775,121 @@ impl_runtime_apis! {
 
         fn get_twap_info(entity_id: u64) -> pallet_entity_market::runtime_api::TwapInfo<Balance> {
             EntityMarket::api_get_twap_info(entity_id)
+        }
+    }
+
+    // 统一会话视图：聚合私聊（ChatCore）与群聊（ChatGroup）为单一列表。
+    // Unified conversation view: aggregate private (ChatCore) + group (ChatGroup)
+    // into one list. Group unread / last_active are off-chain (see API docs).
+    impl pallet_chat_common::runtime_api::ChatViewApi<Block, AccountId, Hash, BlockNumber> for Runtime {
+        fn list_conversations(
+            who: AccountId,
+        ) -> Vec<pallet_chat_common::runtime_api::ConversationSummary<AccountId, Hash, BlockNumber>> {
+            use pallet_chat_common::runtime_api::{ConversationKind, ConversationSummary, role};
+
+            let mut out = Vec::new();
+
+            // 私聊会话：core 已按"置顶优先 + 最后活跃倒序"排序。
+            // Direct sessions: already sorted (pinned first, last-active desc) by core.
+            for sid in ChatCore::list_sessions(who.clone()) {
+                if let Some(session) = ChatCore::get_session(sid) {
+                    let peer = session.participants.iter().find(|p| **p != who).cloned();
+                    out.push(ConversationSummary {
+                        kind: ConversationKind::Direct,
+                        direct_id: Some(sid),
+                        group_id: None,
+                        peer,
+                        name: Vec::new(),
+                        avatar_cid: Vec::new(),
+                        last_active: session.last_active,
+                        unread: ChatCore::get_unread_count(who.clone(), Some(sid)),
+                        pinned: ChatCore::is_session_pinned(&who, sid),
+                        muted: ChatCore::is_session_muted(&who, sid),
+                        archived: session.is_archived,
+                        member_count: 0,
+                        group_role: role::NONE,
+                    });
+                }
+            }
+
+            // 群聊会话：链上仅有元数据；活跃度/未读在链下，由客户端合并。
+            // Group conversations: chain holds metadata only; recency/unread off-chain.
+            for gid in ChatGroup::user_group_ids(&who) {
+                let (name, avatar_cid) = ChatGroup::group_profile(gid)
+                    .map(|p| (p.name.into_inner(), p.avatar_cid.into_inner()))
+                    .unwrap_or_default();
+                out.push(ConversationSummary {
+                    kind: ConversationKind::Group,
+                    direct_id: None,
+                    group_id: Some(gid),
+                    peer: None,
+                    name,
+                    avatar_cid,
+                    last_active: BlockNumber::default(),
+                    unread: 0,
+                    pinned: false,
+                    muted: ChatGroup::is_member_muted(gid, &who),
+                    archived: false,
+                    member_count: ChatGroup::group_member_count(gid),
+                    group_role: ChatGroup::member_role_tag(gid, &who),
+                });
+            }
+
+            out
+        }
+
+        fn total_direct_unread(who: AccountId) -> u32 {
+            ChatCore::get_unread_count(who, None)
+        }
+    }
+
+    // 聊天权限系统查询：检查权限 / 场景授权 / 好友关系 / 隐私设置摘要。
+    // Chat permission queries: permission check / scene auth / friendship / privacy.
+    impl pallet_chat_permission::runtime_api::ChatPermissionApi<Block, AccountId> for Runtime {
+        fn check_chat_permission(
+            sender: AccountId,
+            receiver: AccountId,
+        ) -> pallet_chat_permission::PermissionResult {
+            ChatPermission::check_permission(&sender, &receiver)
+        }
+
+        fn get_active_scenes(
+            user1: AccountId,
+            user2: AccountId,
+        ) -> Vec<pallet_chat_permission::SceneAuthorizationInfo> {
+            ChatPermission::get_active_scenes(&user1, &user2)
+        }
+
+        fn is_friend(user1: AccountId, user2: AccountId) -> bool {
+            <ChatPermission as FriendshipChecker<AccountId>>::is_friend(&user1, &user2)
+        }
+
+        fn list_friends(who: AccountId) -> Vec<AccountId> {
+            ChatPermission::list_friends(&who)
+        }
+
+        fn list_incoming_friend_requests(who: AccountId) -> Vec<AccountId> {
+            ChatPermission::list_incoming_friend_requests(&who)
+        }
+
+        fn list_incoming_friend_requests_detailed(
+            who: AccountId,
+        ) -> Vec<(AccountId, Vec<u8>)> {
+            ChatPermission::list_incoming_friend_requests_detailed(&who)
+        }
+
+        fn get_friend_meta(owner: AccountId, friend: AccountId) -> (Vec<u8>, Vec<u8>) {
+            ChatPermission::get_friend_meta(&owner, &friend)
+        }
+
+        fn is_account_muted(who: AccountId) -> bool {
+            ChatPermission::is_account_muted(&who)
+        }
+
+        fn get_privacy_settings_summary(
+            user: AccountId,
+        ) -> pallet_chat_permission::PrivacySettingsSummary {
+            ChatPermission::get_privacy_summary(&user)
         }
     }
 }
