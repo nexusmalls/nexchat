@@ -58,11 +58,6 @@ parameter_types! {
     pub const MaxWhitelistSize: u32 = 10;
     /// 函数级中文注释：每对用户最大场景授权数量（测试用：5）
     pub const MaxScenesPerPair: u32 = 5;
-    /// 函数级中文注释：单账户最大待处理收件好友申请数（测试用：3）
-    pub const MaxFriendRequests: u32 = 3;
-    pub const MaxFriendRequestMsgLen: u32 = 64;
-    pub const MaxFriendRemarkLen: u32 = 32;
-    pub const MaxFriendGroupLen: u32 = 32;
     pub const MaxReportCidLen: u32 = 64;
     pub const MaxOpenReports: u32 = 3;
     pub const ReportCooldown: u64 = 5;
@@ -73,10 +68,6 @@ impl pallet_chat_permission::Config for Test {
     type MaxBlockListSize = MaxBlockListSize;
     type MaxWhitelistSize = MaxWhitelistSize;
     type MaxScenesPerPair = MaxScenesPerPair;
-    type MaxFriendRequests = MaxFriendRequests;
-    type MaxFriendRequestMsgLen = MaxFriendRequestMsgLen;
-    type MaxFriendRemarkLen = MaxFriendRemarkLen;
-    type MaxFriendGroupLen = MaxFriendGroupLen;
     type GovernanceOrigin = frame_system::EnsureRoot<u64>;
     type MaxReportCidLen = MaxReportCidLen;
     type MaxOpenReports = MaxOpenReports;

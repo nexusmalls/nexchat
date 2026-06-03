@@ -14,16 +14,6 @@ use frame_support::BoundedVec;
 use frame_system::RawOrigin;
 use sp_std::vec;
 
-/// EN: Establish a bidirectional friendship between `a` and `b` via the
-/// request → accept handshake (benchmark setup helper).
-/// CN: 经「申请 → 同意」握手在 `a`、`b` 之间建立双向好友（基准 setup 辅助）。
-fn befriend<T: Config>(a: &T::AccountId, b: &T::AccountId) {
-    ChatPermission::<T>::request_friend(RawOrigin::Signed(a.clone()).into(), b.clone(), None)
-        .expect("request_friend in setup");
-    ChatPermission::<T>::accept_friend(RawOrigin::Signed(b.clone()).into(), a.clone())
-        .expect("accept_friend in setup");
-}
-
 #[benchmarks]
 mod benchmarks {
     use super::*;
@@ -96,85 +86,11 @@ mod benchmarks {
     }
 
     #[benchmark]
-    fn request_friend() {
+    fn bump_capability_epoch() {
         let caller: T::AccountId = whitelisted_caller();
-        let target: T::AccountId = account("target", 0, 0);
-        let msg = vec![b'x'; T::MaxFriendRequestMsgLen::get() as usize];
         #[extrinsic_call]
-        request_friend(RawOrigin::Signed(caller.clone()), target.clone(), Some(msg));
-        assert!(FriendRequests::<T>::get(&target, &caller).is_some());
-    }
-
-    #[benchmark]
-    fn accept_friend() {
-        let caller: T::AccountId = whitelisted_caller();
-        let requester: T::AccountId = account("requester", 0, 0);
-        ChatPermission::<T>::request_friend(
-            RawOrigin::Signed(requester.clone()).into(),
-            caller.clone(),
-            None,
-        )
-        .expect("request");
-        #[extrinsic_call]
-        accept_friend(RawOrigin::Signed(caller.clone()), requester.clone());
-        assert!(Friendships::<T>::get(&caller, &requester).is_some());
-    }
-
-    #[benchmark]
-    fn reject_friend() {
-        let caller: T::AccountId = whitelisted_caller();
-        let requester: T::AccountId = account("requester", 0, 0);
-        ChatPermission::<T>::request_friend(
-            RawOrigin::Signed(requester.clone()).into(),
-            caller.clone(),
-            None,
-        )
-        .expect("request");
-        #[extrinsic_call]
-        reject_friend(RawOrigin::Signed(caller.clone()), requester.clone());
-        assert!(FriendRequests::<T>::get(&caller, &requester).is_none());
-    }
-
-    #[benchmark]
-    fn cancel_friend_request() {
-        let caller: T::AccountId = whitelisted_caller();
-        let target: T::AccountId = account("target", 0, 0);
-        ChatPermission::<T>::request_friend(
-            RawOrigin::Signed(caller.clone()).into(),
-            target.clone(),
-            None,
-        )
-        .expect("request");
-        #[extrinsic_call]
-        cancel_friend_request(RawOrigin::Signed(caller.clone()), target.clone());
-        assert!(FriendRequests::<T>::get(&target, &caller).is_none());
-    }
-
-    #[benchmark]
-    fn remove_friend() {
-        let caller: T::AccountId = whitelisted_caller();
-        let friend: T::AccountId = account("friend", 0, 0);
-        befriend::<T>(&caller, &friend);
-        #[extrinsic_call]
-        remove_friend(RawOrigin::Signed(caller.clone()), friend.clone());
-        assert!(Friendships::<T>::get(&caller, &friend).is_none());
-    }
-
-    #[benchmark]
-    fn set_friend_meta() {
-        let caller: T::AccountId = whitelisted_caller();
-        let friend: T::AccountId = account("friend", 0, 0);
-        befriend::<T>(&caller, &friend);
-        let remark = vec![b'r'; T::MaxFriendRemarkLen::get() as usize];
-        let group = vec![b'g'; T::MaxFriendGroupLen::get() as usize];
-        #[extrinsic_call]
-        set_friend_meta(
-            RawOrigin::Signed(caller.clone()),
-            friend.clone(),
-            Some(remark),
-            Some(group),
-        );
-        assert!(FriendRemark::<T>::contains_key(&caller, &friend));
+        bump_capability_epoch(RawOrigin::Signed(caller.clone()));
+        assert_eq!(CapabilityEpoch::<T>::get(&caller), 1);
     }
 
     #[benchmark]

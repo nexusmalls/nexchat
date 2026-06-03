@@ -187,18 +187,3 @@ pub trait ChatPermissionChecker<AccountId> {
     /// 如果允许发送返回 true，否则返回 false
     fn can_send_message(sender: &AccountId, receiver: &AccountId) -> bool;
 }
-
-/// 好友关系管理接口
-///
-/// 提供好友关系的查询功能。
-pub trait FriendshipChecker<AccountId> {
-    /// 检查两个用户是否是好友
-    ///
-    /// # 参数
-    /// - `user1`: 第一个用户
-    /// - `user2`: 第二个用户
-    ///
-    /// # 返回
-    /// 如果是好友返回 true，否则返回 false
-    fn is_friend(user1: &AccountId, user2: &AccountId) -> bool;
-}

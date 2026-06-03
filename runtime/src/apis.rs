@@ -48,10 +48,6 @@ use super::{
     Historical, InherentDataExt, NexMarket, Nonce, Runtime, RuntimeCall, RuntimeGenesisConfig,
     SessionKeys, StorageService, System, TransactionPayment, VERSION,
 };
-// EN: `is_friend` is exposed via the FriendshipChecker trait impl on the pallet.
-// CN: `is_friend` 经 pallet 上的 FriendshipChecker trait 实现暴露。
-use pallet_chat_permission::FriendshipChecker;
-
 impl_runtime_apis! {
     impl sp_api::Core<Block> for Runtime {
         fn version() -> RuntimeVersion {
@@ -843,8 +839,8 @@ impl_runtime_apis! {
         }
     }
 
-    // 聊天权限系统查询：检查权限 / 场景授权 / 好友关系 / 隐私设置摘要。
-    // Chat permission queries: permission check / scene auth / friendship / privacy.
+    // 聊天权限系统查询：检查权限 / 场景授权 / 能力撤销纪元 / 隐私设置摘要。
+    // Chat permission queries: permission check / scene auth / capability epoch / privacy.
     impl pallet_chat_permission::runtime_api::ChatPermissionApi<Block, AccountId> for Runtime {
         fn check_chat_permission(
             sender: AccountId,
@@ -860,26 +856,8 @@ impl_runtime_apis! {
             ChatPermission::get_active_scenes(&user1, &user2)
         }
 
-        fn is_friend(user1: AccountId, user2: AccountId) -> bool {
-            <ChatPermission as FriendshipChecker<AccountId>>::is_friend(&user1, &user2)
-        }
-
-        fn list_friends(who: AccountId) -> Vec<AccountId> {
-            ChatPermission::list_friends(&who)
-        }
-
-        fn list_incoming_friend_requests(who: AccountId) -> Vec<AccountId> {
-            ChatPermission::list_incoming_friend_requests(&who)
-        }
-
-        fn list_incoming_friend_requests_detailed(
-            who: AccountId,
-        ) -> Vec<(AccountId, Vec<u8>)> {
-            ChatPermission::list_incoming_friend_requests_detailed(&who)
-        }
-
-        fn get_friend_meta(owner: AccountId, friend: AccountId) -> (Vec<u8>, Vec<u8>) {
-            ChatPermission::get_friend_meta(&owner, &friend)
+        fn capability_epoch(who: AccountId) -> u32 {
+            ChatPermission::capability_epoch(&who)
         }
 
         fn is_account_muted(who: AccountId) -> bool {

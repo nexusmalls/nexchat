@@ -810,26 +810,35 @@ pub mod pallet {
 		/// 已超过撤回时间窗口
 		/// The recall time window has elapsed
 		RecallWindowExpired,
+
+		/// EN: Human chat messages (Text/Image/File/Voice) are no longer accepted
+		/// on-chain. They move off-chain via MLS + relay so that *who talks to whom*
+		/// and message content never touch the chain (privacy: hide communication
+		/// relationship). Only [`MessageType::System`] is allowed on-chain via
+		/// [`send_system_message`]. CN: 人类聊天消息（Text/Image/File/Voice）不再上链，
+		/// 改走链下 MLS + relay，使「谁与谁聊、聊什么」不触链（隐私：隐藏通信关系）。
+		/// 链上仅允许经 [`send_system_message`] 发送 [`MessageType::System`]。
+		HumanMessagesOffChain,
 	}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// 发送消息（通用入口）。
-		/// Send a message (general entry).
+		/// 发送消息（通用入口，已收窄为仅 System）。
+		/// Send a message (general entry — now narrowed to System only).
 		///
-		/// # ⚠️ 弃用说明 / Deprecation
+		/// # 收窄说明 / Narrowing (C-plan finalized)
 		/// 按《chat-core × MLS 收敛》路线，**人类聊天消息（Text/Image/File/Voice）
-		/// 将迁出链热路径，改走链下 MLS + 节点广播（设计文档 §13）**。本入口为过渡保留，
-		/// 待链下投递落地后将被收窄/移除；新业务的系统通知请改用
-		/// [`send_system_message`]（仅 `System` 类）。
-		/// Human chat messages will move off-chain (MLS + node relay); this entry is
-		/// transitional and will be narrowed/removed once off-chain delivery lands.
-		/// For system notifications use [`send_system_message`] instead.
+		/// 已迁出链上**，改走链下 MLS + relay，使「谁与谁聊、聊什么」不触链
+		/// （隐私：隐藏通信关系）。本入口现仅接受 `System`（`msg_type_code == 4`）；
+		/// 传入人类消息类型一律返回 [`Error::HumanMessagesOffChain`]。新业务建议直接用
+		/// [`send_system_message`]。Human chat messages now live off-chain (MLS +
+		/// relay); this entry accepts `System` only and rejects human types with
+		/// [`Error::HumanMessagesOffChain`]. Prefer [`send_system_message`].
 		///
 		/// # 参数 / Params
 		/// - `receiver`: 接收方地址
 		/// - `content_cid`: IPFS CID（加密的消息内容）
-		/// - `msg_type_code`: 消息类型代码 (0=Text, 1=Image, 2=File, 3=Voice, 4=System)
+		/// - `msg_type_code`: 消息类型代码（仅 `4=System` 被接受）
 		/// - `session_id`: 会话ID（可选，如果为None则自动创建新会话）
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::send_message())]
@@ -842,16 +851,11 @@ pub mod pallet {
 		) -> DispatchResult {
 			let sender = ensure_signed(origin)?;
 
-			// 转换消息类型代码为枚举
-			let msg_type = match msg_type_code {
-				1 => MessageType::Image,
-				2 => MessageType::File,
-				3 => MessageType::Voice,
-				4 => MessageType::System,
-				_ => MessageType::Text, // 0 或未知 → 文本
-			};
+			// 仅 System 可上链；人类消息（Text/Image/File/Voice）改走链下 MLS + relay。
+			// Only System may be stored on-chain; human messages move off-chain.
+			ensure!(msg_type_code == 4, Error::<T>::HumanMessagesOffChain);
 
-			Self::do_send(sender, receiver, content_cid, msg_type, session_id)
+			Self::do_send(sender, receiver, content_cid, MessageType::System, session_id)
 		}
 
 		/// 发送系统消息（链上低频系统通道，C2 收窄后的受控入口）。

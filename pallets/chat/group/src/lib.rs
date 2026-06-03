@@ -19,6 +19,21 @@
 //! 场景下，才启用默认关闭的消息 digest 锚。
 //!
 //! Core anti-fork mechanism / 核心防分叉机制：`commit(expected_epoch)` —— see §7.
+//!
+//! ## 1:1 私聊不建链上群 / 1:1 DMs MUST NOT create on-chain groups
+//!
+//! EN: Privacy invariant (C-plan finalized): one-to-one direct messages MUST NOT
+//! be modeled as a 2-member on-chain group here. Creating an on-chain group
+//! publishes membership (`who ↔ whom`) and would re-expose the communication
+//! relationship this design removes. 1:1 DMs use the off-chain path only: a
+//! receiver-signed chat capability token (gated by `pallet-chat-permission`'s
+//! `CapabilityEpoch`) + a pairwise MLS session delivered via relay; no
+//! `create_group` / membership row is written on-chain. On-chain groups are for
+//! genuine multi-party (3+) rooms. CN: 隐私不变量（C 方案定稿）：一对一私聊**禁止**
+//! 在此建成 2 人链上群。建链上群会公开成员关系（谁↔谁），重新暴露本设计意在隐藏的
+//! 通信关系。1:1 私聊仅走链下：由接收方签名的聊天能力令牌（受 `pallet-chat-permission`
+//! 的 `CapabilityEpoch` 约束）+ 经 relay 投递的成对 MLS 会话；链上不写 `create_group`/
+//! 成员记录。链上群仅用于真正的多人（3+）房间。
 
 pub use pallet::*;
 pub use weights::WeightInfo;

@@ -4,15 +4,28 @@
 
 use crate::{
     mock::*, ChatPermissionLevel, Error, Event, PermissionResult, PrivacySettingsOf,
-    SceneAuthorizationManager, SceneId, SceneType, FriendshipChecker, ChatPermissionChecker,
+    SceneAuthorizationManager, SceneId, SceneType, ChatPermissionChecker,
 };
 use frame_support::{assert_noop, assert_ok};
 
-/// 测试辅助：通过「`a` 申请 → `b` 同意」建立双向好友关系。
-/// Test helper: establish a bidirectional friendship via `a` request → `b` accept.
-fn befriend(a: u64, b: u64) {
-    assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(a), b, None));
-    assert_ok!(ChatPermission::accept_friend(RuntimeOrigin::signed(b), a));
+/// 测试辅助：授予 `a`/`b` 间双向 Direct 场景授权，使两者可互发消息。
+/// （链上好友图谱已删除，社交联系人改由链下能力令牌承载；测试用场景授权模拟"可聊天"。）
+/// Test helper: grant a bidirectional Direct scene authorization so `a` and `b`
+/// may message each other. (The on-chain friend graph was removed; social
+/// contacts live off-chain as capability tokens, so tests use a scene auth to
+/// model "allowed to chat".)
+fn allow_pair(a: u64, b: u64) {
+    assert_ok!(
+        <ChatPermission as SceneAuthorizationManager<u64, u64>>::grant_bidirectional_scene_authorization(
+            *b"directms",
+            &a,
+            &b,
+            SceneType::Direct,
+            SceneId::None,
+            None,
+            vec![],
+        )
+    );
 }
 
 // ==================== 隐私设置测试 ====================
@@ -153,341 +166,30 @@ mod block_list {
     }
 }
 
-// ==================== 好友关系测试 ====================
+// ==================== 聊天能力撤销纪元测试 ====================
+// Chat-capability revocation epoch tests.
 
-mod friendship {
+mod capability_epoch {
     use super::*;
 
-    /// 测试：发送好友申请（仅记录待处理，尚未成为好友）
+    /// 测试：纪元默认 0，每次 bump 递增并发出事件。
+    /// Test: epoch defaults to 0, each bump increments and emits an event.
     #[test]
-    fn request_friend_works() {
+    fn bump_capability_epoch_works() {
         new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None));
+            assert_eq!(ChatPermission::capability_epoch(ALICE), 0);
 
-            // 申请按 (target=BOB, requester=ALICE) 存储；尚未建立好友关系
-            assert!(ChatPermission::friend_requests(BOB, ALICE).is_some());
-            assert!(!ChatPermission::is_friend(&ALICE, &BOB));
-            assert_eq!(ChatPermission::incoming_friend_request_count(BOB), 1);
-
-            System::assert_last_event(Event::FriendRequestSent { from: ALICE, to: BOB }.into());
-        });
-    }
-
-    /// 测试：对方同意后建立双向好友关系，并清理申请/计数
-    #[test]
-    fn accept_friend_establishes_friendship() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None));
-            assert_ok!(ChatPermission::accept_friend(RuntimeOrigin::signed(BOB), ALICE));
-
-            assert!(ChatPermission::friendships(ALICE, BOB).is_some());
-            assert!(ChatPermission::friendships(BOB, ALICE).is_some());
-            assert!(ChatPermission::friend_requests(BOB, ALICE).is_none());
-            assert_eq!(ChatPermission::incoming_friend_request_count(BOB), 0);
-
-            System::assert_has_event(
-                Event::FriendRequestAccepted { requester: ALICE, target: BOB }.into(),
-            );
-            System::assert_has_event(Event::FriendshipCreated { user1: ALICE, user2: BOB }.into());
-        });
-    }
-
-    /// 测试：对方拒绝后不建立好友，申请被清理
-    #[test]
-    fn reject_friend_works() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None));
-            assert_ok!(ChatPermission::reject_friend(RuntimeOrigin::signed(BOB), ALICE));
-
-            assert!(!ChatPermission::is_friend(&ALICE, &BOB));
-            assert!(ChatPermission::friend_requests(BOB, ALICE).is_none());
-            assert_eq!(ChatPermission::incoming_friend_request_count(BOB), 0);
-
+            assert_ok!(ChatPermission::bump_capability_epoch(RuntimeOrigin::signed(ALICE)));
+            assert_eq!(ChatPermission::capability_epoch(ALICE), 1);
             System::assert_last_event(
-                Event::FriendRequestRejected { requester: ALICE, target: BOB }.into(),
-            );
-        });
-    }
-
-    /// 测试：发起方撤回自己的待处理申请
-    #[test]
-    fn cancel_friend_request_works() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None));
-            assert_ok!(ChatPermission::cancel_friend_request(RuntimeOrigin::signed(ALICE), BOB));
-
-            assert!(ChatPermission::friend_requests(BOB, ALICE).is_none());
-            assert_eq!(ChatPermission::incoming_friend_request_count(BOB), 0);
-
-            System::assert_last_event(
-                Event::FriendRequestCancelled { from: ALICE, to: BOB }.into(),
-            );
-        });
-    }
-
-    /// 测试：双向申请快捷路径——双方互相申请则立即成为好友
-    #[test]
-    fn mutual_request_fast_path_establishes_friendship() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None));
-            // BOB 反向申请 ALICE：触发快捷路径，立即成为好友，不留待处理
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(BOB), ALICE, None));
-
-            assert!(ChatPermission::is_friend(&ALICE, &BOB));
-            assert!(ChatPermission::friend_requests(BOB, ALICE).is_none());
-            assert!(ChatPermission::friend_requests(ALICE, BOB).is_none());
-            assert_eq!(ChatPermission::incoming_friend_request_count(BOB), 0);
-        });
-    }
-
-    /// 测试：不能向自己发申请
-    #[test]
-    fn request_self_fails() {
-        new_test_ext().execute_with(|| {
-            assert_noop!(
-                ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), ALICE, None),
-                Error::<Test>::CannotAddSelf
-            );
-        });
-    }
-
-    /// 测试：重复申请失败
-    #[test]
-    fn request_twice_fails() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None));
-            assert_noop!(
-                ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None),
-                Error::<Test>::FriendRequestAlreadyExists
-            );
-        });
-    }
-
-    /// 测试：已是好友时再申请失败
-    #[test]
-    fn request_when_already_friends_fails() {
-        new_test_ext().execute_with(|| {
-            befriend(ALICE, BOB);
-            assert_noop!(
-                ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None),
-                Error::<Test>::FriendshipAlreadyExists
-            );
-        });
-    }
-
-    /// 测试：被对方拉黑则申请被拒
-    #[test]
-    fn request_blocked_by_target_fails() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::block_user(RuntimeOrigin::signed(BOB), ALICE));
-            assert_noop!(
-                ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None),
-                Error::<Test>::BlockedByTarget
-            );
-        });
-    }
-
-    /// 测试：对方 Closed 时不接受好友申请
-    #[test]
-    fn request_to_closed_target_fails() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::set_permission_level(
-                RuntimeOrigin::signed(BOB),
-                ChatPermissionLevel::Closed
-            ));
-            assert_noop!(
-                ChatPermission::request_friend(RuntimeOrigin::signed(ALICE), BOB, None),
-                Error::<Test>::RequestsNotAccepted
-            );
-        });
-    }
-
-    /// 测试：收件申请数达上限后拒绝
-    #[test]
-    fn too_many_incoming_requests_fails() {
-        new_test_ext().execute_with(|| {
-            // mock 中 MaxFriendRequests = 3
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(10), BOB, None));
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(11), BOB, None));
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(12), BOB, None));
-            assert_noop!(
-                ChatPermission::request_friend(RuntimeOrigin::signed(13), BOB, None),
-                Error::<Test>::TooManyFriendRequests
-            );
-        });
-    }
-
-    /// 测试：同意/拒绝不存在的申请失败
-    #[test]
-    fn accept_nonexistent_request_fails() {
-        new_test_ext().execute_with(|| {
-            assert_noop!(
-                ChatPermission::accept_friend(RuntimeOrigin::signed(BOB), ALICE),
-                Error::<Test>::FriendRequestNotFound
-            );
-        });
-    }
-
-    /// 测试：删除好友（双向）
-    #[test]
-    fn remove_friend_works() {
-        new_test_ext().execute_with(|| {
-            befriend(ALICE, BOB);
-            assert_ok!(ChatPermission::remove_friend(RuntimeOrigin::signed(ALICE), BOB));
-
-            assert!(ChatPermission::friendships(ALICE, BOB).is_none());
-            assert!(ChatPermission::friendships(BOB, ALICE).is_none());
-        });
-    }
-
-    /// 测试：删除不存在的好友失败
-    #[test]
-    fn remove_nonexistent_friend_fails() {
-        new_test_ext().execute_with(|| {
-            assert_noop!(
-                ChatPermission::remove_friend(RuntimeOrigin::signed(ALICE), BOB),
-                Error::<Test>::FriendshipNotFound
-            );
-        });
-    }
-
-    /// 测试：is_friend trait 方法
-    #[test]
-    fn is_friend_trait_works() {
-        new_test_ext().execute_with(|| {
-            assert!(!ChatPermission::is_friend(&ALICE, &BOB));
-            befriend(ALICE, BOB);
-            assert!(ChatPermission::is_friend(&ALICE, &BOB));
-            assert!(ChatPermission::is_friend(&BOB, &ALICE));
-        });
-    }
-
-    /// 测试：通讯录列表辅助（好友列表 / 收件申请列表）
-    #[test]
-    fn list_helpers_work() {
-        new_test_ext().execute_with(|| {
-            befriend(ALICE, BOB);
-            befriend(ALICE, CHARLIE);
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(DAVE), ALICE, None));
-
-            let mut friends = ChatPermission::list_friends(&ALICE);
-            friends.sort();
-            assert_eq!(friends, vec![BOB, CHARLIE]);
-
-            let incoming = ChatPermission::list_incoming_friend_requests(&ALICE);
-            assert_eq!(incoming, vec![DAVE]);
-        });
-    }
-
-    /// 测试：好友申请附言（验证消息）存储、查询与清理。
-    /// Test: friend-request greeting is stored, surfaced, and cleaned up.
-    #[test]
-    fn friend_request_greeting_works() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::request_friend(
-                RuntimeOrigin::signed(DAVE),
-                ALICE,
-                Some(b"hi from dave".to_vec()),
-            ));
-            let detailed = ChatPermission::list_incoming_friend_requests_detailed(&ALICE);
-            assert_eq!(detailed, vec![(DAVE, b"hi from dave".to_vec())]);
-
-            // 同意后附言随申请清除 / greeting cleared together with the request.
-            assert_ok!(ChatPermission::accept_friend(RuntimeOrigin::signed(ALICE), DAVE));
-            assert!(crate::FriendRequestMsg::<Test>::get(ALICE, DAVE).is_none());
-        });
-    }
-
-    /// 测试：过长附言被拒。
-    /// Test: an over-length greeting is rejected.
-    #[test]
-    fn friend_request_greeting_too_long_fails() {
-        new_test_ext().execute_with(|| {
-            // mock MaxFriendRequestMsgLen = 64
-            assert_noop!(
-                ChatPermission::request_friend(
-                    RuntimeOrigin::signed(DAVE),
-                    ALICE,
-                    Some(vec![b'x'; 65]),
-                ),
-                Error::<Test>::MetadataTooLong
-            );
-        });
-    }
-
-    /// 测试：好友备注/分组设置、清除、查询与解除好友时清理。
-    /// Test: friend remark/group set, clear, query, and cleanup on unfriend.
-    #[test]
-    fn friend_remark_and_group_works() {
-        new_test_ext().execute_with(|| {
-            // 非好友不能设置 / cannot set meta for a non-friend.
-            assert_noop!(
-                ChatPermission::set_friend_meta(
-                    RuntimeOrigin::signed(ALICE),
-                    BOB,
-                    Some(b"bestie".to_vec()),
-                    None,
-                ),
-                Error::<Test>::FriendshipNotFound
+                Event::CapabilityEpochBumped { who: ALICE, new_epoch: 1 }.into(),
             );
 
-            befriend(ALICE, BOB);
-            assert_ok!(ChatPermission::set_friend_meta(
-                RuntimeOrigin::signed(ALICE),
-                BOB,
-                Some(b"bestie".to_vec()),
-                Some(b"family".to_vec()),
-            ));
-            assert_eq!(
-                ChatPermission::get_friend_meta(&ALICE, &BOB),
-                (b"bestie".to_vec(), b"family".to_vec())
-            );
-            // 备注是单向私有：BOB 侧为空 / remark is one-sided private.
-            assert_eq!(
-                ChatPermission::get_friend_meta(&BOB, &ALICE),
-                (Vec::<u8>::new(), Vec::<u8>::new())
-            );
+            assert_ok!(ChatPermission::bump_capability_epoch(RuntimeOrigin::signed(ALICE)));
+            assert_eq!(ChatPermission::capability_epoch(ALICE), 2);
 
-            // None 清除分组、保留备注 / None clears group, keeps remark.
-            assert_ok!(ChatPermission::set_friend_meta(
-                RuntimeOrigin::signed(ALICE),
-                BOB,
-                Some(b"bestie".to_vec()),
-                None,
-            ));
-            assert_eq!(
-                ChatPermission::get_friend_meta(&ALICE, &BOB),
-                (b"bestie".to_vec(), Vec::<u8>::new())
-            );
-
-            // 解除好友后元数据清空 / meta cleared after unfriending.
-            assert_ok!(ChatPermission::remove_friend(RuntimeOrigin::signed(ALICE), BOB));
-            assert_eq!(
-                ChatPermission::get_friend_meta(&ALICE, &BOB),
-                (Vec::<u8>::new(), Vec::<u8>::new())
-            );
-        });
-    }
-
-    /// 安全回归：待处理申请**不**授予好友关系，也**不**绕过对方 FriendsOnly 闸门。
-    /// 修复旧版 `add_friend` 单方面即建立双向好友、可被陌生人用来绕过隐私的缺口。
-    #[test]
-    fn pending_request_does_not_bypass_friends_only_gate() {
-        new_test_ext().execute_with(|| {
-            // ALICE 默认 FriendsOnly。BOB 单方面申请并不会让自己变成 ALICE 好友。
-            assert_ok!(ChatPermission::request_friend(RuntimeOrigin::signed(BOB), ALICE, None));
-            assert!(!ChatPermission::is_friend(&BOB, &ALICE));
-            assert_eq!(
-                ChatPermission::check_permission(&BOB, &ALICE),
-                PermissionResult::DeniedRequiresFriend
-            );
-
-            // 只有 ALICE 同意后，BOB 才获得好友发送权限。
-            assert_ok!(ChatPermission::accept_friend(RuntimeOrigin::signed(ALICE), BOB));
-            assert_eq!(
-                ChatPermission::check_permission(&BOB, &ALICE),
-                PermissionResult::AllowedByFriendship
-            );
+            // 各账户独立 / epochs are per-account independent.
+            assert_eq!(ChatPermission::capability_epoch(BOB), 0);
         });
     }
 }
@@ -747,12 +449,12 @@ mod scene_authorization {
 mod permission_check {
     use super::*;
 
-    /// 测试：黑名单最高优先级
+    /// 测试：黑名单最高优先级（先于场景授权）
     #[test]
     fn blocked_user_cannot_send() {
         new_test_ext().execute_with(|| {
-            // 先建立好友关系
-            befriend(ALICE, BOB);
+            // 先授予可聊天的场景授权
+            allow_pair(ALICE, BOB);
 
             // 再把 BOB 加入黑名单
             assert_ok!(ChatPermission::block_user(
@@ -760,15 +462,15 @@ mod permission_check {
                 BOB
             ));
 
-            // BOB 向 ALICE 发消息应该被拒绝
+            // BOB 向 ALICE 发消息应该被拒绝（黑名单先于场景授权）
             let result = ChatPermission::check_permission(&BOB, &ALICE);
             assert_eq!(result, PermissionResult::DeniedBlocked);
         });
     }
 
-    /// 测试：好友可以通过
+    /// 测试：场景授权优先于 Closed 设置
     #[test]
-    fn friend_can_send() {
+    fn scene_auth_overrides_closed() {
         new_test_ext().execute_with(|| {
             // ALICE 设置为 Closed
             assert_ok!(ChatPermission::set_permission_level(
@@ -776,12 +478,16 @@ mod permission_check {
                 ChatPermissionLevel::Closed
             ));
 
-            // 添加 BOB 为好友（ALICE 主动发起；ALICE 为 Closed 仅限制其收件，不影响发起）
-            befriend(ALICE, BOB);
+            // 授予双向 Direct 场景授权
+            allow_pair(ALICE, BOB);
 
-            // BOB 可以发消息（好友优先于 Closed 设置）
-            let result = ChatPermission::check_permission(&BOB, &ALICE);
-            assert_eq!(result, PermissionResult::AllowedByFriendship);
+            // BOB 可以发消息（场景授权优先于 Closed 设置）
+            match ChatPermission::check_permission(&BOB, &ALICE) {
+                PermissionResult::AllowedByScene(scenes) => {
+                    assert!(scenes.contains(&SceneType::Direct));
+                }
+                other => panic!("Expected AllowedByScene, got {:?}", other),
+            }
         });
     }
 
@@ -1039,8 +745,8 @@ mod compliance {
     #[test]
     fn governance_mute_blocks_sender() {
         new_test_ext().execute_with(|| {
-            befriend(ALICE, BOB);
-            // 默认好友可发 / friends can send by default
+            allow_pair(ALICE, BOB);
+            // 有场景授权则可发 / authorized pair can send
             assert!(ChatPermission::can_send_message(&ALICE, &BOB));
 
             // 非治理来源不可禁言 / non-governance origin rejected

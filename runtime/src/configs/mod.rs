@@ -1311,14 +1311,6 @@ impl pallet_chat_permission::Config for Runtime {
     type MaxWhitelistSize = ConstU32<256>;
     // 单对用户最大并存场景授权数（多订单 / 多悬赏 / 群聊等共存）。
     type MaxScenesPerPair = ConstU32<64>;
-    // 单账户最大待处理收件好友申请数（防刷）。
-    type MaxFriendRequests = ConstU32<256>;
-    // 好友申请附言（验证消息）字节上限 / friend-request greeting byte cap.
-    type MaxFriendRequestMsgLen = ConstU32<256>;
-    // 好友备注字节上限 / per-friend remark byte cap.
-    type MaxFriendRemarkLen = ConstU32<64>;
-    // 好友分组标签字节上限 / per-friend group-label byte cap.
-    type MaxFriendGroupLen = ConstU32<64>;
     // 平台合规：Root 或技术委员会多数可禁言账号、处理举报。
     // Compliance: Root or technical-committee majority can mute / resolve reports.
     type GovernanceOrigin = RootOrTechnicalMajority;

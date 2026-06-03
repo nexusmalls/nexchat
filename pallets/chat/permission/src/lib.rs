@@ -6,15 +6,29 @@
 //!
 //! 本模块提供以下功能：
 //! - 用户隐私设置管理（权限级别、黑白名单）
-//! - 好友关系管理
 //! - 场景授权管理（多场景共存）
 //! - 聊天权限检查
+//! - 聊天能力撤销纪元（链下能力令牌的链上撤销锚点）
+//!
+//! ## 隐私：联系人/好友已移出链上 / Privacy: contacts moved off-chain
+//!
+//! EN: The on-chain bidirectional friend graph (`Friendships` + friend requests
+//! + remarks/groups) was removed so that *who is connected to whom* is no longer
+//! publicly observable on-chain. Contacts and the "may DM me" right are now
+//! receiver-signed **chat capability tokens** stored off-chain (encrypted contact
+//! vault). The chain keeps only a per-account [`CapabilityEpoch`] revocation
+//! counter (bumped via `bump_capability_epoch`) so relays/clients can invalidate
+//! stale capabilities. CN: 链上双向好友图谱（`Friendships` + 好友申请 + 备注/分组）
+//! 已删除，使「谁与谁建立联系」不再在链上公开可见。联系人与「允许私聊我」的权利现以
+//! 链下、由接收方签名的**聊天能力令牌**承载（加密通讯录保险库）。链上仅保留每账户
+//! 的 [`CapabilityEpoch`] 撤销计数器（经 `bump_capability_epoch` 递增），供 relay/
+//! 客户端使过期能力失效。
 //!
 //! ## 核心概念
 //!
 //! - **聊天会话**: 两个用户之间的通信通道，唯一
 //! - **场景授权**: 为什么这两个用户可以聊天的原因，可以有多个
-//! - **权限判定**: 黑名单 → 好友 → 场景授权 → 隐私设置
+//! - **权限判定**: 平台禁言 → 黑名单 → 场景授权 → 隐私设置
 //!
 //! ## 使用示例
 //!
@@ -81,26 +95,6 @@ pub mod pallet {
         #[pallet::constant]
         type MaxScenesPerPair: Get<u32>;
 
-        /// EN: Max pending *incoming* friend requests per account (anti-spam bound).
-        /// CN: 单账户最大待处理**收件**好友申请数（防刷上限）。
-        #[pallet::constant]
-        type MaxFriendRequests: Get<u32>;
-
-        /// EN: Max length (bytes) of the optional greeting attached to a friend
-        /// request. CN: 好友申请可选附言（验证消息）的字节上限。
-        #[pallet::constant]
-        type MaxFriendRequestMsgLen: Get<u32>;
-
-        /// EN: Max length (bytes) of a per-friend remark (alias/note).
-        /// CN: 单个好友备注（别名/备忘）的字节上限。
-        #[pallet::constant]
-        type MaxFriendRemarkLen: Get<u32>;
-
-        /// EN: Max length (bytes) of a per-friend group/category label.
-        /// CN: 单个好友分组（标签）的字节上限。
-        #[pallet::constant]
-        type MaxFriendGroupLen: Get<u32>;
-
         /// EN: Privileged origin (Root / governance) for platform-compliance
         /// actions: muting accounts and resolving reports. CN: 平台合规动作
         /// （禁言账号、处理举报）的特权来源（Root / 治理）。
@@ -142,90 +136,24 @@ pub mod pallet {
         ValueQuery,
     >;
 
-    /// 好友关系存储
-    ///
-    /// 双向存储好友关系，值为建立好友关系的区块号。
-    /// 查询时需要检查双向是否都存在。
+    /// EN: Per-account chat-capability revocation epoch (a monotonic counter).
+    /// The on-chain friend graph has been removed for privacy: contacts and the
+    /// "may DM me" right now live entirely off-chain as receiver-signed chat
+    /// capability tokens (see `CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md`). The chain's
+    /// only role is to publish this epoch so off-chain relays/clients can reject
+    /// capabilities issued before the latest `bump_capability_epoch` (e.g. after
+    /// removing a contact or rotating a device). A token is fresh iff its embedded
+    /// epoch equals `CapabilityEpoch[issuer]`.
+    /// CN: 每账户的聊天能力撤销纪元（单调递增计数器）。为隐私起见已删除链上好友图谱：
+    /// 联系人与「允许向我私聊」的权利现完全以链下、由接收方签名的聊天能力令牌承载
+    /// （见 `CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md`）。链上唯一职责是公布该纪元，
+    /// 供链下 relay/客户端拒绝在最近一次 `bump_capability_epoch`（如删除联系人或
+    /// 更换设备）之前签发的能力令牌。令牌新鲜当且仅当其内嵌纪元等于
+    /// `CapabilityEpoch[签发者]`。
     #[pallet::storage]
-    #[pallet::getter(fn friendships)]
-    pub type Friendships<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        Blake2_128Concat,
-        T::AccountId,
-        BlockNumberFor<T>,
-        OptionQuery,
-    >;
-
-    /// EN: Pending friend requests, keyed by (target, requester) so a user's
-    /// **incoming** requests are an efficient prefix scan. Value = requested block.
-    /// CN: 待处理好友申请，按 (接收方, 发起方) 存储，使某用户的**收件**申请可前缀扫描。
-    /// 值为申请区块号。好友关系只能经此「申请 → 同意」握手建立（修复旧版
-    /// `add_friend` 单方面即建立双向好友、绕过 `FriendsOnly` 隐私闸门的缺口）。
-    #[pallet::storage]
-    #[pallet::getter(fn friend_requests)]
-    pub type FriendRequests<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId, // target / 接收方
-        Blake2_128Concat,
-        T::AccountId, // requester / 发起方
-        BlockNumberFor<T>,
-        OptionQuery,
-    >;
-
-    /// EN: Count of pending incoming friend requests per account (bounds `FriendRequests`).
-    /// CN: 单账户待处理收件好友申请计数（约束 `FriendRequests`，防刷）。
-    #[pallet::storage]
-    #[pallet::getter(fn incoming_friend_request_count)]
-    pub type IncomingFriendRequestCount<T: Config> =
+    #[pallet::getter(fn capability_epoch)]
+    pub type CapabilityEpoch<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, u32, ValueQuery>;
-
-    /// EN: Optional greeting ("verification message") attached to a pending
-    /// friend request, keyed identically to `FriendRequests` (target, requester).
-    /// Cleared together with the request on accept / reject / cancel / mutual
-    /// fast-path. CN: 待处理好友申请附带的可选附言（验证消息），键与 `FriendRequests`
-    /// 一致（接收方, 发起方）。在同意 / 拒绝 / 撤回 / 双向快捷路径时随申请一并清除。
-    #[pallet::storage]
-    pub type FriendRequestMsg<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId, // target / 接收方
-        Blake2_128Concat,
-        T::AccountId, // requester / 发起方
-        BoundedVec<u8, T::MaxFriendRequestMsgLen>,
-        OptionQuery,
-    >;
-
-    /// EN: Per-owner remark (alias/note) for a friend: `(owner, friend) -> bytes`.
-    /// Private to `owner`; cleared when the friendship is removed. CN: 好友备注
-    /// （别名/备忘），`(拥有者, 好友) -> 字节`，仅属于 `owner`；解除好友时清除。
-    #[pallet::storage]
-    pub type FriendRemark<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId, // owner / 拥有者
-        Blake2_128Concat,
-        T::AccountId, // friend / 好友
-        BoundedVec<u8, T::MaxFriendRemarkLen>,
-        OptionQuery,
-    >;
-
-    /// EN: Per-owner group/category label for a friend: `(owner, friend) -> bytes`.
-    /// Lightweight single-tag grouping (a friend belongs to at most one label);
-    /// cleared when the friendship is removed. CN: 好友分组（标签），`(拥有者, 好友)
-    /// -> 字节`，轻量单标签分组（一个好友至多属于一个分组）；解除好友时清除。
-    #[pallet::storage]
-    pub type FriendGroupTag<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId, // owner / 拥有者
-        Blake2_128Concat,
-        T::AccountId, // friend / 好友
-        BoundedVec<u8, T::MaxFriendGroupLen>,
-        OptionQuery,
-    >;
 
     /// EN: Accounts platform-muted by governance: `account -> MuteStatus`.
     /// A muted sender is denied by `check_permission` (`DeniedSenderMuted`).
@@ -293,44 +221,12 @@ pub mod pallet {
             unblocked: T::AccountId,
         },
 
-        /// 好友关系已建立
-        FriendshipCreated {
-            user1: T::AccountId,
-            user2: T::AccountId,
-        },
-
-        /// 好友关系已解除
-        FriendshipRemoved {
-            user1: T::AccountId,
-            user2: T::AccountId,
-        },
-
-        /// EN: A friend request was sent (awaiting the target's consent).
-        /// CN: 已发送好友申请（等待接收方同意）。
-        FriendRequestSent {
-            from: T::AccountId,
-            to: T::AccountId,
-        },
-
-        /// EN: The target accepted; a bidirectional friendship is now established.
-        /// CN: 接收方已同意，双向好友关系建立。
-        FriendRequestAccepted {
-            requester: T::AccountId,
-            target: T::AccountId,
-        },
-
-        /// EN: The target rejected the request.
-        /// CN: 接收方已拒绝该申请。
-        FriendRequestRejected {
-            requester: T::AccountId,
-            target: T::AccountId,
-        },
-
-        /// EN: The requester withdrew their own pending request.
-        /// CN: 发起方撤回了自己的待处理申请。
-        FriendRequestCancelled {
-            from: T::AccountId,
-            to: T::AccountId,
+        /// EN: An account advanced its chat-capability revocation epoch, making all
+        /// previously issued chat capability tokens (with the old epoch) stale.
+        /// CN: 账户递增了聊天能力撤销纪元，使其此前签发的（旧纪元）能力令牌全部失效。
+        CapabilityEpochBumped {
+            who: T::AccountId,
+            new_epoch: u32,
         },
 
         /// 场景授权已授予
@@ -370,13 +266,6 @@ pub mod pallet {
         UserRemovedFromWhitelist {
             owner: T::AccountId,
             user: T::AccountId,
-        },
-
-        /// EN: A friend remark/group label was updated (or cleared) by `who`.
-        /// CN: `who` 更新（或清除）了对某好友的备注/分组。
-        FriendMetaUpdated {
-            who: T::AccountId,
-            friend: T::AccountId,
         },
 
         /// EN: An account was platform-muted by governance. CN: 账户被治理平台级禁言。
@@ -423,32 +312,6 @@ pub mod pallet {
 
         /// 不能添加自己
         CannotAddSelf,
-
-        /// 好友关系已存在
-        FriendshipAlreadyExists,
-
-        /// 好友关系不存在
-        FriendshipNotFound,
-
-        /// EN: A pending friend request from you to this target already exists.
-        /// CN: 你已有一条发往该接收方的待处理好友申请。
-        FriendRequestAlreadyExists,
-
-        /// EN: No matching pending friend request was found.
-        /// CN: 未找到匹配的待处理好友申请。
-        FriendRequestNotFound,
-
-        /// EN: The target has too many pending incoming requests (anti-spam bound hit).
-        /// CN: 接收方待处理收件申请已达上限（防刷）。
-        TooManyFriendRequests,
-
-        /// EN: The target has blocked you; the request is refused.
-        /// CN: 你已被接收方拉黑，申请被拒。
-        BlockedByTarget,
-
-        /// EN: The target is not accepting friend requests (privacy level = Closed).
-        /// CN: 接收方未开放好友申请（隐私级别为 Closed）。
-        RequestsNotAccepted,
 
         /// 场景授权数量已达上限
         TooManyScenes,
@@ -581,171 +444,32 @@ pub mod pallet {
             Ok(())
         }
 
-        // NOTE / 注意：`call_index(4)` 原为 `add_friend`（单方面即建立双向好友），
-        // 因其可被任意账户用来**绕过对方 `FriendsOnly`/隐私闸门**而移除（审计：单向授权缺口）。
-        // 好友关系现在只能经 `request_friend` → `accept_friend` 的双方同意握手建立。
-        // 索引 4 刻意留空，避免复用造成的语义混淆。
-        // `add_friend` (unilateral) was REMOVED: it let anyone bypass the target's
-        // `FriendsOnly` privacy gate. Friendships now require mutual consent via
-        // `request_friend` → `accept_friend`. Index 4 is left vacant on purpose.
+        // NOTE / 注意：旧版好友握手 extrinsics（`add_friend`/`request_friend`/
+        // `accept_friend`/`reject_friend`/`cancel_friend_request`/`remove_friend`/
+        // `set_friend_meta`，原 call_index 4/8/9/10/11/5/12）已删除：链上好友图谱
+        // 整体移出，联系人改由链下、接收方签名的能力令牌承载。索引 4/5/8/9/10/11/12
+        // 刻意留空，避免复用造成语义混淆。
+        // The old friend-handshake extrinsics were REMOVED: the on-chain friend
+        // graph is gone and contacts now live off-chain as receiver-signed
+        // capability tokens. Indices 4/5/8/9/10/11/12 are left vacant on purpose.
 
-        /// EN: Send a friend request to `target` (awaits the target's consent).
-        /// If `target` has already sent you a request, the friendship is
-        /// established immediately (mutual request fast-path).
-        /// CN: 向 `target` 发送好友申请（等待对方同意）。若对方此前已向你发过申请，
-        /// 则立即建立好友关系（双向申请快捷路径）。
-        ///
-        /// 拒绝条件：自己、已是好友、已有同向待处理申请、被对方拉黑、对方 `Closed`、
-        /// 或对方收件申请已达上限。
+        /// EN: Advance the caller's chat-capability revocation epoch by one. This
+        /// invalidates every chat capability token the caller previously signed
+        /// (their embedded epoch no longer matches [`CapabilityEpoch`]), so
+        /// off-chain relays/clients will reject DMs authorized by stale tokens.
+        /// Use after removing a contact, rotating a device, or a suspected leak.
+        /// CN: 将调用者的聊天能力撤销纪元加一。此操作使调用者此前签发的所有聊天能力
+        /// 令牌失效（其内嵌纪元不再与 [`CapabilityEpoch`] 相符），链下 relay/客户端
+        /// 将拒绝凭过期令牌授权的私聊。删除联系人、更换设备或疑似泄露后使用。
         #[pallet::call_index(8)]
-        #[pallet::weight(T::WeightInfo::request_friend())]
-        pub fn request_friend(
-            origin: OriginFor<T>,
-            target: T::AccountId,
-            message: Option<Vec<u8>>,
-        ) -> DispatchResult {
+        #[pallet::weight(T::WeightInfo::bump_capability_epoch())]
+        pub fn bump_capability_epoch(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            ensure!(who != target, Error::<T>::CannotAddSelf);
-            ensure!(
-                Friendships::<T>::get(&who, &target).is_none(),
-                Error::<T>::FriendshipAlreadyExists
-            );
-
-            // 提前校验附言长度，避免无效写入 / validate greeting length up-front.
-            let greeting: Option<BoundedVec<u8, T::MaxFriendRequestMsgLen>> = match message {
-                Some(m) => Some(m.try_into().map_err(|_| Error::<T>::MetadataTooLong)?),
-                None => None,
-            };
-
-            // 双向申请快捷路径：对方此前已向我发过申请（key = (me=target, requester=other)）。
-            // Mutual fast-path: target already requested me earlier.
-            if FriendRequests::<T>::take(&who, &target).is_some() {
-                Self::decrement_incoming_requests(&who);
-                // 申请被立即消费，连带清理其附言 / request consumed now; clear its greeting.
-                FriendRequestMsg::<T>::remove(&who, &target);
-                Self::establish_friendship(&target, &who);
-                Self::deposit_event(Event::FriendRequestAccepted {
-                    requester: target,
-                    target: who,
-                });
-                return Ok(());
-            }
-
-            // 常规路径：检查我是否已向对方发过、是否被拉黑 / 对方是否关闭、上限。
-            ensure!(
-                FriendRequests::<T>::get(&target, &who).is_none(),
-                Error::<T>::FriendRequestAlreadyExists
-            );
-
-            let target_settings = PrivacySettingsOf::<T>::get(&target);
-            ensure!(
-                !target_settings.block_list.contains(&who),
-                Error::<T>::BlockedByTarget
-            );
-            ensure!(
-                target_settings.permission_level != ChatPermissionLevel::Closed,
-                Error::<T>::RequestsNotAccepted
-            );
-
-            let cnt = IncomingFriendRequestCount::<T>::get(&target);
-            ensure!(cnt < T::MaxFriendRequests::get(), Error::<T>::TooManyFriendRequests);
-
-            let now = frame_system::Pallet::<T>::block_number();
-            FriendRequests::<T>::insert(&target, &who, now);
-            if let Some(greeting) = greeting {
-                FriendRequestMsg::<T>::insert(&target, &who, greeting);
-            }
-            IncomingFriendRequestCount::<T>::insert(&target, cnt.saturating_add(1));
-
-            Self::deposit_event(Event::FriendRequestSent { from: who, to: target });
-            Ok(())
-        }
-
-        /// EN: Accept a pending friend request from `requester`, establishing a
-        /// bidirectional friendship. Caller is the target of that request.
-        /// CN: 同意来自 `requester` 的好友申请，建立双向好友关系。调用者为该申请的接收方。
-        #[pallet::call_index(9)]
-        #[pallet::weight(T::WeightInfo::accept_friend())]
-        pub fn accept_friend(origin: OriginFor<T>, requester: T::AccountId) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            ensure!(
-                FriendRequests::<T>::take(&who, &requester).is_some(),
-                Error::<T>::FriendRequestNotFound
-            );
-            Self::decrement_incoming_requests(&who);
-            FriendRequestMsg::<T>::remove(&who, &requester);
-            Self::establish_friendship(&requester, &who);
-
-            Self::deposit_event(Event::FriendRequestAccepted {
-                requester,
-                target: who,
+            let new_epoch = CapabilityEpoch::<T>::mutate(&who, |e| {
+                *e = e.saturating_add(1);
+                *e
             });
-            Ok(())
-        }
-
-        /// EN: Reject a pending friend request from `requester` (caller is target).
-        /// CN: 拒绝来自 `requester` 的好友申请（调用者为接收方）。
-        #[pallet::call_index(10)]
-        #[pallet::weight(T::WeightInfo::reject_friend())]
-        pub fn reject_friend(origin: OriginFor<T>, requester: T::AccountId) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            ensure!(
-                FriendRequests::<T>::take(&who, &requester).is_some(),
-                Error::<T>::FriendRequestNotFound
-            );
-            Self::decrement_incoming_requests(&who);
-            FriendRequestMsg::<T>::remove(&who, &requester);
-
-            Self::deposit_event(Event::FriendRequestRejected {
-                requester,
-                target: who,
-            });
-            Ok(())
-        }
-
-        /// EN: Withdraw your own pending request previously sent to `target`.
-        /// CN: 撤回自己此前发往 `target` 的待处理申请。
-        #[pallet::call_index(11)]
-        #[pallet::weight(T::WeightInfo::cancel_friend_request())]
-        pub fn cancel_friend_request(origin: OriginFor<T>, target: T::AccountId) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            ensure!(
-                FriendRequests::<T>::take(&target, &who).is_some(),
-                Error::<T>::FriendRequestNotFound
-            );
-            Self::decrement_incoming_requests(&target);
-            FriendRequestMsg::<T>::remove(&target, &who);
-
-            Self::deposit_event(Event::FriendRequestCancelled { from: who, to: target });
-            Ok(())
-        }
-
-        /// 删除好友
-        ///
-        /// 解除双向好友关系。
-        #[pallet::call_index(5)]
-        #[pallet::weight(T::WeightInfo::remove_friend())]
-        pub fn remove_friend(origin: OriginFor<T>, friend: T::AccountId) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            ensure!(
-                Friendships::<T>::get(&who, &friend).is_some(),
-                Error::<T>::FriendshipNotFound
-            );
-
-            // 双向移除好友关系
-            Friendships::<T>::remove(&who, &friend);
-            Friendships::<T>::remove(&friend, &who);
-            // 清理双方对彼此的备注/分组，避免悬挂元数据。
-            // Clear both sides' remark/group for each other to avoid dangling meta.
-            FriendRemark::<T>::remove(&who, &friend);
-            FriendRemark::<T>::remove(&friend, &who);
-            FriendGroupTag::<T>::remove(&who, &friend);
-            FriendGroupTag::<T>::remove(&friend, &who);
-
-            Self::deposit_event(Event::FriendshipRemoved {
-                user1: who,
-                user2: friend,
-            });
+            Self::deposit_event(Event::CapabilityEpochBumped { who, new_epoch });
             Ok(())
         }
 
@@ -793,48 +517,6 @@ pub mod pallet {
             })?;
 
             Self::deposit_event(Event::UserRemovedFromWhitelist { owner: who, user });
-            Ok(())
-        }
-
-        /// EN: Set (or clear with `None`) the caller's private remark and/or group
-        /// label for an existing `friend`. Both fields are independent: pass
-        /// `Some(bytes)` to set, `None` to leave a field unchanged is NOT the
-        /// semantics — `None` CLEARS that field. Caller must already be friends
-        /// with `friend`. CN: 设置（或以 `None` 清除）调用者对现有 `friend` 的私有
-        /// 备注与/或分组标签。两字段独立：`Some(bytes)` 为设置，`None` 为**清除**该字段
-        /// （非"保持不变"）。调用者须已是该好友。
-        #[pallet::call_index(12)]
-        #[pallet::weight(T::WeightInfo::set_friend_meta())]
-        pub fn set_friend_meta(
-            origin: OriginFor<T>,
-            friend: T::AccountId,
-            remark: Option<Vec<u8>>,
-            group: Option<Vec<u8>>,
-        ) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            ensure!(
-                Friendships::<T>::get(&who, &friend).is_some(),
-                Error::<T>::FriendshipNotFound
-            );
-
-            match remark {
-                Some(r) => {
-                    let bounded: BoundedVec<u8, T::MaxFriendRemarkLen> =
-                        r.try_into().map_err(|_| Error::<T>::MetadataTooLong)?;
-                    FriendRemark::<T>::insert(&who, &friend, bounded);
-                }
-                None => FriendRemark::<T>::remove(&who, &friend),
-            }
-            match group {
-                Some(g) => {
-                    let bounded: BoundedVec<u8, T::MaxFriendGroupLen> =
-                        g.try_into().map_err(|_| Error::<T>::MetadataTooLong)?;
-                    FriendGroupTag::<T>::insert(&who, &friend, bounded);
-                }
-                None => FriendGroupTag::<T>::remove(&who, &friend),
-            }
-
-            Self::deposit_event(Event::FriendMetaUpdated { who, friend });
             Ok(())
         }
 
@@ -951,70 +633,6 @@ pub mod pallet {
             }
         }
 
-        /// EN: Establish a bidirectional friendship and emit `FriendshipCreated`.
-        /// Idempotent on the storage side (re-insert overwrites the block number).
-        /// CN: 建立双向好友关系并发出 `FriendshipCreated`（重复写入仅覆盖区块号）。
-        fn establish_friendship(user1: &T::AccountId, user2: &T::AccountId) {
-            let now = frame_system::Pallet::<T>::block_number();
-            Friendships::<T>::insert(user1, user2, now);
-            Friendships::<T>::insert(user2, user1, now);
-            Self::deposit_event(Event::FriendshipCreated {
-                user1: user1.clone(),
-                user2: user2.clone(),
-            });
-        }
-
-        /// EN: Saturating-decrement the target's pending incoming-request counter.
-        /// CN: 对接收方的待处理收件申请计数做饱和减一。
-        fn decrement_incoming_requests(target: &T::AccountId) {
-            IncomingFriendRequestCount::<T>::mutate(target, |c| *c = c.saturating_sub(1));
-        }
-
-        /// EN: List all friends of `who` (prefix scan over `Friendships`).
-        /// CN: 列出 `who` 的所有好友（对 `Friendships` 做前缀扫描）。
-        pub fn list_friends(who: &T::AccountId) -> Vec<T::AccountId> {
-            Friendships::<T>::iter_prefix(who).map(|(other, _)| other).collect()
-        }
-
-        /// EN: List accounts that have a pending friend request awaiting `who`'s
-        /// consent (efficient prefix scan, since `FriendRequests` is keyed by target).
-        /// CN: 列出待 `who` 处理（同意/拒绝）的好友申请发起方（前缀扫描，键以接收方在前）。
-        pub fn list_incoming_friend_requests(who: &T::AccountId) -> Vec<T::AccountId> {
-            FriendRequests::<T>::iter_prefix(who).map(|(requester, _)| requester).collect()
-        }
-
-        /// EN: Like `list_incoming_friend_requests`, but each entry also carries the
-        /// optional greeting bytes attached to the request (empty when none).
-        /// CN: 同 `list_incoming_friend_requests`，但每项附带该申请的可选附言字节（无则为空）。
-        pub fn list_incoming_friend_requests_detailed(
-            who: &T::AccountId,
-        ) -> Vec<(T::AccountId, Vec<u8>)> {
-            FriendRequests::<T>::iter_prefix(who)
-                .map(|(requester, _)| {
-                    let msg = FriendRequestMsg::<T>::get(who, &requester)
-                        .map(|m| m.into_inner())
-                        .unwrap_or_default();
-                    (requester, msg)
-                })
-                .collect()
-        }
-
-        /// EN: Read `owner`'s private `(remark, group)` labels for `friend`
-        /// (empty bytes when unset). CN: 读取 `owner` 对 `friend` 的私有
-        /// `(备注, 分组)` 标签（未设置则为空字节）。
-        pub fn get_friend_meta(
-            owner: &T::AccountId,
-            friend: &T::AccountId,
-        ) -> (Vec<u8>, Vec<u8>) {
-            let remark = FriendRemark::<T>::get(owner, friend)
-                .map(|m| m.into_inner())
-                .unwrap_or_default();
-            let group = FriendGroupTag::<T>::get(owner, friend)
-                .map(|m| m.into_inner())
-                .unwrap_or_default();
-            (remark, group)
-        }
-
         /// EN: Whether `who` is currently platform-muted by governance (an
         /// indefinite mute, or a timed mute not yet expired). Read-only; does not
         /// lazily clean expired entries. CN: `who` 当前是否被治理平台级禁言（无限期，
@@ -1029,13 +647,17 @@ pub mod pallet {
             }
         }
 
-        /// 检查聊天权限
-        ///
-        /// 按以下优先级检查权限：
-        /// 1. 黑名单检查（最高优先级拒绝）
-        /// 2. 好友关系检查
-        /// 3. 场景授权检查
-        /// 4. 隐私设置检查
+        /// EN: Check whether `sender` may chat with `receiver`. Priority:
+        /// 1. platform mute (highest-priority deny), 2. receiver block list,
+        /// 3. valid scene authorization, 4. receiver privacy level. The on-chain
+        /// friend graph was removed: the social "contact" gate (`FriendsOnly`) is
+        /// now enforced off-chain via capability tokens, so on-chain a stranger
+        /// without a scene authorization or whitelist entry is denied
+        /// (`DeniedRequiresFriend`). CN: 检查 `sender` 是否可与 `receiver` 聊天。
+        /// 优先级：1. 平台禁言（最高优先级拒绝），2. 接收方黑名单，3. 有效场景授权，
+        /// 4. 接收方隐私级别。链上好友图谱已删除：社交「联系人」闸门（`FriendsOnly`）
+        /// 改由链下能力令牌强制，故链上对无场景授权且不在白名单的陌生人一律拒绝
+        /// （`DeniedRequiresFriend`）。
         pub fn check_permission(
             sender: &T::AccountId,
             receiver: &T::AccountId,
@@ -1054,12 +676,7 @@ pub mod pallet {
                 return PermissionResult::DeniedBlocked;
             }
 
-            // 2. 检查好友关系
-            if Friendships::<T>::get(sender, receiver).is_some() {
-                return PermissionResult::AllowedByFriendship;
-            }
-
-            // 3. 检查场景授权
+            // 2. 检查场景授权
             let (user1, user2) = Self::sorted_pair(sender, receiver);
             let authorizations = SceneAuthorizations::<T>::get(&user1, &user2);
 
@@ -1084,7 +701,7 @@ pub mod pallet {
                 return PermissionResult::AllowedByScene(valid_scenes);
             }
 
-            // 4. 根据隐私设置判断
+            // 3. 根据隐私设置判断
             match receiver_settings.permission_level {
                 ChatPermissionLevel::Open => PermissionResult::Allowed,
                 ChatPermissionLevel::FriendsOnly => PermissionResult::DeniedRequiresFriend,
@@ -1357,14 +974,6 @@ pub mod pallet {
     impl<T: Config> ChatPermissionChecker<T::AccountId> for Pallet<T> {
         fn can_send_message(sender: &T::AccountId, receiver: &T::AccountId) -> bool {
             Self::check_permission(sender, receiver).is_allowed()
-        }
-    }
-
-    // ==================== 实现 FriendshipChecker Trait ====================
-
-    impl<T: Config> FriendshipChecker<T::AccountId> for Pallet<T> {
-        fn is_friend(user1: &T::AccountId, user2: &T::AccountId) -> bool {
-            Friendships::<T>::get(user1, user2).is_some()
         }
     }
 }

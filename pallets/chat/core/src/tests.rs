@@ -26,7 +26,7 @@ fn test_send_message_works() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			cid.clone(),
-			0, // Text
+			4, // System（人类消息已迁链下，链上仅 System）
 			None
 		));
 
@@ -35,7 +35,7 @@ fn test_send_message_works() {
 		assert_eq!(msg.sender, ALICE);
 		assert_eq!(msg.receiver, BOB);
 		assert_eq!(msg.content_cid.to_vec(), cid);
-		assert_eq!(msg.msg_type, MessageType::Text);
+		assert_eq!(msg.msg_type, MessageType::System);
 		assert_eq!(msg.is_read, false);
 		assert_eq!(msg.is_deleted_by_sender, false);
 		assert_eq!(msg.is_deleted_by_receiver, false);
@@ -66,7 +66,7 @@ fn test_send_message_rejects_empty_cid() {
 	// 现在只做格式 sanity（非空）；加密交由客户端 MLS E2EE 保证。
 	new_test_ext().execute_with(|| {
 		assert_noop!(
-			Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, Vec::new(), 0, None),
+			Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, Vec::new(), 4, None),
 			Error::<Test>::InvalidCid
 		);
 	});
@@ -82,7 +82,7 @@ fn test_send_message_accepts_standard_cidv0() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			standard_cidv0,
-			0,
+			4,
 			None
 		));
 	});
@@ -99,7 +99,7 @@ fn test_send_message_rejects_cid_too_long() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				too_long_cid,
-				0,
+				4,
 				None
 			),
 			Error::<Test>::CidTooLong
@@ -115,7 +115,7 @@ fn test_multiple_messages_same_session() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -126,7 +126,7 @@ fn test_multiple_messages_same_session() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(2),
-			0,
+			4,
 			Some(session_id)
 		));
 
@@ -135,7 +135,7 @@ fn test_multiple_messages_same_session() {
 			RuntimeOrigin::signed(BOB),
 			ALICE,
 			encrypted_cid(3),
-			0,
+			4,
 			Some(session_id)
 		));
 
@@ -165,7 +165,7 @@ fn test_send_message_rejects_foreign_session_neither_party() {
 			RuntimeOrigin::signed(BOB),
 			CHARLIE,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 		let foreign_session = Chat::get_message(0).unwrap().session_id;
@@ -176,7 +176,7 @@ fn test_send_message_rejects_foreign_session_neither_party() {
 				RuntimeOrigin::signed(ALICE),
 				DAVE,
 				encrypted_cid(2),
-				0,
+				4,
 				Some(foreign_session)
 			),
 			Error::<Test>::NotSessionParticipant
@@ -192,7 +192,7 @@ fn test_send_message_rejects_session_with_only_sender() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 		let session_ab = Chat::get_message(0).unwrap().session_id;
@@ -204,7 +204,7 @@ fn test_send_message_rejects_session_with_only_sender() {
 				RuntimeOrigin::signed(ALICE),
 				CHARLIE,
 				encrypted_cid(2),
-				0,
+				4,
 				Some(session_ab)
 			),
 			Error::<Test>::NotSessionParticipant
@@ -222,7 +222,7 @@ fn test_send_message_rejects_nonexistent_session() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(1),
-				0,
+				4,
 				Some(bogus)
 			),
 			Error::<Test>::SessionNotFound
@@ -238,7 +238,7 @@ fn test_send_message_accepts_own_session() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 		let session_ab = Chat::get_message(0).unwrap().session_id;
@@ -248,7 +248,7 @@ fn test_send_message_accepts_own_session() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(2),
-			0,
+			4,
 			Some(session_ab)
 		));
 
@@ -257,7 +257,7 @@ fn test_send_message_accepts_own_session() {
 			RuntimeOrigin::signed(BOB),
 			ALICE,
 			encrypted_cid(3),
-			0,
+			4,
 			Some(session_ab)
 		));
 
@@ -321,7 +321,7 @@ fn test_mark_as_read_works() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -354,7 +354,7 @@ fn test_mark_as_read_rejects_non_receiver() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -375,7 +375,7 @@ fn test_mark_batch_as_read_works() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 		}
@@ -418,7 +418,7 @@ fn test_mark_session_as_read_works() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 		}
@@ -453,7 +453,7 @@ fn test_delete_message_by_sender() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -483,7 +483,7 @@ fn test_delete_message_by_receiver() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -505,7 +505,7 @@ fn test_delete_message_rejects_unauthorized() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -529,7 +529,7 @@ fn test_list_sessions_works() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -538,7 +538,7 @@ fn test_list_sessions_works() {
 			RuntimeOrigin::signed(ALICE),
 			CHARLIE,
 			encrypted_cid(2),
-			0,
+			4,
 			None
 		));
 
@@ -560,7 +560,7 @@ fn test_archive_session_works() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -594,7 +594,7 @@ fn test_archive_session_rejects_non_participant() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -621,7 +621,7 @@ fn test_get_message_works() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			cid.clone(),
-			0,
+			4,
 			None
 		));
 
@@ -650,7 +650,7 @@ fn test_list_messages_by_session_works() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 		}
@@ -682,7 +682,7 @@ fn test_list_messages_pagination() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 		}
@@ -716,14 +716,14 @@ fn test_get_unread_count_works() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 		assert_ok!(Chat::send_message(
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(2),
-			0,
+			4,
 			None
 		));
 
@@ -732,7 +732,7 @@ fn test_get_unread_count_works() {
 			RuntimeOrigin::signed(CHARLIE),
 			BOB,
 			encrypted_cid(3),
-			0,
+			4,
 			None
 		));
 
@@ -753,7 +753,7 @@ fn test_get_session_works() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -777,49 +777,25 @@ fn test_get_session_works() {
 // ============================================================================
 
 #[test]
-fn test_different_message_types() {
+fn test_send_message_rejects_human_types_onchain() {
 	new_test_ext().execute_with(|| {
-		// 文本消息
-		assert_ok!(Chat::send_message(
-			RuntimeOrigin::signed(ALICE),
-			BOB,
-			encrypted_cid(1),
-			0, // Text
-			None
-		));
-		assert_eq!(Chat::get_message(0).unwrap().msg_type, MessageType::Text);
+		// C 方案：人类消息（Text/Image/File/Voice，含未知类型）一律拒绝上链，
+		// 改走链下 MLS + relay。仅 System（code 4）可经 send_message 落库。
+		// Human types (and unknown) are rejected on-chain; only System is accepted.
+		for code in [0u8, 1, 2, 3, 99] {
+			assert_noop!(
+				Chat::send_message(
+					RuntimeOrigin::signed(ALICE),
+					BOB,
+					encrypted_cid(1),
+					code,
+					None
+				),
+				Error::<Test>::HumanMessagesOffChain
+			);
+		}
 
-		// 图片消息
-		assert_ok!(Chat::send_message(
-			RuntimeOrigin::signed(ALICE),
-			BOB,
-			encrypted_cid(2),
-			1, // Image
-			None
-		));
-		assert_eq!(Chat::get_message(1).unwrap().msg_type, MessageType::Image);
-
-		// 文件消息
-		assert_ok!(Chat::send_message(
-			RuntimeOrigin::signed(ALICE),
-			BOB,
-			encrypted_cid(3),
-			2, // File
-			None
-		));
-		assert_eq!(Chat::get_message(2).unwrap().msg_type, MessageType::File);
-
-		// 语音消息
-		assert_ok!(Chat::send_message(
-			RuntimeOrigin::signed(ALICE),
-			BOB,
-			encrypted_cid(4),
-			3, // Voice
-			None
-		));
-		assert_eq!(Chat::get_message(3).unwrap().msg_type, MessageType::Voice);
-
-		// 系统消息
+		// System（code 4）被接受并落库。/ System (code 4) is accepted and stored.
 		assert_ok!(Chat::send_message(
 			RuntimeOrigin::signed(ALICE),
 			BOB,
@@ -827,17 +803,7 @@ fn test_different_message_types() {
 			4, // System
 			None
 		));
-		assert_eq!(Chat::get_message(4).unwrap().msg_type, MessageType::System);
-
-		// 未知类型默认为Text
-		assert_ok!(Chat::send_message(
-			RuntimeOrigin::signed(ALICE),
-			BOB,
-			encrypted_cid(6),
-			99, // Unknown
-			None
-		));
-		assert_eq!(Chat::get_message(5).unwrap().msg_type, MessageType::Text);
+		assert_eq!(Chat::get_message(0).unwrap().msg_type, MessageType::System);
 	});
 }
 
@@ -853,7 +819,7 @@ fn test_session_id_deterministic() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 		let session_id1 = Chat::get_message(0).unwrap().session_id;
@@ -863,7 +829,7 @@ fn test_session_id_deterministic() {
 			RuntimeOrigin::signed(BOB),
 			ALICE,
 			encrypted_cid(2),
-			0,
+			4,
 			None
 		));
 		let session_id2 = Chat::get_message(1).unwrap().session_id;
@@ -885,7 +851,7 @@ fn test_duplicate_mark_as_read() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -919,7 +885,7 @@ fn test_send_message_denied_by_chat_permission() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(1),
-				0,
+				4,
 				None
 			),
 			Error::<Test>::ChatNotAuthorized
@@ -935,7 +901,7 @@ fn test_send_message_allowed_when_permission_grants() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 		assert!(Chat::get_message(0).is_some());
@@ -993,7 +959,7 @@ fn test_rate_limit_works() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 		}
@@ -1004,7 +970,7 @@ fn test_rate_limit_works() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(11),
-				0,
+				4,
 				None
 			),
 			Error::<Test>::RateLimitExceeded
@@ -1021,7 +987,7 @@ fn test_rate_limit_resets_after_window() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 		}
@@ -1032,7 +998,7 @@ fn test_rate_limit_resets_after_window() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(11),
-				0,
+				4,
 				None
 			),
 			Error::<Test>::RateLimitExceeded
@@ -1046,7 +1012,7 @@ fn test_rate_limit_resets_after_window() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(11),
-			0,
+			4,
 			None
 		));
 	});
@@ -1064,7 +1030,7 @@ fn test_delete_message_sender_and_receiver_separate() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
-			0,
+			4,
 			None
 		));
 
@@ -1107,7 +1073,7 @@ fn test_unlimited_messages_in_session() {
 					RuntimeOrigin::signed(ALICE),
 					BOB,
 					encrypted_cid((total_sent % 256) as u8),
-					0,
+					4,
 					None
 				));
 				total_sent += 1;
@@ -1160,7 +1126,7 @@ fn test_cleanup_old_messages_works() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 		}
@@ -1218,7 +1184,7 @@ fn test_cleanup_old_messages_with_limit() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 			assert_ok!(Chat::delete_message(RuntimeOrigin::signed(ALICE), i as u64));
@@ -1268,7 +1234,7 @@ fn test_cleanup_only_removes_fully_deleted_messages() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 		}
@@ -1303,7 +1269,7 @@ fn test_cleanup_respects_expiration_time() {
 				RuntimeOrigin::signed(ALICE),
 				BOB,
 				encrypted_cid(i),
-				0,
+				4,
 				None
 			));
 			assert_ok!(Chat::delete_message(RuntimeOrigin::signed(ALICE), i as u64));
@@ -1510,7 +1476,7 @@ fn test_send_message_with_chat_user_id() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			cid.clone(),
-			0,
+			4,
 			None
 		));
 
@@ -1537,7 +1503,7 @@ fn test_automatic_chat_user_creation() {
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			cid,
-			0,
+			4,
 			None
 		));
 
@@ -1560,7 +1526,7 @@ fn test_automatic_chat_user_creation() {
 #[test]
 fn recall_message_works_within_window() {
 	new_test_ext().execute_with(|| {
-		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 0, None));
+		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 4, None));
 		let msg = Chat::get_message(0).unwrap();
 		assert_eq!(msg.is_recalled, false);
 		// 撤回前未读计数为 1 / unread is 1 before recall
@@ -1580,7 +1546,7 @@ fn recall_message_works_within_window() {
 #[test]
 fn recall_only_sender_allowed() {
 	new_test_ext().execute_with(|| {
-		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 0, None));
+		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 4, None));
 		// 接收方不能撤回 / receiver cannot recall
 		assert_noop!(
 			Chat::recall_message(RuntimeOrigin::signed(BOB), 0),
@@ -1592,7 +1558,7 @@ fn recall_only_sender_allowed() {
 #[test]
 fn recall_idempotent_guard() {
 	new_test_ext().execute_with(|| {
-		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 0, None));
+		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 4, None));
 		assert_ok!(Chat::recall_message(RuntimeOrigin::signed(ALICE), 0));
 		assert_noop!(
 			Chat::recall_message(RuntimeOrigin::signed(ALICE), 0),
@@ -1604,7 +1570,7 @@ fn recall_idempotent_guard() {
 #[test]
 fn recall_after_window_rejected() {
 	new_test_ext().execute_with(|| {
-		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 0, None));
+		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 4, None));
 		// MessageRecallWindow = 50（mock）；推进到超过窗口 / advance beyond window
 		run_to_block(60);
 		assert_noop!(
@@ -1627,7 +1593,7 @@ fn recall_missing_message_fails() {
 #[test]
 fn recall_read_message_keeps_unread_zero() {
 	new_test_ext().execute_with(|| {
-		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 0, None));
+		assert_ok!(Chat::send_message(RuntimeOrigin::signed(ALICE), BOB, encrypted_cid(1), 4, None));
 		// 接收方先读 / receiver reads first
 		assert_ok!(Chat::mark_as_read(RuntimeOrigin::signed(BOB), 0));
 		assert_eq!(Chat::get_unread_count(BOB, None), 0);
@@ -1645,7 +1611,7 @@ fn recall_read_message_keeps_unread_zero() {
 /// 发送一条消息以创建会话，返回该会话的确定性 session_id。
 /// Send one message to materialize a session and return its deterministic id.
 fn make_session(a: u64, b: u64) -> sp_core::H256 {
-	assert_ok!(Chat::send_message(RuntimeOrigin::signed(a), b, encrypted_cid(1), 0, None));
+	assert_ok!(Chat::send_message(RuntimeOrigin::signed(a), b, encrypted_cid(1), 4, None));
 	Chat::get_session_id(&a, &b)
 }
 

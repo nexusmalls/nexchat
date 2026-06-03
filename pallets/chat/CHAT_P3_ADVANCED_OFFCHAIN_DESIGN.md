@@ -2,7 +2,8 @@
 
 > 状态：设计 / 边界决策（**链上不新增 extrinsic**）
 > 适用范围：`pallets/chat/{core,group,permission,common}` 及其链下投递层
-> 关联：`CHAT_MODULES_CONSOLIDATION_DESIGN.md`、`core/src/lib.rs` §13 收敛说明
+> 关联：`CHAT_MODULES_CONSOLIDATION_DESIGN.md`、`core/src/lib.rs` §13 收敛说明、
+> `CHAT_LARGE_FILE_SPEC.md`（大文件加密分块 / manifest / Pin 计费，文件类消息的 `body` 细化）
 
 ## 0. 一句话结论
 

@@ -18,11 +18,7 @@
 //! - `chat_totalDirectUnread(who, at?)` — 私聊未读总数
 //! - `chat_checkPermission(sender, receiver, at?)` — 聊天权限检查
 //! - `chat_getActiveScenes(user1, user2, at?)` — 场景授权
-//! - `chat_isFriend(user1, user2, at?)` — 是否好友
-//! - `chat_listFriends(who, at?)` — 好友列表
-//! - `chat_listIncomingFriendRequests(who, at?)` — 待处理的好友申请
-//! - `chat_listIncomingFriendRequestsDetailed(who, at?)` — 待处理好友申请（含附言）
-//! - `chat_friendMeta(owner, friend, at?)` — 好友备注/分组
+//! - `chat_capabilityEpoch(who, at?)` — 聊天能力撤销纪元
 //! - `chat_isAccountMuted(who, at?)` — 账户是否被治理平台级禁言
 //! - `chat_privacySummary(who, at?)` — 隐私设置摘要
 
@@ -105,7 +101,7 @@ impl From<ConversationSummary<AccountId, Hash, BlockNumber>> for RpcConversation
 #[serde(rename_all = "camelCase")]
 pub struct RpcPermissionResult {
     pub allowed: bool,
-    /// "allowed"|"friendship"|"scene"|"blocked"|"requiresFriend"|"notInWhitelist"|"closed"
+    /// "allowed"|"scene"|"blocked"|"requiresFriend"|"notInWhitelist"|"closed"|"senderMuted"
     pub reason: String,
     /// EN: scene types granting access (only for the "scene" reason).
     /// CN: 授予访问的场景类型（仅 "scene" 时非空）。
@@ -117,7 +113,6 @@ impl From<PermissionResult> for RpcPermissionResult {
         let allowed = r.is_allowed();
         let (reason, scenes) = match r {
             PermissionResult::Allowed => ("allowed", Vec::new()),
-            PermissionResult::AllowedByFriendship => ("friendship", Vec::new()),
             PermissionResult::AllowedByScene(v) => {
                 ("scene", v.into_iter().map(scene_type_label).collect())
             }
@@ -201,27 +196,6 @@ impl From<PrivacySettingsSummary> for RpcPrivacySummary {
     }
 }
 
-/// EN: An incoming friend request with its optional greeting. CN: 一条收件好友申请及其可选附言。
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RpcFriendRequest {
-    pub requester: AccountId,
-    /// EN: greeting / verification message as UTF-8 lossy (empty when none).
-    /// CN: 附言 / 验证消息（UTF-8 有损，无则为空）。
-    pub message: String,
-}
-
-/// EN: A friend's private remark/group labels owned by the querying account.
-/// CN: 查询者私有的好友备注/分组标签。
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RpcFriendMeta {
-    /// EN: remark / alias as UTF-8 lossy. CN: 备注 / 别名（UTF-8 有损）。
-    pub remark: String,
-    /// EN: group / category label as UTF-8 lossy. CN: 分组 / 标签（UTF-8 有损）。
-    pub group: String,
-}
-
 /// EN: Stable label for a scene type. CN: 场景类型的稳定标签。
 fn scene_type_label(t: SceneType) -> String {
     match t {
@@ -288,43 +262,10 @@ pub trait ChatApi<BlockHash> {
         at: Option<BlockHash>,
     ) -> RpcResult<Vec<RpcSceneAuth>>;
 
-    /// 是否好友。
-    #[method(name = "chat_isFriend")]
-    fn is_friend(
-        &self,
-        user1: AccountId,
-        user2: AccountId,
-        at: Option<BlockHash>,
-    ) -> RpcResult<bool>;
-
-    /// 好友列表。
-    #[method(name = "chat_listFriends")]
-    fn list_friends(&self, who: AccountId, at: Option<BlockHash>) -> RpcResult<Vec<AccountId>>;
-
-    /// 待处理（收件）的好友申请发起方。
-    #[method(name = "chat_listIncomingFriendRequests")]
-    fn list_incoming_friend_requests(
-        &self,
-        who: AccountId,
-        at: Option<BlockHash>,
-    ) -> RpcResult<Vec<AccountId>>;
-
-    /// 待处理（收件）的好友申请，含每条申请的附言（验证消息）。
-    #[method(name = "chat_listIncomingFriendRequestsDetailed")]
-    fn list_incoming_friend_requests_detailed(
-        &self,
-        who: AccountId,
-        at: Option<BlockHash>,
-    ) -> RpcResult<Vec<RpcFriendRequest>>;
-
-    /// 某账户对某好友的私有备注/分组。
-    #[method(name = "chat_friendMeta")]
-    fn friend_meta(
-        &self,
-        owner: AccountId,
-        friend: AccountId,
-        at: Option<BlockHash>,
-    ) -> RpcResult<RpcFriendMeta>;
+    /// EN: Current chat-capability revocation epoch of `who` (0 if never bumped).
+    /// CN: `who` 当前的聊天能力撤销纪元（从未递增则为 0）。
+    #[method(name = "chat_capabilityEpoch")]
+    fn capability_epoch(&self, who: AccountId, at: Option<BlockHash>) -> RpcResult<u32>;
 
     /// 账户是否被治理平台级禁言。
     #[method(name = "chat_isAccountMuted")]
@@ -409,67 +350,14 @@ where
         Ok(scenes.into_iter().map(RpcSceneAuth::from).collect())
     }
 
-    fn is_friend(
-        &self,
-        user1: AccountId,
-        user2: AccountId,
-        at: Option<<Block as BlockT>::Hash>,
-    ) -> RpcResult<bool> {
-        let api = self.client.runtime_api();
-        let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        api.is_friend(at, user1, user2).map_err(runtime_err)
-    }
-
-    fn list_friends(
+    fn capability_epoch(
         &self,
         who: AccountId,
         at: Option<<Block as BlockT>::Hash>,
-    ) -> RpcResult<Vec<AccountId>> {
+    ) -> RpcResult<u32> {
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        api.list_friends(at, who).map_err(runtime_err)
-    }
-
-    fn list_incoming_friend_requests(
-        &self,
-        who: AccountId,
-        at: Option<<Block as BlockT>::Hash>,
-    ) -> RpcResult<Vec<AccountId>> {
-        let api = self.client.runtime_api();
-        let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        api.list_incoming_friend_requests(at, who).map_err(runtime_err)
-    }
-
-    fn list_incoming_friend_requests_detailed(
-        &self,
-        who: AccountId,
-        at: Option<<Block as BlockT>::Hash>,
-    ) -> RpcResult<Vec<RpcFriendRequest>> {
-        let api = self.client.runtime_api();
-        let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        let list = api.list_incoming_friend_requests_detailed(at, who).map_err(runtime_err)?;
-        Ok(list
-            .into_iter()
-            .map(|(requester, message)| RpcFriendRequest {
-                requester,
-                message: String::from_utf8_lossy(&message).into_owned(),
-            })
-            .collect())
-    }
-
-    fn friend_meta(
-        &self,
-        owner: AccountId,
-        friend: AccountId,
-        at: Option<<Block as BlockT>::Hash>,
-    ) -> RpcResult<RpcFriendMeta> {
-        let api = self.client.runtime_api();
-        let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        let (remark, group) = api.get_friend_meta(at, owner, friend).map_err(runtime_err)?;
-        Ok(RpcFriendMeta {
-            remark: String::from_utf8_lossy(&remark).into_owned(),
-            group: String::from_utf8_lossy(&group).into_owned(),
-        })
+        api.capability_epoch(at, who).map_err(runtime_err)
     }
 
     fn is_account_muted(

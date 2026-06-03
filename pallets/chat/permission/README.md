@@ -7,9 +7,24 @@
 本模块提供聊天权限管理功能：
 
 - **场景授权**：业务模块可为用户授予基于场景的聊天权限
-- **好友关系（通讯录后端）**：用户间经「申请 → 同意」双方握手建立双向好友关系
 - **黑白名单**：用户可屏蔽特定用户或设置白名单
 - **权限级别**：Open/FriendsOnly/Whitelist/Closed
+- **聊天能力撤销纪元**：`CapabilityEpoch` —— 链下能力令牌的链上撤销锚点
+
+## 隐私：好友图谱已移出链上（C 方案定稿）
+
+> **重大变更**：链上双向好友图谱（`Friendships` + 好友申请 + 备注/分组 + 对应 extrinsic /
+> RPC / runtime API）**已整体删除**，使「谁与谁建立联系」不再在链上公开可见。联系人与
+> 「允许私聊我」的权利改由**链下、接收方签名的聊天能力令牌**承载（加密通讯录保险库），
+> 详见 `../CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md`。
+>
+> 链上仅保留每账户的 **`CapabilityEpoch`**（单调递增计数器）作为撤销锚点：账户经
+> `bump_capability_epoch()` 递增纪元，即可使其此前签发的所有能力令牌失效（删除联系人、
+> 更换设备、疑似泄露时使用）。链下 relay/客户端用 `CapabilityEpoch[签发者]` 校验令牌新鲜度。
+>
+> 旧版 `add_friend`/`request_friend`/`accept_friend`/`reject_friend`/
+> `cancel_friend_request`/`remove_friend`/`set_friend_meta`（call_index 4/5/8/9/10/11/12）
+> 及其存储/事件/查询全部移除；索引留空，不复用。
 
 ## 核心功能
 
@@ -31,39 +46,11 @@ T::ChatPermission::grant_bidirectional_scene_authorization(
 
 ### 权限检查优先级
 
-1. **黑名单检查**（最高优先级拒绝）
-2. **好友关系检查**
+1. **平台级禁言**（最高优先级拒绝）
+2. **黑名单检查**
 3. **场景授权检查**
-4. **隐私设置检查**
-
-### 好友关系 / 通讯录（申请 → 同意握手）
-
-好友图谱是消息权限闸门（`FriendsOnly`）的输入，因此**关系的建立必须经双方同意**，
-不能由任意一方单方面写入。流程：
-
-```text
-ALICE ──request_friend(BOB, msg?)─▶ FriendRequests[BOB][ALICE] (+可选附言)  (待 BOB 处理)
-BOB   ──accept_friend(ALICE)──────▶ Friendships 双向建立 + 申请/附言清理
-      ──reject_friend(ALICE)──────▶ 申请/附言清理，不建立关系
-ALICE ──cancel_friend_request(BOB)─▶ 撤回自己的待处理申请（连带附言）
-ALICE ──set_friend_meta(BOB, 备注?, 分组?)─▶ 设置/清除对 BOB 的私有备注/分组（须已是好友）
-```
-
-- **双向申请快捷路径**：若 A 申请 B 时，B 此前已申请过 A，则立即成为好友（免二次确认）。
-- **好友申请附言（验证消息）**：`request_friend` 可携带可选附言（`MaxFriendRequestMsgLen` 字节内），
-  存于 `FriendRequestMsg`，供 B 在收件箱查看；同意/拒绝/撤回/快捷路径时随申请一并清理。
-- **拒绝条件**：自己、已是好友、重复申请、被对方拉黑、对方 `Closed`、对方收件申请达上限。
-- **`remove_friend`** 仍是单方面操作（任何一方都可解除关系），并清理双方的备注/分组。
-
-> **安全修复（单向授权缺口）**：旧版 `add_friend` 允许任意账户单方面即建立双向好友，
-> 从而**绕过对方的 `FriendsOnly`/隐私闸门**直接获得发送权限。已移除该入口（`call_index(4)` 留空），
-> 好友关系仅能经上述握手建立。
-
-> **通讯录元数据（备注 / 分组）**：自 P2 起，好友**备注名**与**单标签分组**上链，存于
-> `FriendRemark` / `FriendGroupTag`（`(owner, friend) -> bytes`）。设计取舍：仅**好友之间**
-> 可设、**owner 私有且单向**（B 看不到 A 给 B 的备注）、长度有界（`MaxFriendRemarkLen` /
-> `MaxFriendGroupLen`）、解除好友即清理；以此在「跨端同步通讯录」与「隐私 / 状态膨胀」之间取平衡。
-> 星标等更高频的纯展示偏好仍建议放客户端/链下。
+4. **隐私设置检查**（`FriendsOnly` 现表示：链上对无场景授权且不在白名单的陌生人一律拒绝；
+   真正的「联系人」闸门由链下能力令牌强制）
 
 ## 平台合规（治理）
 
@@ -77,24 +64,23 @@ ALICE ──set_friend_meta(BOB, 备注?, 分组?)─▶ 设置/清除对 BOB �
 ## 存储结构
 
 - `PrivacySettingsOf`: 用户隐私设置
-- `Friendships`: 好友关系（双向存储）
-- `FriendRequests`: 待处理好友申请，键为 (接收方, 发起方)，使收件申请可前缀扫描
-- `IncomingFriendRequestCount`: 单账户待处理收件申请计数（防刷上限 `MaxFriendRequests`）
+- `CapabilityEpoch`: 每账户聊天能力撤销纪元（`account -> u32`，链下能力令牌的撤销锚点）
 - `SceneAuthorizations`: 场景授权（排序后的用户对）
+- `MutedAccounts` / `Reports` 等：平台合规
 
 ## 事件
 
 - `PrivacySettingsUpdated`
 - `UserBlocked` / `UserUnblocked`
-- `FriendshipCreated` / `FriendshipRemoved`
-- `FriendRequestSent` / `FriendRequestAccepted` / `FriendRequestRejected` / `FriendRequestCancelled`
+- `CapabilityEpochBumped`
 - `SceneAuthorizationGranted` / `SceneAuthorizationRevoked`
+- `AccountMuted` / `AccountUnmuted` / `ReportFiled` / `ReportResolved`
 
 ## 查询（Runtime API / 辅助方法）
 
-- `is_friend(user1, user2)`
-- `list_friends(who)`：列出某用户所有好友（通讯录列表）
-- `list_incoming_friend_requests(who)`：列出待处理收件好友申请发起方
+- `check_chat_permission(sender, receiver)`：权限判定结果
+- `capability_epoch(who)`：某账户当前的能力撤销纪元（链下校验令牌新鲜度）
+- `get_active_scenes(user1, user2)` / `get_privacy_settings_summary(user)`
 
 ## 依赖
 

@@ -112,7 +112,11 @@ pub enum ChatPermissionLevel {
     /// 开放：任何人可发起聊天
     Open,
 
-    /// 仅好友：需要互加好友才能聊天（默认）
+    /// EN: Contacts only (default). The on-chain friend graph was removed; the
+    /// social "is a contact" check is enforced off-chain via capability tokens.
+    /// On-chain, a stranger without a scene authorization or whitelist entry is
+    /// denied. CN: 仅联系人（默认）。链上好友图谱已删除，「是否联系人」由链下能力
+    /// 令牌强制；链上对无场景授权且不在白名单的陌生人一律拒绝。
     #[default]
     FriendsOnly,
 
@@ -166,9 +170,6 @@ pub enum PermissionResult {
     /// 允许（开放模式）
     Allowed,
 
-    /// 允许（好友关系）
-    AllowedByFriendship,
-
     /// 允许（有场景授权）
     /// 包含有效的场景类型列表
     AllowedByScene(sp_std::vec::Vec<SceneType>),
@@ -195,9 +196,7 @@ impl PermissionResult {
     pub fn is_allowed(&self) -> bool {
         matches!(
             self,
-            PermissionResult::Allowed
-                | PermissionResult::AllowedByFriendship
-                | PermissionResult::AllowedByScene(_)
+            PermissionResult::Allowed | PermissionResult::AllowedByScene(_)
         )
     }
 }

@@ -206,3 +206,8 @@ polkadot-js 客户端用 JSON 友好类型直接调用。所有方法只读且�
   下**几乎全部属于链下职责**，链上**不新增 extrinsic / storage**。已落一份链下方案与
   链上边界设计：`CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md`（MLS payload 信封约定、客户端/relay
   执行分层、链上明确不做清单、可选未来挂钩）。
+- 2026-06-03: 大文件处理（边界决策）：聊天大文件（图片/视频/语音/附件）**本体不上链、
+  不进 MLS payload**——每文件独立对称密钥加密 + 分块 + manifest 存 IPFS，MLS 仅传引用
+  （`cid + file_key + 元数据`），持久化交给 `pallet-storage-service` 的 Tier 化多副本 Pin
+  或链下托管。已落规范：`CHAT_LARGE_FILE_SPEC.md`（文件信封 / 分块 manifest / 缩略图 /
+  计费分级 / 换机恢复衔接 / 链上不做清单）。
