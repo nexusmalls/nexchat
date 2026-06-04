@@ -1,11 +1,11 @@
 [package]
-name = "pallet-chat-permission"
+name = "pallet-chat-inbox"
 version = "0.1.0"
 authors = ["Stardust Team"]
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/lao-sha/stardust"
-description = "聊天权限系统模块 - 基于场景的多场景共存权限控制"
+description = "链下投递信箱注册表 - inbox 维度撤销纪元与定向撤销标签锚点 / Off-chain delivery inbox registry (inbox-keyed revocation epoch + targeted revocation tags)"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -26,6 +26,7 @@ sp-api = { workspace = true }
 
 [dev-dependencies]
 sp-io = { workspace = true }
+pallet-balances = { workspace = true, features = ["std"] }
 
 [features]
 default = ["std"]

@@ -75,96 +75,9 @@ mod privacy_settings {
     }
 }
 
-// ==================== 黑名单测试 ====================
-
-mod block_list {
-    use super::*;
-
-    /// 测试：添加用户到黑名单
-    #[test]
-    fn block_user_works() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::block_user(
-                RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-
-            let settings = PrivacySettingsOf::<Test>::get(ALICE);
-            assert!(settings.block_list.contains(&BOB));
-
-            System::assert_last_event(
-                Event::UserBlocked {
-                    blocker: ALICE,
-                    blocked: BOB,
-                }
-                .into(),
-            );
-        });
-    }
-
-    /// 测试：不能屏蔽自己
-    #[test]
-    fn block_self_fails() {
-        new_test_ext().execute_with(|| {
-            assert_noop!(
-                ChatPermission::block_user(RuntimeOrigin::signed(ALICE), ALICE),
-                Error::<Test>::CannotAddSelf
-            );
-        });
-    }
-
-    /// 测试：重复屏蔽失败
-    #[test]
-    fn block_user_twice_fails() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::block_user(
-                RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-            assert_noop!(
-                ChatPermission::block_user(RuntimeOrigin::signed(ALICE), BOB),
-                Error::<Test>::AlreadyBlocked
-            );
-        });
-    }
-
-    /// 测试：从黑名单移除用户
-    #[test]
-    fn unblock_user_works() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::block_user(
-                RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-            assert_ok!(ChatPermission::unblock_user(
-                RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-
-            let settings = PrivacySettingsOf::<Test>::get(ALICE);
-            assert!(!settings.block_list.contains(&BOB));
-
-            System::assert_last_event(
-                Event::UserUnblocked {
-                    unblocker: ALICE,
-                    unblocked: BOB,
-                }
-                .into(),
-            );
-        });
-    }
-
-    /// 测试：移除不在黑名单中的用户失败
-    #[test]
-    fn unblock_not_blocked_user_fails() {
-        new_test_ext().execute_with(|| {
-            assert_noop!(
-                ChatPermission::unblock_user(RuntimeOrigin::signed(ALICE), BOB),
-                Error::<Test>::NotInBlockList
-            );
-        });
-    }
-}
+// ==================== 黑名单：已移除（审计 P1） ====================
+// Block list tests removed: on-chain blocklist dropped for privacy; blocking is
+// now off-chain (capability token revocation / inbox tag revocation).
 
 // ==================== 聊天能力撤销纪元测试 ====================
 // Chat-capability revocation epoch tests.
@@ -194,51 +107,9 @@ mod capability_epoch {
     }
 }
 
-// ==================== 白名单测试 ====================
-
-mod whitelist {
-    use super::*;
-
-    /// 测试：添加到白名单
-    #[test]
-    fn add_to_whitelist_works() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::add_to_whitelist(
-                RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-
-            let settings = PrivacySettingsOf::<Test>::get(ALICE);
-            assert!(settings.whitelist.contains(&BOB));
-
-            System::assert_last_event(
-                Event::UserAddedToWhitelist {
-                    owner: ALICE,
-                    user: BOB,
-                }
-                .into(),
-            );
-        });
-    }
-
-    /// 测试：从白名单移除
-    #[test]
-    fn remove_from_whitelist_works() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::add_to_whitelist(
-                RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-            assert_ok!(ChatPermission::remove_from_whitelist(
-                RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-
-            let settings = PrivacySettingsOf::<Test>::get(ALICE);
-            assert!(!settings.whitelist.contains(&BOB));
-        });
-    }
-}
+// ==================== 白名单：已移除（审计 P1） ====================
+// Whitelist tests removed: on-chain whitelist dropped for privacy; the allow
+// decision is off-chain (the `Whitelist` level now behaves like `FriendsOnly`).
 
 // ==================== 场景授权测试 ====================
 
@@ -449,25 +320,6 @@ mod scene_authorization {
 mod permission_check {
     use super::*;
 
-    /// 测试：黑名单最高优先级（先于场景授权）
-    #[test]
-    fn blocked_user_cannot_send() {
-        new_test_ext().execute_with(|| {
-            // 先授予可聊天的场景授权
-            allow_pair(ALICE, BOB);
-
-            // 再把 BOB 加入黑名单
-            assert_ok!(ChatPermission::block_user(
-                RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-
-            // BOB 向 ALICE 发消息应该被拒绝（黑名单先于场景授权）
-            let result = ChatPermission::check_permission(&BOB, &ALICE);
-            assert_eq!(result, PermissionResult::DeniedBlocked);
-        });
-    }
-
     /// 测试：场景授权优先于 Closed 设置
     #[test]
     fn scene_auth_overrides_closed() {
@@ -572,28 +424,32 @@ mod permission_check {
         });
     }
 
-    /// 测试：Whitelist 模式只允许白名单用户
+    /// 测试：Whitelist 级别（审计 P1 后）等同 FriendsOnly——链上白名单已移除，
+    /// 放行改由链下能力令牌判定，故链上无场景授权者一律 DeniedRequiresFriend；
+    /// 有场景授权则照常放行。
+    /// Whitelist now behaves like FriendsOnly (audit P1): no on-chain list, the
+    /// off-chain capability token decides, so on-chain a scene-less sender is
+    /// DeniedRequiresFriend while a scene-authorized sender is allowed.
     #[test]
-    fn whitelist_mode_works() {
+    fn whitelist_level_behaves_like_friends_only() {
         new_test_ext().execute_with(|| {
             assert_ok!(ChatPermission::set_permission_level(
                 RuntimeOrigin::signed(ALICE),
                 ChatPermissionLevel::Whitelist
             ));
 
-            // BOB 不在白名单中，被拒绝
+            // 无场景授权：要求联系人（链下令牌判定）
             let result = ChatPermission::check_permission(&BOB, &ALICE);
-            assert_eq!(result, PermissionResult::DeniedNotInWhitelist);
+            assert_eq!(result, PermissionResult::DeniedRequiresFriend);
 
-            // 将 BOB 添加到白名单
-            assert_ok!(ChatPermission::add_to_whitelist(
-                RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-
-            // BOB 现在可以发消息
-            let result = ChatPermission::check_permission(&BOB, &ALICE);
-            assert_eq!(result, PermissionResult::Allowed);
+            // 有场景授权则放行
+            allow_pair(ALICE, BOB);
+            match ChatPermission::check_permission(&BOB, &ALICE) {
+                PermissionResult::AllowedByScene(scenes) => {
+                    assert!(scenes.contains(&SceneType::Direct));
+                }
+                other => panic!("Expected AllowedByScene, got {:?}", other),
+            }
         });
     }
 
@@ -670,23 +526,22 @@ mod helper_methods {
         });
     }
 
-    /// 测试：get_privacy_summary
+    /// 测试：get_privacy_summary（审计 P1 后仅含级别 + 拒绝场景类型）
+    /// Summary now carries only the level + rejected scene types (audit P1).
     #[test]
     fn get_privacy_summary_works() {
         new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::block_user(
+            use frame_support::BoundedVec;
+            let rejected: BoundedVec<SceneType, frame_support::traits::ConstU32<10>> =
+                vec![SceneType::MarketMaker].try_into().unwrap();
+            assert_ok!(ChatPermission::set_rejected_scene_types(
                 RuntimeOrigin::signed(ALICE),
-                BOB
-            ));
-            assert_ok!(ChatPermission::add_to_whitelist(
-                RuntimeOrigin::signed(ALICE),
-                CHARLIE
+                rejected
             ));
 
             let summary = ChatPermission::get_privacy_summary(&ALICE);
             assert_eq!(summary.permission_level, ChatPermissionLevel::FriendsOnly);
-            assert_eq!(summary.block_list_count, 1);
-            assert_eq!(summary.whitelist_count, 1);
+            assert!(summary.rejected_scene_types.contains(&SceneType::MarketMaker));
         });
     }
 

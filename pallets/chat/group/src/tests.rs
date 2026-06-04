@@ -30,6 +30,22 @@ fn create_with(owner: u64, is_public: bool) -> u64 {
         [1u8; 32],
         [2u8; 32],
     ));
+    // 审计 U3：公开群加人要求被加成员已发布 KeyPackage（同意被加入 + MLS 必需）。
+    // 测试夹具为候选成员池预置一个 KeyPackage（幂等），使既有"加人"用例无需逐处改写；
+    // 池外账户（如 15）仍可用于验证 AddeeNotJoinable 拒绝路径。
+    // Audit U3: adding to a public group requires the addee to have published a
+    // KeyPackage (opt-in consent + MLS necessity). The fixture seeds one KeyPackage
+    // (idempotently) for the candidate-member pool so existing "add" cases need no
+    // per-site edits; accounts outside the pool (e.g. 15) still exercise the
+    // AddeeNotJoinable rejection path.
+    for who in 2..=12u64 {
+        if crate::KeyPackageCount::<Test>::get(who) == 0 {
+            assert_ok!(ChatGroup::publish_key_package(
+                RuntimeOrigin::signed(who),
+                vec![who as u8]
+            ));
+        }
+    }
     gid
 }
 
@@ -287,6 +303,8 @@ fn group_full_rejected() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         // MaxGroupMembers = 8；owner + 7 = 8 ok / fill to bound
+        // 使用候选池内账户（已具 KeyPackage），以触达 GroupFull 而非 U3 闸门。
+        // Use in-pool accounts (already have KeyPackages) so we hit GroupFull, not U3.
         assert_ok!(ChatGroup::commit(
             RuntimeOrigin::signed(OWNER),
             gid,
@@ -296,7 +314,7 @@ fn group_full_rejected() {
             [0u8; 32],
             b"cid".to_vec(),
             vec![],
-            delta(vec![10, 11, 12, 13, 14, 15, 16], vec![]),
+            delta(vec![2, 3, 4, 5, 6, 7, 8], vec![]),
         ));
         // 第 9 个成员越界 / 9th member exceeds bound
         assert_noop!(
@@ -309,7 +327,7 @@ fn group_full_rejected() {
                 [0u8; 32],
                 b"cid".to_vec(),
                 vec![],
-                delta(vec![17], vec![]),
+                delta(vec![9], vec![]),
             ),
             Error::<Test>::GroupFull
         );
@@ -338,6 +356,49 @@ fn claim_welcome_works() {
             ChatGroup::claim_welcome(RuntimeOrigin::signed(ALICE), gid),
             Error::<Test>::WelcomeNotFound
         );
+    });
+}
+
+/// 审计 U3：公开群不能把未发布 KeyPackage（未同意）的账户拉进来。
+/// Audit U3: a public group cannot add an account that never opted in
+/// (no published KeyPackage).
+#[test]
+fn public_add_requires_addee_keypackage() {
+    new_test_ext().execute_with(|| {
+        let gid = create(OWNER); // 公开群 / public group
+        let epoch = GroupMls::<Test>::get(gid).unwrap().epoch;
+        // 账户 15 在候选池之外，未发布 KeyPackage → 拒绝。
+        // Account 15 is outside the seeded pool and has no KeyPackage → rejected.
+        assert_noop!(
+            ChatGroup::commit(
+                RuntimeOrigin::signed(OWNER),
+                gid,
+                epoch,
+                vec![],
+                [0u8; 32],
+                [0u8; 32],
+                b"cid".to_vec(),
+                vec![(15u64, vec![1])],
+                delta(vec![15u64], vec![]),
+            ),
+            Error::<Test>::AddeeNotJoinable
+        );
+
+        // 账户 15 发布 KeyPackage（同意）后即可被加入。
+        // Once account 15 publishes a KeyPackage (consent), the add succeeds.
+        assert_ok!(ChatGroup::publish_key_package(RuntimeOrigin::signed(15u64), vec![15]));
+        assert_ok!(ChatGroup::commit(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            epoch,
+            vec![],
+            [0u8; 32],
+            [0u8; 32],
+            b"cid".to_vec(),
+            vec![(15u64, vec![1])],
+            delta(vec![15u64], vec![]),
+        ));
+        assert!(GroupMembers::<Test>::contains_key(gid, 15u64));
     });
 }
 

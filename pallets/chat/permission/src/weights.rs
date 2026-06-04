@@ -1,10 +1,10 @@
 //! Weight definitions for `pallet-chat-permission`.
 //! `pallet-chat-permission` 的权重定义。
 //!
-//! EN: Ships placeholder weights derived from storage reads/writes. Replace with
-//! benchmarked values produced by the node benchmark harness (`benchmarking.rs`)
-//! before mainnet. CN: 暂用按存储读写估算的占位权重；上主网前用节点基准框架
-//! 产出的实测值替换（见 `benchmarking.rs`）。
+//! EN: Weights measured via the node benchmark harness (`benchmarking.rs`).
+//! Generated on a dev chain (steps=50, repeat=20); re-run on reference hardware
+//! before mainnet. CN: 由节点基准框架（见 `benchmarking.rs`）实测得到的权重，
+//! 在 dev 链上生成（steps=50, repeat=20）；上主网前应在基准硬件上重跑。
 
 use frame_support::{traits::Get, weights::Weight};
 
@@ -13,52 +13,63 @@ use frame_support::{traits::Get, weights::Weight};
 pub trait WeightInfo {
     fn set_permission_level() -> Weight;
     fn set_rejected_scene_types() -> Weight;
-    fn block_user() -> Weight;
-    fn unblock_user() -> Weight;
     fn bump_capability_epoch() -> Weight;
-    fn add_to_whitelist() -> Weight;
-    fn remove_from_whitelist() -> Weight;
     fn force_mute_account() -> Weight;
     fn force_unmute_account() -> Weight;
     fn report() -> Weight;
     fn resolve_report() -> Weight;
 }
 
-/// Placeholder weights (constant base + reads/writes). / 占位权重（常量基数 + 读写计）。
+/// Benchmarked weights. / 实测权重。
 pub struct SubstrateWeight<T>(core::marker::PhantomData<T>);
 
-macro_rules! placeholder {
-    ($name:ident, $reads:expr, $writes:expr) => {
-        fn $name() -> Weight {
-            Weight::from_parts(15_000_000, 0)
-                .saturating_add(T::DbWeight::get().reads($reads))
-                .saturating_add(T::DbWeight::get().writes($writes))
-        }
-    };
-}
-
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
-    placeholder!(set_permission_level, 1, 1);
-    placeholder!(set_rejected_scene_types, 1, 1);
-    placeholder!(block_user, 1, 1);
-    placeholder!(unblock_user, 1, 1);
-    placeholder!(bump_capability_epoch, 1, 1);
-    placeholder!(add_to_whitelist, 1, 1);
-    placeholder!(remove_from_whitelist, 1, 1);
-    placeholder!(force_mute_account, 0, 1);
-    placeholder!(force_unmute_account, 0, 1);
-    placeholder!(report, 3, 4);
-    placeholder!(resolve_report, 1, 2);
+    /// Storage: PrivacySettingsOf (r:1 w:1).
+    fn set_permission_level() -> Weight {
+        Weight::from_parts(36_677_000, 3859)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+    /// Storage: PrivacySettingsOf (r:1 w:1).
+    fn set_rejected_scene_types() -> Weight {
+        Weight::from_parts(40_128_000, 3859)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+    /// Storage: CapabilityEpoch (r:1 w:1).
+    fn bump_capability_epoch() -> Weight {
+        Weight::from_parts(30_153_000, 3517)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+    /// Storage: MutedAccounts (r:0 w:1).
+    fn force_mute_account() -> Weight {
+        Weight::from_parts(24_193_000, 0)
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+    /// Storage: MutedAccounts (r:0 w:1).
+    fn force_unmute_account() -> Weight {
+        Weight::from_parts(23_342_000, 0)
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+    /// Storage: LastReportAt, OpenReportCount, NextReportId (r:3 w:4 incl. Reports).
+    fn report() -> Weight {
+        Weight::from_parts(46_180_000, 3517)
+            .saturating_add(T::DbWeight::get().reads(3))
+            .saturating_add(T::DbWeight::get().writes(4))
+    }
+    /// Storage: Reports, OpenReportCount (r:2 w:2).
+    fn resolve_report() -> Weight {
+        Weight::from_parts(42_812_000, 3680)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
 }
 
 impl WeightInfo for () {
     fn set_permission_level() -> Weight { Weight::from_parts(15_000_000, 0) }
     fn set_rejected_scene_types() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn block_user() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn unblock_user() -> Weight { Weight::from_parts(15_000_000, 0) }
     fn bump_capability_epoch() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn add_to_whitelist() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn remove_from_whitelist() -> Weight { Weight::from_parts(15_000_000, 0) }
     fn force_mute_account() -> Weight { Weight::from_parts(15_000_000, 0) }
     fn force_unmute_account() -> Weight { Weight::from_parts(15_000_000, 0) }
     fn report() -> Weight { Weight::from_parts(20_000_000, 0) }

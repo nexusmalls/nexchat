@@ -336,6 +336,11 @@ mod runtime {
     #[runtime::pallet_index(69)]
     pub type ChatGroup = pallet_chat_group;
 
+    // 链下投递信箱注册表（索引接在治理委员会 70-77 之后的首个空位）。
+    // Off-chain delivery inbox registry (first free index after the 70-77 committees).
+    #[runtime::pallet_index(78)]
+    pub type ChatInbox = pallet_chat_inbox;
+
     // ============================================================================
     // Smart Contracts
     // ============================================================================

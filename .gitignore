@@ -18,6 +18,7 @@
 /keystore/
 /network/
 /my-chain-state/
+/nexchat/
 
 # Node.js / package managers
 node_modules/

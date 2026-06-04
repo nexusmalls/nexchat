@@ -6,7 +6,7 @@
 
 ```
 pallets/chat/
-├── common/       # 共享类型和工具库              [已接入]
+├── common/       # 轻量共享构件（rate_limit + ChatViewApi）[已接入]
 ├── permission/   # 权限系统（场景授权+黑白名单）   [已接入 runtime]
 ├── core/         # 核心私聊模块                  [已接入 runtime]
 └── group/        # MLS 群聊模块（RFC 9420 锚定）  [已接入 runtime]
@@ -22,29 +22,36 @@ pallets/chat/
 ## 模块依赖关系
 
 ```
-                    ┌─────────────┐
-                    │   common    │  ← 共享类型（无pallet依赖）
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-       ┌────────────┐ ┌─────────┐ ┌─────────────┐
-       │ permission │ │  core   │ │    group    │
-       └────────────┘ └─────────┘ └─────────────┘
+       ┌─────────────┐
+       │   common    │  rate_limit（被 group 使用）+ runtime_api::ChatViewApi（被 runtime 使用）
+       └──────┬──────┘
+              │ rate_limit
+              ▼
+       ┌─────────────┐      ┌────────────┐ ┌─────────┐
+       │    group    │      │ permission │ │  core   │  ← 不再依赖 common（审计 P1）
+       └─────────────┘      └─────┬──────┘ └────┬────┘
+                                  └─────────────┘
+                            core 依赖 permission（ChatPermissionChecker）
 ```
+
+> 注：`core` / `permission` 已移除对 `common` 的依赖（原为声明但零 import 的 dead dep）。
+> `common::runtime_api` 由 `runtime/src/apis.rs` 聚合实现、`node/src/chat_rpc.rs` 封装。
 
 ## 各模块功能
 
-### common - 共享类型库
+### common - 轻量共享构件
 
-提供聊天系统的基础类型和工具：
+链下收敛后仅保留**真正跨 pallet / runtime 共享**的两块（详见 `common/README.md`）：
 
-- **MessageType**: 消息类型（文本/图片/文件/语音/视频/系统/AI）
-- **EncryptionMode**: 加密模式（Military/Business/Selective/Transparent）
-- **ChatUserId**: 11位数字聊天ID（10000000000-99999999999）
-- **Traits**: ChatPermissionCheck, FriendshipCheck, ChatUserIdProvider
-- **Validation**: CID格式验证、加密CID验证
-- **RateLimit**: 防刷机制
+- **RateLimit**（`rate_limit`）：窗口化反垃圾计数器，`pallet-chat-group` 用于约束写入型
+  MLS 操作。
+- **ChatViewApi**（`runtime_api`）：统一会话视图 Runtime API（私聊 + 群聊聚合），在 runtime
+  落地、node 封装为 `chat_*` RPC。
+
+> 审计 P1（类型收敛）：历史的 `MessageType` / `MessageStatus` / `EncryptionMode` /
+> `ChatUserId` 与 `ChatPermissionCheck` 等跨 pallet trait、CID「加密」启发式**已删除**
+> （零调用方 + `MessageType` 判别值发散是编码地雷）。链上权威 `MessageType` 在
+> `pallet-chat-core`；权限走 `pallet-chat-permission::ChatPermissionChecker`。
 
 ### permission - 权限系统
 
@@ -90,6 +97,7 @@ pallet-chat-common = { path = "../pallets/chat/common", default-features = false
 pallet-chat-permission = { path = "../pallets/chat/permission", default-features = false }
 pallet-chat-core = { path = "../pallets/chat/core", default-features = false }
 pallet-chat-group = { path = "../pallets/chat/group", default-features = false }
+pallet-chat-inbox = { path = "../pallets/chat/inbox", default-features = false }
 ```
 
 在 `std` feature 中添加：
@@ -99,6 +107,7 @@ pallet-chat-group = { path = "../pallets/chat/group", default-features = false }
 "pallet-chat-permission/std",
 "pallet-chat-core/std",
 "pallet-chat-group/std",
+"pallet-chat-inbox/std",
 ```
 
 ## Runtime API：统一会话视图
@@ -108,16 +117,78 @@ pallet-chat-group = { path = "../pallets/chat/group", default-features = false }
 聚合逻辑在 `runtime/src/apis.rs` 的 `impl_runtime_apis!` 中实现（那里可同时访问
 `ChatCore` 与 `ChatGroup`）。前端经 `api.call.chatViewApi.*` 免费调用，无需 gas。
 
-- `list_conversations(who) -> Vec<ConversationSummary>`：私聊在前（core 已按"置顶优先 +
-  最后活跃倒序"排序），群聊在后。
-- `total_direct_unread(who) -> u32`：全部私聊会话的未读总数（链上权威）。
+- `list_conversations(who) -> Vec<ConversationSummary>`：**链上切片**，私聊在前（core 已按
+  "置顶优先 + 最后活跃倒序"排序），群聊在后并按 `group_id` **升序**（确定、可分页基线；真实
+  活跃度在链下）。**不是**完整消息列表，见下方边界与 Merge Spec。
 
-> **链上 / 链下边界（重要）**
-> 私聊（1:1）的未读数、最后活跃区块、置顶、免打扰均在链上，故 `ConversationSummary`
-> 对应字段权威可信。**群聊消息走链下（MLS + 节点中继，密文不触链）**，因此群的 `unread`
-> 与 `last_active` 链上无从得知，一律返回 `0`，需由客户端用本地/链下状态合并排序；链上
-> 权威的仅为群元数据（群名 / 头像 / 角色 / 成员数 / 管理员禁言）。群级置顶/免打扰目前为
-> 客户端侧能力，未上链。
+> 链下私聊为何不在列表、以及换设备如何恢复会话列表：见
+> [`CHAT_P2_SESSION_ANCHOR_DESIGN.md`](./CHAT_P2_SESSION_ANCHOR_DESIGN.md)——结论是
+> **否决链上会话锚点**（会泄漏通信关系），改用链下加密会话索引 blob + inbox 推导。
+- `total_direct_unread(who) -> u32`：链上 **System 通知**通道的未读总数，**不是** App 全局未读。
+
+> **⚠️ 链上 / 链下边界（重要 — 客户端必读）**
+>
+> 本 API 返回的是**链上切片**，不能直接当成完整 IM 首页。原因：人类聊天（Text/Image/
+> File/Voice，无论私聊还是群聊）全部走链下（MLS + relay，密文不触链）；链上唯一的消息是
+> `System` 通知（订单/争议/治理，经 `send_system_message`）。因此：
+>
+> | 字段 | 私聊（Direct） | 群聊（Group） |
+> | --- | --- | --- |
+> | 是否出现在列表 | **仅当**该对用户间发过 `System` 消息才有行；纯链下私聊**无行** | 用户所在的群都在 |
+> | `last_active` | **System 通知**会话的最后活跃区块（**非**人类聊天） | 恒 `0`（链下） |
+> | `unread` | 仅 **System 通知**通道未读（**非**人类聊天） | 恒 `0`（链下） |
+> | `pinned` | 链上权威（`set_session_pinned`） | 恒 `false`（群置顶为客户端能力，未上链） |
+> | `muted` | 调用者自己的免打扰 **DND**（收不到提醒） | 管理员**禁言**（`is_member_muted`，你**不能发言**）|
+> | `archived` | 链上权威 | 恒 `false` |
+> | 群元数据（名/头像/角色/成员数）| N/A | 链上权威 |
+>
+> **关键提醒：**
+> 1. `muted` 在两种 `kind` 下语义完全不同（DND vs 禁言），客户端**必须**按 `kind` 分支渲染，
+>    不要共用一个「🔕 静音」图标。
+> 2. `total_direct_unread` 与 `unread` 都只反映 System 通道，**不能**直接做 App 角标。
+> 3. 群聊在列表末尾且 `last_active=0`，无活跃度排序，客户端**必须**跨类型重排。
+>
+> 渲染真实「消息」页必须执行下方 **客户端 Merge Spec**。
+
+### 客户端 Merge Spec（链上切片 ⊕ 链下 MLS 状态）
+
+前端/客户端拿到 `list_conversations` 后，需与本地链下状态（MLS 会话库 + relay 投递记录 +
+本地偏好）合并。约定如下：
+
+**1. 会话主键（去重/合并键）**
+- 私聊：以**对端身份**为主键（`peer` AccountId，或客户端侧的成对 MLS session id）。
+  注意：同一对用户的「链上 System 会话」与「链下人类 MLS 会话」是两条独立来源，
+  客户端应按对端**合并为同一张会话卡片**（System 通知与人类消息混排在该卡片时间线内，或
+  按产品需要分区展示）。
+- 群聊：以 `group_id` 为主键。
+
+**2. 会话集合（presence）= 链上 ∪ 链下**
+- 起始集合 = 本地会话来源 ∪ 链上返回的行。本地会话来源 = **加密会话索引 blob**（首选）∪
+  **inbox 投递推导**（兜底）∪ 本地 MLS 会话库——详见
+  [`CHAT_P2_SESSION_ANCHOR_DESIGN.md`](./CHAT_P2_SESSION_ANCHOR_DESIGN.md)。
+- 仅链下存在的私聊（无 System 消息）：链上无行（**有意为之**，链上私聊锚点已否决以隐藏通信
+  关系），**以链下为准**补入。
+- 仅链上存在的私聊（只有 System 通知）：作为「平台通知」卡片保留。
+
+**3. 排序键 `recency`**
+- 私聊：`recency = max(链上 last_active 折算时间, 链下最后一条消息时间)`。
+- 群聊：`recency = 链下最后一条消息时间`（链上恒 0，不可用）。
+- 置顶优先：`pinned = 链上 pinned(私聊) OR 本地置顶偏好(私聊/群)`，置顶组排在最前，
+  组内再按 `recency` 倒序。
+
+**4. 未读 `unread`**
+- 私聊：`unread = 链下 MLS 未读 + (可选)链上 System 未读`（是否计入 System 由产品决定）。
+- 群聊：`unread = 链下 MLS 未读`（链上恒 0）。
+- App 全局角标 = Σ 各会话合并后的 `unread`，**不要**直接用 `total_direct_unread`。
+
+**5. 静音 / 免打扰**
+- 私聊提醒抑制：`链上 muted(DND) OR 本地 DND 偏好`。
+- 群：`链上 muted` 表示**被管理员禁言（不能发言）**，与「我不想收提醒」是两件事；
+  群的「免打扰」是本地偏好，需单独存储与渲染。
+
+**6. 字段权威性速查**
+- 链上权威：私聊 `pinned/muted(DND)/archived`、群 `name/avatar/role/member_count/muted(禁言)`。
+- 链下权威：所有人类消息的内容、时间、未读、会话存在性、群活跃度、群置顶/免打扰偏好。
 
 ### 自定义 JSON-RPC（node 端）
 
@@ -127,8 +198,8 @@ polkadot-js 客户端用 JSON 友好类型直接调用。所有方法只读且�
 
 | 方法 | 说明 |
 | --- | --- |
-| `chat_listConversations(who, at?)` | 统一会话列表（私聊 + 群聊） |
-| `chat_totalDirectUnread(who, at?)` | 私聊未读总数 |
+| `chat_listConversations(who, at?)` | 链上会话切片（私聊 + 群聊）；非完整列表，需客户端 Merge（见上） |
+| `chat_totalDirectUnread(who, at?)` | 链上 System 通道未读总数；**非** App 全局角标 |
 | `chat_checkPermission(sender, receiver, at?)` | 聊天权限检查 |
 | `chat_getActiveScenes(user1, user2, at?)` | 两用户间有效场景授权 |
 | `chat_isFriend(user1, user2, at?)` | 是否好友 |
@@ -145,10 +216,11 @@ polkadot-js 客户端用 JSON 友好类型直接调用。所有方法只读且�
 
 ## 设计原则
 
-1. **低耦合**: common模块不依赖任何pallet，各子模块通过traits交互
-2. **类型统一**: 所有消息类型、加密模式在common中定义
-3. **权限集中**: 统一的权限检查通过permission模块
-4. **可扩展**: 新增聊天场景只需扩展SceneType枚举
+1. **低耦合**: `common` 不依赖任何 pallet；只承载真正共享的 `rate_limit` 与 `runtime_api`。
+2. **单一事实来源**: 链上 `MessageType` 在 `core`；权限在 `permission`；不在 `common` 维护
+   并行的类型/trait（审计 P1 已删除发散定义）。
+3. **权限集中**: 统一的权限检查通过 `permission`（`ChatPermissionChecker`）。
+4. **可扩展**: 新增聊天场景只需扩展 `SceneType` 枚举。
 
 ## 迁移历史
 
@@ -206,8 +278,96 @@ polkadot-js 客户端用 JSON 友好类型直接调用。所有方法只读且�
   下**几乎全部属于链下职责**，链上**不新增 extrinsic / storage**。已落一份链下方案与
   链上边界设计：`CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md`（MLS payload 信封约定、客户端/relay
   执行分层、链上明确不做清单、可选未来挂钩）。
+- 2026-06-03: 设备端保留与清理策略草案：`CHAT_DEVICE_RETENTION_DESIGN.md`（客户端职责，
+  链上不参与）。明确"链上 180 天元数据软过期 ≠ 设备保留"，定义本地数据模型、按时间/条数/容量
+  的保留维度、热冷分层 + LRU 淘汰、按 CID 从 IPFS/relay 的恢复路径，以及与 MLS 前向保密/阅后
+  即焚的安全交互。
 - 2026-06-03: 大文件处理（边界决策）：聊天大文件（图片/视频/语音/附件）**本体不上链、
   不进 MLS payload**——每文件独立对称密钥加密 + 分块 + manifest 存 IPFS，MLS 仅传引用
   （`cid + file_key + 元数据`），持久化交给 `pallet-storage-service` 的 Tier 化多副本 Pin
   或链下托管。已落规范：`CHAT_LARGE_FILE_SPEC.md`（文件信封 / 分块 manifest / 缩略图 /
   计费分级 / 换机恢复衔接 / 链上不做清单）。
+- 2026-06-03: 链上好友图谱**整体删除**，改链下能力令牌（隐私：隐藏好友列表 + 通信关系）。
+  `pallet-chat-permission` 删 `Friendships`/好友申请/备注分组及对应 extrinsic/RPC/API，
+  新增 `CapabilityEpoch` 撤销锚 + `bump_capability_epoch`；`pallet-chat-core` `send_message`
+  收窄为仅 `System`（人类消息全链下，返回 `HumanMessagesOffChain`）；`pallet-chat-group`
+  文档化「1:1 不建链上群」不变量。
+- 2026-06-03: 链下投递准入规范：`CHAT_OFFCHAIN_DELIVERY_DESIGN.md`（**盲化一次性投递令牌**）。
+  基线 RFC 9474 Blind RSA：接收方盲签令牌、relay 公钥离线验签 + per-inbox spent set；
+  **per-contact 标签**定向撤销 + epoch 整批撤销；一次性务实降级为「Bob 侧精确一次 + relay 侧
+  至多 k 份」；含 inbox 注册表字段、relay 验证伪码、匿名性/陷阱分析、BBS+ 升级路径。
+- 2026-06-03: 新增 **`pallet-chat-inbox`**（`pallets/chat/inbox`，runtime index 78）——上文规范的
+  链上锚点 v1。`inbox_id → {controller, epoch(inbox 维度), revoked_tags, deposit}`；IPK 下链
+  （`inbox_id = H(IPK)`，链不做 RSA）；epoch **不复用** 账户级 `CapabilityEpoch`（避免 relay 把
+  inbox 链回账户）；v1 用签名 controller + 押金反垃圾（不可关联性靠一次性 controller）。暴露
+  `ChatInboxApi` + RPC `chat_inboxEpoch / chat_isTagRevoked / chat_inboxExists`。relay 程序、客户端
+  盲签/兑付、RFC 9474 实现不在本仓，属链下组件。
+- 2026-06-03: 复审三项修复（B1/B2/P1）：
+  - **B1（未读漂移）**：`pallet-chat-core::delete_message` 接收方删除「仍计未读」的消息时同步
+    抵消 `UnreadCount`（幂等：仅未读 + 未撤回 + 此前未删除时抵消），修复角标永久 +1。
+  - **B2（System 来源限制）**：`send_message` / `send_system_message` 改用新配置
+    `SystemMessageOrigin: EnsureOrigin<…, Success = AccountId>` 取代 `ensure_signed`，杜绝任意用户
+    伪造 `System` 系统通知。runtime 收敛为 `EnsureRootWithSuccess<AccountId, ChatSystemMessenger>`
+    （治理签发，sender = PalletId 派生系统账户）；mock 用 `EnsureSigned` 保持单测语义。
+  - **P1（黑/白名单去明文，隐私）**：`pallet-chat-permission` **删除链上 `block_list` / `whitelist`**
+    明文存储及 `block_user`/`unblock_user`/`add_to_whitelist`/`remove_from_whitelist`（call_index
+    2/3/6/7 留空）+ 对应事件 / 错误 / 权重 / 基准；`check_permission` 去除黑/白名单分支，`Whitelist`
+    级别等同 `FriendsOnly`；摘要去除 `block_list_count`/`whitelist_count`。拉黑 / 放行统一走链下
+    能力令牌（`bump_capability_epoch`）+ 信箱标签撤销（`pallet-chat-inbox::revoke_tag`）。
+- 2026-06-03: 复审收尾（B3/B4/U2/U3 复核 + P2/P3 边界文档化）：
+  - **B3（已落地复核）**：`mark_session_as_read` 已为有界扫描（单次 `MAX_SESSION_READ_SCAN=512`，
+    按本次实际标记数递减未读，分批安全）；`mark_batch_as_read` 权重随 `message_ids.len()` 计费。
+  - **B4（已落地复核）**：`do_disband` 已改有界拆除（单次 `MAX_DISBAND_ITEMS_PER_CALL`，进入即
+    `GroupFrozen` 冻结、cursor 判定完成、未完成发 `GroupDisbandProgress`、全清后才退押金移除群根）。
+  - **U3（已落地复核）**：`commit` 公开群要求被加成员**已发布 KeyPackage**（链上同意信号 + MLS 正确性），
+    私群需管理员批准，杜绝被动拉入。
+  - **U2（决策文档化）**：场景授权**有意**覆盖 `Closed`——存在场景授权即双方处于活跃交易上下文
+    （订单/争议/做市），对方必须能就该业务联系；接收方经 `rejected_scene_types` 按场景控制。非泄漏。
+  - **P2（固有权衡 + 防呆）**：场景授权对 `(user1,user2)+scene` 镜像的是来源 pallet 本就公开的业务关系
+    （悬赏 poster/solver、群成员均在链上）；`SceneAuthorization.metadata` 明文上链，已加隐私警告并约束
+    调用方仅传空/不透明引用（现生产调用方均传空）。
+  - **P3（固有权衡）**：多人群成员（`GroupMembers`/`UserGroups`）明文上链是 DS+AS 角色固有属性，由
+    「1:1 不建链上群」不变量收口；消息内容仍链下 E2EE。已在 group lib 头与 README 文档化。
+- 2026-06-03: 复审第二批修复（B3/B4/U2/U3）：
+  - **B3（权重/DoS）**：`pallet-chat-core::mark_session_as_read` 原对会话消息「无界迭代 + 固定权重
+    100」，会被低估。改为单次最多扫描 `MAX_SESSION_READ_SCAN`（512）条、权重按该上限计；未读按
+    「本次实际标记数」递减（分批收敛、不再误清零），会话过大时客户端可重复调用。
+  - **B4（权重/DoS）**：`pallet-chat-group::do_disband` 原用 `clear_prefix(u32::MAX)` 配固定权重清理
+    随群生命周期无界增长的 `HandshakeLog` / `MessageDigestAnchor` / `Banned` 等前缀。改为**有界拆除**：
+    进入即冻结群（阻止 `commit` 等拆除期间继续写入），单次每前缀最多移除 `MAX_DISBAND_ITEMS_PER_CALL`
+    （128）项，全部清空才移除 `GroupMls` 并退押金；未清完发 `GroupDisbandProgress`，调用方重复
+    `disband_group` / `force_disband_group` 直至完成。权重按预算计量。小群（含全部单测）一次完成。
+  - **U2（语义澄清，非行为变更）**：明确 `check_permission` 中**场景授权有意覆盖 `Closed`**——存在订单 /
+    争议 / 做市等活跃交易上下文时对方必须可就业务联系到接收方；接收方仍可用 `rejected_scene_types`
+    按场景拒绝（拒绝后正常套用 `Closed`/`FriendsOnly`）。已在 doc 注释中写明（EN+CN）。
+  - **U3（滥用向量）**：`pallet-chat-group::commit` 向**公开群**加人时，要求被加成员已发布至少一个
+    KeyPackage（`KeyPackageCount > 0`，新增 `Error::AddeeNotJoinable`）——既是「同意被加入」的链上信号
+    （成员主动发布、可吊销退出），也符合 MLS（无对方 KeyPackage 本就无法 Add）。私群仍走 request/approve
+    同意流程，行为不变。
+- 2026-06-03: 待定隐私决策（P2/P3）——见 `permission` / `group` 模块说明与本批讨论，涉及
+  `SceneAuthorizations` 明文配对 与 `GroupMembers`/`UserGroups` 明文成员关系，属架构级取舍，待定方案后再改。
+- 2026-06-04: 审计 P2（会话列表体验，隐私优先）：
+  - **Item 1（否决链上锚点）**：明确**不**为链下私聊新增链上会话锚点（`touch_session` 等）——
+    会泄漏「谁↔谁」通信关系，违反「1:1 不建链上群」不变量。换设备/重装的会话恢复改走**链下**：
+    加密会话索引 blob（首选）+ inbox 投递推导（兜底）。决策与方案见
+    `CHAT_P2_SESSION_ANCHOR_DESIGN.md`。链上零新增。
+  - **Item 2（群排序确定性）**：`runtime/src/apis.rs` 的 `list_conversations` 群聊部分改为按
+    `group_id` 升序输出，给客户端一个确定、可分页的基线（真实活跃度仍由客户端用链下
+    `last_active` 跨类型重排）。仅改 runtime 聚合层，无 pallet / storage / weight 改动。
+- 2026-06-04: `common` 审计 P1（类型收敛 + 死代码清理，无链上行为变更）：
+  - **删除** `common` 中零调用方的 `types.rs`（`MessageType`/`MessageStatus`/`EncryptionMode`/
+    重复 `ChatUserId`）、`traits.rs`（`ChatPermissionCheck`/`FriendshipCheck`/`ChatUserIdProvider`/
+    `IpfsContentValidator`/`GroupMemberCheck`/`RateLimitCheck`）、`validation.rs`（可绕过的 CID
+    「加密」启发式 + 误导示例）。`common` 现仅余 `rate_limit` + `runtime_api`。
+  - 消除 `MessageType` 编码地雷：链上权威 `MessageType` 唯一来源为 `pallet-chat-core`（未改其
+    链上枚举，无存储迁移）；common 不再维护并行定义。
+  - **移除** `pallet-chat-core` / `pallet-chat-permission` 对 `pallet-chat-common` 的 dead 依赖
+    （deps + `std` feature；二者源码本就零 import）。清理 `common/Cargo.toml` 未用的
+    `frame-support` 与 dev-deps。
+  - 同步重写 `common/README.md`、更新 chat/permission/group README 中对 common 的描述与依赖图。
+- 2026-06-04: `common` 审计 P0（文档/契约修正，无链上行为变更）：纠正 `ChatViewApi` 的
+  「链上 / 链下边界」误述——私聊 `unread`/`last_active` 实际只反映 **System 通知通道**（人类
+  私聊全链下，纯链下聊天不产生链上私聊行），`total_direct_unread` **非** App 全局角标；明确
+  `muted` 在 `kind=direct`（免打扰 DND）与 `kind=group`（管理员禁言/不能发言）下语义不同，
+  客户端必须按 `kind` 分支；新增**客户端 Merge Spec**（会话主键/presence/排序/未读/静音/
+  字段权威性）。同步修订 `runtime_api.rs`、`node/src/chat_rpc.rs` 文档注释（EN+CN）。

@@ -43,7 +43,8 @@ use sp_version::RuntimeVersion;
 
 // Local module imports
 use super::{
-    AccountId, Arbitration, Babe, Balance, Block, BlockNumber, ChatCore, ChatGroup, ChatPermission,
+    AccountId, Arbitration, Babe, Balance, Block, BlockNumber, ChatCore, ChatGroup, ChatInbox,
+    ChatPermission,
     CommissionPoolReward, EntityMarket, EntityRegistry, Evidence, Executive, Grandpa, Hash,
     Historical, InherentDataExt, NexMarket, Nonce, Runtime, RuntimeCall, RuntimeGenesisConfig,
     SessionKeys, StorageService, System, TransactionPayment, VERSION,
@@ -809,8 +810,15 @@ impl_runtime_apis! {
             }
 
             // 群聊会话：链上仅有元数据；活跃度/未读在链下，由客户端合并。
+            // 按 group_id 升序输出，给客户端一个确定、可分页的基线（真实排序仍由
+            // 客户端用链下 last_active 跨类型重排，见 README Merge Spec）。
             // Group conversations: chain holds metadata only; recency/unread off-chain.
-            for gid in ChatGroup::user_group_ids(&who) {
+            // Emit groups sorted by group_id ascending to give clients a deterministic,
+            // pageable baseline (real ordering is still merged client-side using off-chain
+            // last_active; see README Merge Spec).
+            let mut group_ids = ChatGroup::user_group_ids(&who);
+            group_ids.sort_unstable();
+            for gid in group_ids {
                 let (name, avatar_cid) = ChatGroup::group_profile(gid)
                     .map(|p| (p.name.into_inner(), p.avatar_cid.into_inner()))
                     .unwrap_or_default();
@@ -868,6 +876,23 @@ impl_runtime_apis! {
             user: AccountId,
         ) -> pallet_chat_permission::PrivacySettingsSummary {
             ChatPermission::get_privacy_summary(&user)
+        }
+    }
+
+    impl pallet_chat_inbox::runtime_api::ChatInboxApi<Block> for Runtime {
+        fn inbox_epoch(inbox_id: pallet_chat_inbox::InboxId) -> Option<u32> {
+            ChatInbox::inbox_epoch(inbox_id)
+        }
+
+        fn is_tag_revoked(
+            inbox_id: pallet_chat_inbox::InboxId,
+            tag: pallet_chat_inbox::ContactTag,
+        ) -> bool {
+            ChatInbox::is_tag_revoked(inbox_id, tag)
+        }
+
+        fn inbox_exists(inbox_id: pallet_chat_inbox::InboxId) -> bool {
+            ChatInbox::inbox_exists(inbox_id)
         }
     }
 }

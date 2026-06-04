@@ -45,7 +45,11 @@ pub trait SceneAuthorizationManager<AccountId, BlockNumber> {
     /// - `scene_type`: 场景类型
     /// - `scene_id`: 场景标识（如订单ID）
     /// - `duration`: 有效期（区块数），None 表示永不过期
-    /// - `metadata`: 元数据（用于前端显示，如订单金额）
+    /// - `metadata`: 不透明/空元数据。**隐私（审计 P2）**：明文上链，禁止放敏感信息
+    ///   （金额/姓名/备注），仅可传空或不透明引用（如加密 CID）。
+    ///   Opaque/empty metadata. **Privacy (audit P2)**: stored on-chain in clear —
+    ///   never put sensitive plaintext (amounts/names/notes); pass empty or an
+    ///   opaque reference (e.g. an encrypted CID) only.
     ///
     /// # 错误
     /// - 场景授权数量超过上限时返回错误

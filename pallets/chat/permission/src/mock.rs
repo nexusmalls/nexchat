@@ -52,10 +52,6 @@ impl frame_system::Config for Test {
 }
 
 parameter_types! {
-    /// 函数级中文注释：黑名单最大数量（测试用：10）
-    pub const MaxBlockListSize: u32 = 10;
-    /// 函数级中文注释：白名单最大数量（测试用：10）
-    pub const MaxWhitelistSize: u32 = 10;
     /// 函数级中文注释：每对用户最大场景授权数量（测试用：5）
     pub const MaxScenesPerPair: u32 = 5;
     pub const MaxReportCidLen: u32 = 64;
@@ -65,8 +61,6 @@ parameter_types! {
 
 // 函数级中文注释：聊天权限 Pallet 测试配置
 impl pallet_chat_permission::Config for Test {
-    type MaxBlockListSize = MaxBlockListSize;
-    type MaxWhitelistSize = MaxWhitelistSize;
     type MaxScenesPerPair = MaxScenesPerPair;
     type GovernanceOrigin = frame_system::EnsureRoot<u64>;
     type MaxReportCidLen = MaxReportCidLen;

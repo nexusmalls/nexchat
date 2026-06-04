@@ -487,6 +487,10 @@ fn test_delete_message_by_receiver() {
 			None
 		));
 
+		// 删除前：BOB 有 1 条未读 / before delete: BOB has 1 unread
+		let session_id = Chat::get_message(0).unwrap().session_id;
+		assert_eq!(Chat::get_unread_count(BOB, Some(session_id)), 1);
+
 		// BOB删除消息
 		assert_ok!(Chat::delete_message(RuntimeOrigin::signed(BOB), 0));
 
@@ -494,6 +498,13 @@ fn test_delete_message_by_receiver() {
 		let msg = Chat::get_message(0).unwrap();
 		assert_eq!(msg.is_deleted_by_sender, false);
 		assert_eq!(msg.is_deleted_by_receiver, true);
+
+		// B1 回归：接收方删除未读消息后未读计数被抵消，且幂等（重复删除不再扣减）。
+		// B1 regression: deleting an unread message offsets the unread count, and
+		// is idempotent (a repeated delete does not decrement again).
+		assert_eq!(Chat::get_unread_count(BOB, Some(session_id)), 0);
+		assert_ok!(Chat::delete_message(RuntimeOrigin::signed(BOB), 0));
+		assert_eq!(Chat::get_unread_count(BOB, Some(session_id)), 0);
 	});
 }
 
@@ -866,30 +877,37 @@ fn test_duplicate_mark_as_read() {
 }
 
 // ============================================================================
-// C1 权限单一化：发送闸门以 chat-permission 为唯一事实来源（审计 I）
+// System 通道：受信来源，绕过接收方权限闸门
+// System channel: trusted origin, bypasses the recipient permission gate
 // ============================================================================
 //
-// 黑名单 / 拉黑 / 陌生人校验已从 chat-core 移除，统一由 pallet-chat-permission
-// 判定（其 block_list + permission_level）。chat-core 仅通过
-// `ChatPermission::can_send_message` 这一道闸门校验。以下用可配置的 mock 权限端口
-// 验证：当 chat-permission 拒绝时，send_message 返回 ChatNotAuthorized。
+// 链上消息当前仅 System 类，且来自受信特权来源（生产为治理 / Root，见
+// `SystemMessageOrigin`）。平台通知必须无视接收方隐私级别送达，故 System 绕过
+// `ChatPermission::can_send_message` 闸门。人类消息（会被门控的非 System 路径）
+// 已迁出链下。以下用可配置的 mock 权限端口验证：即便 chat-permission 拒绝，
+// System 消息仍成功送达。
+// On-chain messages are currently System-only and come from a trusted privileged
+// origin; platform notifications must reach the recipient regardless of privacy,
+// so System bypasses the `can_send_message` gate. Gateable human messages are
+// off-chain. The tests below assert delivery succeeds even when permission denies.
 
 #[test]
-fn test_send_message_denied_by_chat_permission() {
+fn test_system_message_bypasses_permission_gate() {
 	new_test_ext().execute_with(|| {
-		// chat-permission 拒绝 ALICE → BOB（等价于 BOB 拉黑 ALICE / 隐私级别拒绝）。
+		// System 消息来自受信来源（生产为治理 / Root），是平台通知，必须无视接收方隐私
+		// 级别送达：即便 chat-permission 拒绝 ALICE → BOB，System 消息仍应成功落库。
+		// System messages come from a trusted origin and must reach the recipient
+		// regardless of privacy level, so they bypass the permission gate.
 		crate::mock::deny_permission(ALICE, BOB);
 
-		assert_noop!(
-			Chat::send_message(
-				RuntimeOrigin::signed(ALICE),
-				BOB,
-				encrypted_cid(1),
-				4,
-				None
-			),
-			Error::<Test>::ChatNotAuthorized
-		);
+		assert_ok!(Chat::send_message(
+			RuntimeOrigin::signed(ALICE),
+			BOB,
+			encrypted_cid(1),
+			4,
+			None
+		));
+		assert_eq!(Chat::get_message(0).unwrap().msg_type, MessageType::System);
 	});
 }
 
@@ -930,91 +948,46 @@ fn test_send_system_message_sets_system_type() {
 }
 
 #[test]
-fn test_send_system_message_respects_permission_gate() {
+fn test_send_system_message_bypasses_permission_gate() {
 	new_test_ext().execute_with(|| {
-		// 系统消息同样受 chat-permission 单一闸门约束。
+		// 系统消息来自受信来源，不受接收方隐私级别约束：即便 chat-permission 拒绝，
+		// `send_system_message` 仍成功送达。
+		// System messages come from a trusted origin and are not gated by the
+		// recipient's privacy level: even when chat-permission denies, delivery succeeds.
 		crate::mock::deny_permission(ALICE, BOB);
-		assert_noop!(
-			Chat::send_system_message(
-				RuntimeOrigin::signed(ALICE),
-				BOB,
-				encrypted_cid(1),
-				None
-			),
-			Error::<Test>::ChatNotAuthorized
-		);
-	});
-}
-
-// ============================================================================
-// P1新功能测试：频率限制
-// ============================================================================
-
-#[test]
-fn test_rate_limit_works() {
-	new_test_ext().execute_with(|| {
-		// 发送10条消息（达到上限）
-		for i in 1..=10 {
-			assert_ok!(Chat::send_message(
-				RuntimeOrigin::signed(ALICE),
-				BOB,
-				encrypted_cid(i),
-				4,
-				None
-			));
-		}
-
-		// 尝试发送第11条消息（超过限制）
-		assert_noop!(
-			Chat::send_message(
-				RuntimeOrigin::signed(ALICE),
-				BOB,
-				encrypted_cid(11),
-				4,
-				None
-			),
-			Error::<Test>::RateLimitExceeded
-		);
-	});
-}
-
-#[test]
-fn test_rate_limit_resets_after_window() {
-	new_test_ext().execute_with(|| {
-		// 发送10条消息（达到上限）
-		for i in 1..=10 {
-			assert_ok!(Chat::send_message(
-				RuntimeOrigin::signed(ALICE),
-				BOB,
-				encrypted_cid(i),
-				4,
-				None
-			));
-		}
-
-		// 超过限制
-		assert_noop!(
-			Chat::send_message(
-				RuntimeOrigin::signed(ALICE),
-				BOB,
-				encrypted_cid(11),
-				4,
-				None
-			),
-			Error::<Test>::RateLimitExceeded
-		);
-
-		// 推进区块（超过窗口期）
-		System::set_block_number(System::block_number() + 101);
-
-		// 窗口期重置后，可以再次发送
-		assert_ok!(Chat::send_message(
+		assert_ok!(Chat::send_system_message(
 			RuntimeOrigin::signed(ALICE),
 			BOB,
-			encrypted_cid(11),
-			4,
+			encrypted_cid(1),
 			None
 		));
+		assert_eq!(Chat::get_message(0).unwrap().msg_type, MessageType::System);
+	});
+}
+
+// ============================================================================
+// System 通道：不受反垃圾限频约束（受信来源）
+// System channel: not subject to anti-spam rate limiting (trusted origin)
+// ============================================================================
+
+#[test]
+fn test_system_messages_not_rate_limited() {
+	new_test_ext().execute_with(|| {
+		// System 消息来自受信特权来源（生产为治理 / Root），不应被反垃圾限频拦截。
+		// 连发远超 `MaxMessagesPerWindow`（=10）的条数，全部应成功。
+		// System messages come from a trusted origin and must not be throttled by
+		// the anti-spam rate limit; sending well beyond the window cap all succeed.
+		for i in 1..=25u8 {
+			assert_ok!(Chat::send_message(
+				RuntimeOrigin::signed(ALICE),
+				BOB,
+				encrypted_cid(i),
+				4,
+				None
+			));
+		}
+		// 第 25 条仍成功（不存在 RateLimitExceeded）。/ the 25th still succeeded.
+		assert!(Chat::get_message(24).is_some());
 	});
 }
 

@@ -1,8 +1,9 @@
 //! Benchmarks for pallet-entity-shop
 //!
-//! 全部 33 个 extrinsics 均有 benchmark。
-//! 由于 shop pallet 依赖大量外部 trait（EntityProvider / StoragePin / ProductProvider 等），
-//! benchmark 通过直接写入存储来构造前置状态，绕过外部 pallet 依赖。
+//! Covers the current shop lifecycle extrinsics (the points sub-system was
+//! moved out of this pallet, so its former benchmarks are gone). Shop state is
+//! seeded by writing storage directly to bypass external trait dependencies
+//! (EntityProvider / StoragePin / ProductProvider …).
 
 #![cfg(feature = "runtime-benchmarks")]
 
@@ -85,37 +86,18 @@ fn seed_active_shop<T: Config>(shop_id: u64, entity_id: u64) {
     let _ = T::Currency::deposit_creating(&shop_account, amount);
 }
 
-/// 种子积分系统
-fn seed_points<T: Config>(shop_id: u64) {
-    let name: BoundedVec<u8, T::MaxPointsNameLength> = b"Points".to_vec().try_into().unwrap();
-    let symbol: BoundedVec<u8, T::MaxPointsSymbolLength> = b"PTS".to_vec().try_into().unwrap();
-    let config = PointsConfig {
-        name,
-        symbol,
-        reward_rate: 500,
-        exchange_rate: 1000,
-        transferable: true,
-    };
-    ShopPointsConfigs::<T>::insert(shop_id, config);
-}
-
-/// 种子积分余额
-fn seed_points_balance<T: Config>(shop_id: u64, account: &T::AccountId, amount: BalanceOf<T>) {
-    ShopPointsBalances::<T>::insert(shop_id, account, amount);
-    ShopPointsTotalSupply::<T>::mutate(shop_id, |s| *s = s.saturating_add(amount));
-}
-
-/// 种子多个积分用户（用于 clear_prefix 分页测试）
-fn seed_points_users<T: Config>(shop_id: u64, count: u32) {
-    for i in 0..count {
-        let account: T::AccountId = frame_benchmarking::account("points_user", i, 0);
-        let amount: BalanceOf<T> = 100u32.into();
-        ShopPointsBalances::<T>::insert(shop_id, &account, amount);
-        ShopPointsTotalSupply::<T>::mutate(shop_id, |s| *s = s.saturating_add(amount));
-        // 设置过期时间
-        let now = frame_system::Pallet::<T>::block_number();
-        ShopPointsExpiresAt::<T>::insert(shop_id, &account, now.saturating_add(1000u32.into()));
-    }
+/// 种子一个待处理的 Shop 转让请求
+fn seed_pending_transfer<T: Config>(shop_id: u64, from_entity_id: u64, to_entity_id: u64) {
+    let now = frame_system::Pallet::<T>::block_number();
+    PendingTransfers::<T>::insert(
+        shop_id,
+        PendingShopTransfer {
+            from_entity_id,
+            to_entity_id,
+            keep_managers: true,
+            requested_at: now,
+        },
+    );
 }
 
 #[benchmarks]
@@ -258,88 +240,17 @@ mod benches {
         );
     }
 
-    // ==================== call_index(8): enable_points ====================
-    #[benchmark]
-    fn enable_points() {
-        let owner = funded_account::<T>("owner", 0);
-        seed_active_shop::<T>(1, 1);
-
-        let name: BoundedVec<u8, T::MaxPointsNameLength> =
-            b"Shop Points".to_vec().try_into().unwrap();
-        let symbol: BoundedVec<u8, T::MaxPointsSymbolLength> = b"SP".to_vec().try_into().unwrap();
-
-        #[extrinsic_call]
-        _(
-            RawOrigin::Signed(owner),
-            1u64,
-            name,
-            symbol,
-            500u16,  // reward_rate 5%
-            1000u16, // exchange_rate 10%
-            true,    // transferable
-        );
-
-        assert!(ShopPointsConfigs::<T>::contains_key(1u64));
-    }
-
     // ==================== call_index(9): close_shop ====================
     #[benchmark]
     fn close_shop() {
         let owner = funded_account::<T>("owner", 0);
         seed_active_shop::<T>(1, 1);
-        // 确保不是 primary shop
-        EntityPrimaryShop::<T>::remove(1u64);
 
         #[extrinsic_call]
         _(RawOrigin::Signed(owner), 1u64);
 
         let shop = Shops::<T>::get(1u64).unwrap();
         assert_eq!(shop.status, ShopOperatingStatus::Closing);
-    }
-
-    // ==================== call_index(10): disable_points ====================
-    // 注意：此 benchmark 使用分页清理后的逻辑
-    #[benchmark]
-    fn disable_points() {
-        let owner = funded_account::<T>("owner", 0);
-        seed_active_shop::<T>(1, 1);
-        seed_points::<T>(1);
-        seed_points_users::<T>(1, 50);
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(owner), 1u64);
-
-        assert!(!ShopPointsConfigs::<T>::contains_key(1u64));
-    }
-
-    // ==================== call_index(11): update_points_config ====================
-    #[benchmark]
-    fn update_points_config() {
-        let owner = funded_account::<T>("owner", 0);
-        seed_active_shop::<T>(1, 1);
-        seed_points::<T>(1);
-
-        #[extrinsic_call]
-        _(
-            RawOrigin::Signed(owner),
-            1u64,
-            Some(800u16),  // reward_rate
-            Some(2000u16), // exchange_rate
-            Some(false),   // transferable
-        );
-    }
-
-    // ==================== call_index(12): transfer_points ====================
-    #[benchmark]
-    fn transfer_points() {
-        let from = funded_account::<T>("from", 0);
-        let to: T::AccountId = frame_benchmarking::account("to", 0, 0);
-        seed_active_shop::<T>(1, 1);
-        seed_points::<T>(1);
-        seed_points_balance::<T>(1, &from, 10_000u32.into());
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(from), 1u64, to, 5_000u32.into());
     }
 
     // ==================== call_index(13): withdraw_operating_fund ====================
@@ -361,18 +272,12 @@ mod benches {
     fn finalize_close_shop() {
         let caller = funded_account::<T>("caller", 0);
         seed_shop::<T>(1, 1, ShopOperatingStatus::Closing);
-        // 确保不是 primary shop
-        EntityPrimaryShop::<T>::remove(1u64);
 
         // 设置关闭时间为足够早
         let now = frame_system::Pallet::<T>::block_number();
         let grace = T::ShopClosingGracePeriod::get();
         let closing_at = now.saturating_sub(grace.saturating_add(1u32.into()));
         ShopClosingAt::<T>::insert(1u64, closing_at);
-
-        // 种子一些积分数据用于清理
-        seed_points::<T>(1);
-        seed_points_users::<T>(1, 20);
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), 1u64);
@@ -381,60 +286,50 @@ mod benches {
         assert_eq!(shop.status, ShopOperatingStatus::Closed);
     }
 
-    // ==================== call_index(16): manager_issue_points ====================
-    #[benchmark]
-    fn manager_issue_points() {
-        let owner = funded_account::<T>("owner", 0);
-        let to: T::AccountId = frame_benchmarking::account("recipient", 0, 0);
-        seed_active_shop::<T>(1, 1);
-        seed_points::<T>(1);
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(owner), 1u64, to, 5_000u32.into());
-    }
-
-    // ==================== call_index(17): manager_burn_points ====================
-    #[benchmark]
-    fn manager_burn_points() {
-        let owner = funded_account::<T>("owner", 0);
-        let target: T::AccountId = frame_benchmarking::account("target", 0, 0);
-        seed_active_shop::<T>(1, 1);
-        seed_points::<T>(1);
-        seed_points_balance::<T>(1, &target, 10_000u32.into());
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(owner), 1u64, target, 5_000u32.into());
-    }
-
-    // ==================== call_index(18): redeem_points ====================
-    #[benchmark]
-    fn redeem_points() {
-        let user = funded_account::<T>("user", 0);
-        seed_active_shop::<T>(1, 1);
-        seed_points::<T>(1);
-        seed_points_balance::<T>(1, &user, 10_000u32.into());
-
-        // 确保 shop 有足够运营资金支付兑换
-        let shop_account = Pallet::<T>::shop_account_id(1u64);
-        let _ = T::Currency::deposit_creating(&shop_account, 500_000u32.into());
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(user), 1u64, 1_000u32.into());
-    }
-
-    // ==================== call_index(19): transfer_shop ====================
+    // ==================== call_index(19): request_transfer_shop (weight: transfer_shop) ====================
     #[benchmark]
     fn transfer_shop() {
         let owner = funded_account::<T>("owner", 0);
         seed_active_shop::<T>(1, 1);
-        // 确保不是 primary shop
-        EntityPrimaryShop::<T>::remove(1u64);
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(owner), 1u64, 2u64);
+        request_transfer_shop(RawOrigin::Signed(owner), 1u64, 2u64);
 
-        let shop = Shops::<T>::get(1u64).unwrap();
-        assert_eq!(shop.entity_id, 2u64);
+        assert!(PendingTransfers::<T>::contains_key(1u64));
+    }
+
+    // ==================== call_index(33): accept_transfer_shop ====================
+    #[benchmark]
+    fn accept_transfer_shop() {
+        let to_owner = funded_account::<T>("to_owner", 0);
+        seed_active_shop::<T>(1, 1);
+        seed_pending_transfer::<T>(1, 1, 2);
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(to_owner), 1u64, true);
+    }
+
+    // ==================== call_index(34): cancel_transfer_shop ====================
+    #[benchmark]
+    fn cancel_transfer_shop() {
+        let owner = funded_account::<T>("owner", 0);
+        seed_active_shop::<T>(1, 1);
+        seed_pending_transfer::<T>(1, 1, 2);
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(owner), 1u64);
+
+        assert!(!PendingTransfers::<T>::contains_key(1u64));
+    }
+
+    // ==================== call_index(35): allocate_from_treasury ====================
+    #[benchmark]
+    fn allocate_from_treasury() {
+        let owner = funded_account::<T>("owner", 0);
+        seed_active_shop::<T>(1, 1);
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(owner), 1u64, 5000u32.into());
     }
 
     // ==================== call_index(20): set_primary_shop ====================
@@ -443,13 +338,9 @@ mod benches {
         let owner = funded_account::<T>("owner", 0);
         seed_active_shop::<T>(1, 1);
         seed_active_shop::<T>(2, 1);
-        // 设置 shop 1 为当前 primary
-        EntityPrimaryShop::<T>::insert(1u64, 1u64);
 
         #[extrinsic_call]
         _(RawOrigin::Signed(owner), 1u64, 2u64);
-
-        assert_eq!(EntityPrimaryShop::<T>::get(1u64), Some(2u64));
     }
 
     // ==================== call_index(21): force_pause_shop ====================
@@ -464,45 +355,10 @@ mod benches {
         assert_eq!(shop.status, ShopOperatingStatus::Paused);
     }
 
-    // ==================== call_index(22): set_points_ttl ====================
-    #[benchmark]
-    fn set_points_ttl() {
-        let owner = funded_account::<T>("owner", 0);
-        seed_active_shop::<T>(1, 1);
-        seed_points::<T>(1);
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(owner), 1u64, 100u32.into());
-
-        assert_eq!(ShopPointsTtl::<T>::get(1u64), 100u32.into());
-    }
-
-    // ==================== call_index(23): expire_points ====================
-    #[benchmark]
-    fn expire_points() {
-        let caller = funded_account::<T>("caller", 0);
-        let target: T::AccountId = frame_benchmarking::account("target", 0, 0);
-        seed_active_shop::<T>(1, 1);
-        seed_points::<T>(1);
-        seed_points_balance::<T>(1, &target, 10_000u32.into());
-
-        // 设置过期时间为过去
-        let now = frame_system::Pallet::<T>::block_number();
-        ShopPointsExpiresAt::<T>::insert(1u64, &target, now.saturating_sub(1u32.into()));
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(caller), 1u64, target);
-    }
-
     // ==================== call_index(24): force_close_shop ====================
     #[benchmark]
     fn force_close_shop() {
         seed_active_shop::<T>(1, 1);
-        // 确保不是 primary shop
-        EntityPrimaryShop::<T>::remove(1u64);
-        // 种子积分数据
-        seed_points::<T>(1);
-        seed_points_users::<T>(1, 20);
 
         #[extrinsic_call]
         _(RawOrigin::Root, 1u64);
@@ -540,19 +396,6 @@ mod benches {
 
         let shop = Shops::<T>::get(1u64).unwrap();
         assert_eq!(shop.status, ShopOperatingStatus::Active);
-    }
-
-    // ==================== call_index(29): set_points_max_supply ====================
-    #[benchmark]
-    fn set_points_max_supply() {
-        let owner = funded_account::<T>("owner", 0);
-        seed_active_shop::<T>(1, 1);
-        seed_points::<T>(1);
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(owner), 1u64, 1_000_000u32.into());
-
-        assert_eq!(ShopPointsMaxSupply::<T>::get(1u64), 1_000_000u32.into());
     }
 
     // ==================== call_index(30): resign_manager ====================

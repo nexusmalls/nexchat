@@ -91,6 +91,8 @@ fn seed_order<T: Config>(
         note_cid: None,
         refund_reason_cid: None,
         payer: None,
+        shopping_balance_used: Zero::zero(),
+        token_discount_tokens_burned: 0u128,
     };
 
     Orders::<T>::insert(order_id, order);
@@ -154,6 +156,10 @@ fn seed_terminal_orders<T: Config>(buyer: &T::AccountId, shop_id: u64, count: u3
             unit_price: amount,
             total_amount: amount,
             platform_fee: Zero::zero(),
+            usdt_total: 0,
+            nex_usdt_rate: 0,
+            token_nex_rate: 0,
+            payer: None,
             product_category: ProductCategory::Physical,
             shipping_cid: None,
             tracking_cid: None,
@@ -170,6 +176,8 @@ fn seed_terminal_orders<T: Config>(buyer: &T::AccountId, shop_id: u64, count: u3
             dispute_deadline: None,
             note_cid: None,
             refund_reason_cid: None,
+            shopping_balance_used: Zero::zero(),
+            token_discount_tokens_burned: 0u128,
         };
         Orders::<T>::insert(oid, order);
         let _ = BuyerOrders::<T>::try_mutate(buyer, |ids| ids.try_push(oid));
@@ -203,7 +211,6 @@ mod benches {
             2u32,      // quantity
             Some(cid), // shipping_cid
             None,      // use_tokens
-            None,      // use_shopping_balance
             None,      // payment_asset
             None,      // note_cid
             None,      // referrer

@@ -34,6 +34,7 @@ where
     C::Api: pallet_transaction_payment_rpc::TransactionPaymentRuntimeApi<Block, Balance>,
     C::Api: pallet_chat_common::runtime_api::ChatViewApi<Block, AccountId, Hash, BlockNumber>,
     C::Api: pallet_chat_permission::runtime_api::ChatPermissionApi<Block, AccountId>,
+    C::Api: pallet_chat_inbox::runtime_api::ChatInboxApi<Block>,
     C::Api: BlockBuilder<Block>,
     P: TransactionPool + 'static,
 {

@@ -43,7 +43,7 @@ mod tests;
 mod benchmarking;
 
 use codec::{Decode, Encode, MaxEncodedLen};
-use frame_support::{pallet_prelude::*, BoundedVec, traits::{Randomness, UnixTime}};
+use frame_support::{pallet_prelude::*, BoundedVec, traits::{Randomness, UnixTime, EnsureOrigin}};
 use frame_system::pallet_prelude::*;
 use scale_info::TypeInfo;
 use sp_runtime::traits::{Hash, Saturating};
@@ -124,6 +124,13 @@ pub struct ChatUserProfile<T: Config> {
     pub last_active: u64,
 }
 
+/// EN: Hard upper bound on how many session messages `mark_session_as_read`
+/// scans per call. Bounds the extrinsic's worst-case weight (audit B3); a client
+/// repeats the call if a session has more unread than this. CN: `mark_session_as_read`
+/// 单次扫描会话消息的硬上限，用于约束最坏权重（审计 B3）；会话未读多于此值时
+/// 客户端可重复调用。
+pub const MAX_SESSION_READ_SCAN: u32 = 512;
+
 /// 函数级详细中文注释：权重信息 trait
 /// - 定义所有可调用函数的权重计算
 /// - 实际项目中应通过 benchmark 生成精确权重
@@ -172,20 +179,19 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		)
 	}
 
-	/// 删除消息权重：1次读 + 1次写
+	/// 删除消息权重：1次读 + 2次写（Messages + 可能的 UnreadCount 抵消）
 	fn delete_message() -> Weight {
 		Weight::from_parts(
-			1 * 25_000_000 + 1 * 100_000_000,
+			1 * 25_000_000 + 2 * 100_000_000,
 			0
 		)
 	}
 
-	/// 撤回消息权重：2次读 + 2次写（Messages + UnreadCount）
+	/// 撤回消息权重（实测 / benchmarked）：Messages + UnreadCount（r:2 w:2）。
 	fn recall_message() -> Weight {
-		Weight::from_parts(
-			2 * 25_000_000 + 2 * 100_000_000,
-			0
-		)
+		Weight::from_parts(50_857_000, 3710)
+			.saturating_add(T::DbWeight::get().reads(2))
+			.saturating_add(T::DbWeight::get().writes(2))
 	}
 
 	/// 批量标记已读权重：取决于消息数量
@@ -215,20 +221,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		)
 	}
 
-	/// 设置会话免打扰权重：1次读（会话）+ 1次写
+	/// 设置会话免打扰权重（实测 / benchmarked）：Sessions(r:1) + SessionMuted(w:1)。
 	fn set_session_muted() -> Weight {
-		Weight::from_parts(
-			1 * 25_000_000 + 1 * 100_000_000,
-			0
-		)
+		Weight::from_parts(40_832_000, 3627)
+			.saturating_add(T::DbWeight::get().reads(1))
+			.saturating_add(T::DbWeight::get().writes(1))
 	}
 
-	/// 设置会话置顶权重：1次读（会话）+ 1次写
+	/// 设置会话置顶权重（实测 / benchmarked）：Sessions(r:1) + SessionPinned(w:1)。
 	fn set_session_pinned() -> Weight {
-		Weight::from_parts(
-			1 * 25_000_000 + 1 * 100_000_000,
-			0
-		)
+		Weight::from_parts(42_137_000, 3627)
+			.saturating_add(T::DbWeight::get().reads(1))
+			.saturating_add(T::DbWeight::get().writes(1))
 	}
 
 	/// 清理旧消息权重：取决于消息数量
@@ -422,6 +426,22 @@ pub mod pallet {
 		/// Chat permission port: gate `send_message` via `can_send_message`.
 		/// 由 `pallet-chat-permission` 提供（场景授权 / 好友 / 黑白名单 / 隐私级别）。
 		type ChatPermission: pallet_chat_permission::ChatPermissionChecker<Self::AccountId>;
+
+		/// 允许发送链上 `System` 消息的特权来源，解析为消息 `sender` 账户。
+		/// Privileged origin allowed to send on-chain `System` messages, resolving
+		/// to the [`AccountId`](frame_system::Config::AccountId) recorded as the
+		/// message `sender`.
+		///
+		/// # 安全（审计 B2）/ Security (audit B2)
+		/// 旧版 `send_message` / `send_system_message` 用 `ensure_signed`，任何账户
+		/// 都能发出 `MessageType::System` 消息，从而伪造「看似平台」的系统通知。改用
+		/// 本特权来源后，System 通道仅对受信来源（如治理 / 特定系统账户）开放；普通
+		/// 人类聊天本就走链下 MLS，不经此入口。The former entries used `ensure_signed`,
+		/// letting any account emit `System` messages and spoof platform-looking
+		/// notifications. Gating the channel behind this origin restricts it to a
+		/// trusted source (e.g. governance / a system account); human chat is
+		/// off-chain and never uses this entry.
+		type SystemMessageOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
 	}
 
 	/// 函数级详细中文注释：消息元数据存储
@@ -699,10 +719,11 @@ pub mod pallet {
 			pinned: bool,
 		},
 
-		// 拉黑 / 解除拉黑事件（UserBlocked / UserUnblocked）已随黑名单迁移至
-		// pallet-chat-permission；订阅方改监听 chat-permission 的相应事件。
-		// Block / unblock events moved to pallet-chat-permission along with the
-		// blacklist storage; subscribe to chat-permission events instead.
+		// 拉黑事件已不在链上（审计 P1）：链上黑名单整体移除，拉黑改由链下能力令牌
+		// 撤销（chat-permission `CapabilityEpochBumped`）/ 信箱标签撤销表达。
+		// Block events are no longer on-chain (audit P1): the on-chain blocklist
+		// was removed; blocking is expressed off-chain via capability-token
+		// revocation (chat-permission `CapabilityEpochBumped`) / inbox tag revocation.
 
 		/// 旧消息已清理（治理/Root 触发，无操作者账户）。
 		/// Old messages cleaned up (governance/Root-triggered; no operator account).
@@ -849,7 +870,9 @@ pub mod pallet {
 			msg_type_code: u8,
 			session_id: Option<T::Hash>,
 		) -> DispatchResult {
-			let sender = ensure_signed(origin)?;
+			// 仅特权来源可发 System 消息（审计 B2：防伪造系统通知）。
+			// Only the privileged origin may emit System messages (audit B2).
+			let sender = T::SystemMessageOrigin::ensure_origin(origin)?;
 
 			// 仅 System 可上链；人类消息（Text/Image/File/Voice）改走链下 MLS + relay。
 			// Only System may be stored on-chain; human messages move off-chain.
@@ -881,7 +904,9 @@ pub mod pallet {
 			content_cid: Vec<u8>,
 			session_id: Option<T::Hash>,
 		) -> DispatchResult {
-			let sender = ensure_signed(origin)?;
+			// 仅特权来源可发 System 消息（审计 B2：防伪造系统通知）。
+			// Only the privileged origin may emit System messages (audit B2).
+			let sender = T::SystemMessageOrigin::ensure_origin(origin)?;
 			Self::do_send(sender, receiver, content_cid, MessageType::System, session_id)
 		}
 
@@ -966,6 +991,20 @@ pub mod pallet {
 				if msg.sender == who {
 					msg.is_deleted_by_sender = true;
 				} else {
+					// 接收方删除一条「仍计未读」的消息时，需同步抵消未读计数，避免
+					// 角标永久 +1（删除后该消息对接收方隐藏，无法再单独标记已读）。
+					// 仅在该消息当前确实计入未读时抵消：未读 + 未撤回 + 接收方此前未删除。
+					// 幂等：重复删除不会重复抵消。
+					// When the receiver deletes a message that still counts as unread,
+					// offset the unread count so the badge cannot get stuck (a deleted
+					// message is hidden and can no longer be individually marked read).
+					// Offset only once and only while it actually counts as unread:
+					// not read, not recalled, not already deleted by the receiver.
+					if !msg.is_read && !msg.is_recalled && !msg.is_deleted_by_receiver {
+						UnreadCount::<T>::mutate((who.clone(), msg.session_id), |count| {
+							*count = count.saturating_sub(1);
+						});
+					}
 					msg.is_deleted_by_receiver = true;
 				}
 
@@ -1090,7 +1129,7 @@ pub mod pallet {
 		/// 4. 清空未读计数
 		/// 5. 触发事件
 		#[pallet::call_index(4)]
-		#[pallet::weight(T::WeightInfo::mark_session_as_read(100))]
+		#[pallet::weight(T::WeightInfo::mark_session_as_read(crate::MAX_SESSION_READ_SCAN))]
 		pub fn mark_session_as_read(
 			origin: OriginFor<T>,
 			session_id: T::Hash,
@@ -1105,23 +1144,36 @@ pub mod pallet {
 				Error::<T>::NotSessionParticipant
 			);
 
-			// 获取会话的所有消息ID
+			// B3（DoS）：会话消息条数无上界，必须有界扫描，否则固定权重会被低估。
+			// 单次最多扫描 `MAX_SESSION_READ_SCAN` 条；若仍有剩余，客户端可重复调用直至
+			// 未读归零（按本次实际标记数递减，分批安全、不会误清零）。
+			// B3 (DoS): a session's message count is unbounded, so the scan must be
+			// bounded or the fixed weight would be under-charged. Scan at most
+			// `MAX_SESSION_READ_SCAN` per call; the client may repeat until unread
+			// reaches zero (we decrement by the count actually marked this call,
+			// which is batch-safe and never over-zeros).
+			let max_scan = crate::MAX_SESSION_READ_SCAN as usize;
 			let message_ids: Vec<u64> = SessionMessages::<T>::iter_prefix(session_id)
 				.map(|(msg_id, _)| msg_id)
+				.take(max_scan)
 				.collect();
 
-			// 批量标记已读
+			// 批量标记已读，并记录本次实际标记数（仅本人未读的会被标记）。
+			let mut marked: u32 = 0;
 			for msg_id in message_ids.iter() {
 				if let Some(mut msg) = Messages::<T>::get(msg_id) {
 					if msg.receiver == who && !msg.is_read {
 						msg.is_read = true;
 						Messages::<T>::insert(msg_id, msg);
+						marked = marked.saturating_add(1);
 					}
 				}
 			}
 
-			// 清空未读计数
-			UnreadCount::<T>::insert((who.clone(), session_id), 0);
+			// 按本次实际标记数抵消未读计数（分批收敛到 0）。
+			UnreadCount::<T>::mutate((who.clone(), session_id), |count| {
+				*count = count.saturating_sub(marked);
+			});
 
 			Self::deposit_event(Event::SessionMarkedAsRead {
 				session_id,
@@ -1225,12 +1277,15 @@ pub mod pallet {
 			Ok(())
 		}
 
-		// 拉黑 / 解除拉黑已迁移至 pallet-chat-permission（call_index 6/7 保留为空位，
-		// 不再复用，以维持其余 extrinsic 的调用索引稳定）。
-		// block_user / unblock_user have moved to pallet-chat-permission as the
-		// single source of truth. Call indices 6 and 7 are intentionally left
-		// vacant so the remaining call indices stay stable; frontends should call
-		// `pallet_chat_permission::block_user` / `unblock_user` instead.
+		// 拉黑能力已彻底移出链上明文存储（审计 P1）：chat-core 的 call_index 6/7 仍保留
+		// 空位以维持其余调用索引稳定；拉黑改由链下能力令牌撤销
+		// （`pallet_chat_permission::bump_capability_epoch`）或定向信箱标签撤销
+		// （`pallet_chat_inbox::revoke_tag`）实现，链上不再存任何黑名单。
+		// Blocking no longer has any on-chain plaintext storage (audit P1):
+		// chat-core call indices 6/7 stay vacant to keep other indices stable;
+		// blocking is done off-chain via capability-token revocation
+		// (`pallet_chat_permission::bump_capability_epoch`) or per-contact inbox
+		// tag revocation (`pallet_chat_inbox::revoke_tag`).
 
 		/// 清理过期消息（治理 / Root 限定，有界增量 GC）。
 		/// Clean up expired messages — governance/Root only, bounded incremental GC.
@@ -1553,16 +1608,31 @@ pub mod pallet {
 			msg_type: MessageType,
 			session_id: Option<T::Hash>,
 		) -> DispatchResult {
-			// 【安全检查1】统一权限闸门（chat-permission 为唯一事实来源）。
-			// Single permission gate: chat-permission is the sole source of truth.
-			// 内部已串联：黑名单 → 好友 → 场景授权 → 隐私级别（审计 I）。
-			ensure!(
-				<T::ChatPermission as pallet_chat_permission::ChatPermissionChecker<T::AccountId>>::can_send_message(&sender, &receiver),
-				Error::<T>::ChatNotAuthorized
-			);
+			// System 消息来自受信特权来源（`SystemMessageOrigin`，生产为治理 / Root），
+			// 属平台通知：必须无视接收方隐私级别送达，且受信来源不应受反垃圾限频约束。
+			// 受信边界由 `SystemMessageOrigin::ensure_origin` 在调用处强制，故此处对 System
+			// 跳过权限闸门与限频。人类消息（会被门控）已迁出链下，因此链上仅 System 放宽。
+			// System messages come from the trusted privileged origin
+			// (`SystemMessageOrigin`, governance/Root in production) and are platform
+			// notifications: they MUST reach the recipient regardless of the
+			// recipient's privacy level, and the trusted origin is not subject to
+			// anti-spam rate limiting. The trust boundary is enforced by
+			// `SystemMessageOrigin::ensure_origin` at the call site, so System bypasses
+			// the permission gate and rate limit here. Gateable human messages are
+			// off-chain, so on-chain we only relax these for System.
+			let is_system = matches!(msg_type, MessageType::System);
+			if !is_system {
+				// 【安全检查1】统一权限闸门（chat-permission 为唯一事实来源）。
+				// Single permission gate: chat-permission is the sole source of truth.
+				// 内部已串联：黑名单 → 好友 → 场景授权 → 隐私级别（审计 I）。
+				ensure!(
+					<T::ChatPermission as pallet_chat_permission::ChatPermissionChecker<T::AccountId>>::can_send_message(&sender, &receiver),
+					Error::<T>::ChatNotAuthorized
+				);
 
-			// 【安全检查2】频率限制检查
-			Self::check_rate_limit(&sender)?;
+				// 【安全检查2】频率限制检查
+				Self::check_rate_limit(&sender)?;
+			}
 
 			// CID 格式 sanity（非空 + 不超长）。
 			// CID format sanity (non-empty + within bound).
@@ -1779,7 +1849,11 @@ pub mod pallet {
 			offset: u32,
 			limit: u32,
 		) -> Vec<u64> {
-			// 从StorageDoubleMap收集所有消息ID
+			// Hardening (audit P2): unbounded prefix iteration is acceptable here because this
+			// is a read-only helper (runtime API / RPC), not an extrinsic, so it cannot DoS the
+			// chain. Heavy users may be slow; the node RPC layer must enforce its own limits.
+			// 加固（审计 P2）：此处全前缀迭代无界，但本函数是只读接口（runtime API / RPC），
+			// 非 extrinsic，不构成链上 DoS；重度用户可能较慢，需由 node RPC 侧自行限流。
 			let mut messages: Vec<u64> = SessionMessages::<T>::iter_prefix(session_id)
 				.map(|(msg_id, _)| msg_id)
 				.collect();
@@ -1849,7 +1923,9 @@ pub mod pallet {
 		///   Pinned sessions first (most-recently-pinned first), then the rest by
 		///   last-active descending.
 		pub fn list_sessions(user: T::AccountId) -> Vec<T::Hash> {
-			// 从StorageDoubleMap收集所有会话ID
+			// Hardening (audit P2): read-only helper; unbounded prefix iteration cannot DoS the
+			// chain. The node RPC layer must bound caller cost for heavy users.
+			// 加固（审计 P2）：只读接口，全前缀迭代不构成链上 DoS；重度用户成本由 node RPC 侧限流。
 			let session_ids: Vec<T::Hash> = UserSessions::<T>::iter_prefix(&user)
 				.map(|(sid, _)| sid)
 				.collect();
@@ -1896,6 +1972,9 @@ pub mod pallet {
 				UnreadCount::<T>::get((user, sid))
 			} else {
 				// 查询所有会话的未读总数
+				// Hardening (audit P2): read-only aggregate; unbounded prefix iteration cannot DoS
+				// the chain. The node RPC layer must bound caller cost for heavy users.
+				// 加固（审计 P2）：只读聚合，全前缀迭代不构成链上 DoS；成本由 node RPC 侧限流。
 				let session_ids: Vec<T::Hash> = UserSessions::<T>::iter_prefix(&user)
 					.map(|(sid, _)| sid)
 					.collect();

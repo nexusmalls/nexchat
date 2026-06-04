@@ -99,8 +99,17 @@ pub struct SceneAuthorization<BlockNumber> {
     /// 过期时间（None 表示永不过期）
     pub expires_at: Option<BlockNumber>,
 
-    /// 额外元数据（如订单金额、纪念馆名称等，用于前端显示）
-    /// 最大128字节
+    /// 额外元数据（最大 128 字节）。
+    ///
+    /// # 隐私警告（审计 P2）/ Privacy warning (audit P2)
+    /// EN: This blob is stored **on-chain in clear**. Do NOT put sensitive
+    /// plaintext here (order amounts, memorial/person names, free-text notes):
+    /// it would widen the relationship leak. Pass empty, or an **opaque**
+    /// reference only (e.g. an encrypted IPFS CID the parties can resolve). All
+    /// current production callers pass empty metadata.
+    /// CN: 该字段**以明文存于链上**。请勿放敏感明文（订单金额、纪念馆/人名、自由文本备注），
+    /// 否则会扩大关系泄漏面。应传空，或仅传**不透明**引用（如双方可解析的加密 IPFS CID）。
+    /// 目前所有生产调用方均传空 metadata。
     pub metadata: BoundedVec<u8, ConstU32<128>>,
 }
 
@@ -120,7 +129,12 @@ pub enum ChatPermissionLevel {
     #[default]
     FriendsOnly,
 
-    /// 白名单：仅白名单用户可发起聊天
+    /// EN: Whitelist. DEPRECATED semantics: the on-chain whitelist was removed
+    /// for privacy (audit P1), so this level now behaves like `FriendsOnly` —
+    /// the "allowed contact" decision is made off-chain via capability tokens.
+    /// Kept as a variant only to preserve SCALE indices. CN: 白名单。**语义已弃用**：
+    /// 链上白名单已为隐私移除（审计 P1），此级别现等同 `FriendsOnly`——「是否放行的
+    /// 联系人」改由链下能力令牌判定。保留变体仅为维持 SCALE 编码索引不变。
     Whitelist,
 
     /// 关闭：不接受任何消息
@@ -129,18 +143,24 @@ pub enum ChatPermissionLevel {
 
 /// 用户隐私设置结构体
 ///
-/// 存储用户的聊天权限配置，包括权限级别、黑白名单和拒绝的场景类型。
+/// EN: Stores a user's chat permission policy: the base permission level and the
+/// set of rejected scene types. The on-chain **block list / whitelist were
+/// removed for privacy** (audit P1): an on-chain plaintext (or even hashed) list
+/// of who you blocked / allowed is enumerable and leaks the very communication
+/// relationships the design hides. Blocking and the "may DM me" right now live
+/// entirely off-chain as receiver-signed capability tokens, revoked via
+/// [`crate::CapabilityEpoch`] (`bump_capability_epoch`) and per-contact inbox tag
+/// revocation (`pallet-chat-inbox::revoke_tag`).
+/// CN: 存储用户的聊天权限策略：基础权限级别与被拒场景类型集合。链上**黑名单 / 白名单
+/// 已为隐私移除**（审计 P1）：链上明文（乃至哈希）的「拉黑 / 放行」名单可被枚举，会
+/// 泄露本设计要隐藏的通信关系。拉黑与「允许向我私聊」的权利现完全以链下、由接收方签名
+/// 的能力令牌承载，经 [`crate::CapabilityEpoch`]（`bump_capability_epoch`）与每联系人
+/// 信箱标签撤销（`pallet-chat-inbox::revoke_tag`）实现。
 #[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, DebugNoBound, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct PrivacySettings<T: crate::Config> {
     /// 聊天权限级别
     pub permission_level: ChatPermissionLevel,
-
-    /// 黑名单：被屏蔽的用户列表
-    pub block_list: BoundedVec<T::AccountId, T::MaxBlockListSize>,
-
-    /// 白名单：允许聊天的用户列表（仅在 Whitelist 模式下生效）
-    pub whitelist: BoundedVec<T::AccountId, T::MaxWhitelistSize>,
 
     /// 拒绝的场景类型（空表示接受所有场景）
     /// 用户可以选择拒绝某些类型的场景授权聊天
@@ -154,8 +174,6 @@ impl<T: crate::Config> Default for PrivacySettings<T> {
     fn default() -> Self {
         Self {
             permission_level: ChatPermissionLevel::default(),
-            block_list: BoundedVec::default(),
-            whitelist: BoundedVec::default(),
             rejected_scene_types: BoundedVec::default(),
             updated_at: Default::default(),
         }
@@ -274,12 +292,6 @@ pub struct ReportRecord<T: crate::Config> {
 pub struct PrivacySettingsSummary {
     /// 权限级别
     pub permission_level: ChatPermissionLevel,
-
-    /// 黑名单数量
-    pub block_list_count: u32,
-
-    /// 白名单数量
-    pub whitelist_count: u32,
 
     /// 拒绝的场景类型列表
     pub rejected_scene_types: sp_std::vec::Vec<SceneType>,

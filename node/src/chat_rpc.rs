@@ -13,14 +13,29 @@
 //! 这里定义 node 本地的 serde 响应类型并从 runtime-API DTO 转换。所有方法只读且免费
 //! （走 `runtime_api`，非交易）。
 //!
+//! # 链上切片 ≠ 完整消息列表 / On-chain slice ≠ full message list
+//! EN: `chat_listConversations` / `chat_totalDirectUnread` return an ON-CHAIN
+//! SLICE only. Human chat (1:1 and group) is off-chain (MLS + relay); the only
+//! on-chain messages are `System` notifications. Direct `unread`/`last_active`
+//! count the System channel ONLY, and a pair that only chatted off-chain has no
+//! direct row. Clients MUST merge with local/off-chain MLS state — see the
+//! client Merge Spec in `pallets/chat/README.md`.
+//! CN: `chat_listConversations` / `chat_totalDirectUnread` 仅返回**链上切片**。人类聊天
+//! （私聊与群聊）在链下（MLS + relay）；链上唯一消息是 `System` 通知。私聊 `unread`/
+//! `last_active` 只计 System 通道，纯链下聊过的用户对无私聊行。客户端**必须**与本地/链下
+//! MLS 状态合并——见 `pallets/chat/README.md` 的客户端 Merge Spec。
+//!
 //! 提供方法 / Methods:
-//! - `chat_listConversations(who, at?)` — 统一会话列表（私聊 + 群聊）
-//! - `chat_totalDirectUnread(who, at?)` — 私聊未读总数
+//! - `chat_listConversations(who, at?)` — 链上会话切片（私聊 + 群聊；非完整列表）
+//! - `chat_totalDirectUnread(who, at?)` — 链上 System 通道未读总数（非 App 全局角标）
 //! - `chat_checkPermission(sender, receiver, at?)` — 聊天权限检查
 //! - `chat_getActiveScenes(user1, user2, at?)` — 场景授权
 //! - `chat_capabilityEpoch(who, at?)` — 聊天能力撤销纪元
 //! - `chat_isAccountMuted(who, at?)` — 账户是否被治理平台级禁言
 //! - `chat_privacySummary(who, at?)` — 隐私设置摘要
+//! - `chat_inboxEpoch(inboxId, at?)` — 链下投递信箱的撤销纪元（未注册返回 null）
+//! - `chat_isTagRevoked(inboxId, tag, at?)` — 联系人标签是否被定向撤销
+//! - `chat_inboxExists(inboxId, at?)` — 信箱是否已注册
 
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -39,6 +54,7 @@ use nexus_runtime::{AccountId, BlockNumber, Hash};
 use pallet_chat_common::runtime_api::{
     ChatViewApi as ChatViewRuntimeApi, ConversationKind, ConversationSummary,
 };
+use pallet_chat_inbox::runtime_api::ChatInboxApi as ChatInboxRuntimeApi;
 use pallet_chat_permission::runtime_api::ChatPermissionApi as ChatPermissionRuntimeApi;
 use pallet_chat_permission::{
     ChatPermissionLevel, PermissionResult, PrivacySettingsSummary, SceneAuthorizationInfo, SceneId,
@@ -60,11 +76,19 @@ pub struct RpcConversation {
     pub name: String,
     /// EN: group avatar IPFS CID (empty for direct). CN: 群头像 CID。
     pub avatar_cid: String,
-    /// EN: direct → last-active block; group → 0 (off-chain). CN: 私聊最后活跃区块；群为 0。
+    /// EN: direct → last-active block of the **System** channel (NOT human chat);
+    /// group → 0 (off-chain). Merge with off-chain MLS recency.
+    /// CN: 私聊 → **System** 通道最后活跃区块（非人类聊天）；群为 0。需与链下 MLS 合并。
     pub last_active: BlockNumber,
-    /// EN: direct → on-chain unread; group → 0 (off-chain). CN: 私聊未读；群为 0。
+    /// EN: direct → **System**-channel unread only (NOT human chat); group → 0.
+    /// App total unread MUST add off-chain MLS unread.
+    /// CN: 私聊 → 仅 **System** 通道未读（非人类聊天）；群为 0。App 总未读需叠加链下 MLS。
     pub unread: u32,
     pub pinned: bool,
+    /// EN: SEMANTICS DIFFER BY `kind` — branch on `kind`, do not share one icon.
+    /// direct → caller's DND (no notifications); group → admin mute (CANNOT send).
+    /// CN: 语义按 `kind` 不同——按 `kind` 分支，勿共用图标。私聊 → 免打扰(DND)；
+    /// 群 → 管理员禁言（不能发言）。
     pub muted: bool,
     pub archived: bool,
     pub member_count: u32,
@@ -180,17 +204,15 @@ impl From<SceneAuthorizationInfo> for RpcSceneAuth {
 pub struct RpcPrivacySummary {
     /// "open" | "friendsOnly" | "whitelist" | "closed"
     pub permission_level: String,
-    pub block_list_count: u32,
-    pub whitelist_count: u32,
     pub rejected_scene_types: Vec<String>,
 }
 
 impl From<PrivacySettingsSummary> for RpcPrivacySummary {
     fn from(p: PrivacySettingsSummary) -> Self {
+        // 审计 P1：链上黑/白名单已移除，摘要不再含 block_list_count / whitelist_count。
+        // Audit P1: on-chain block/whitelist removed; summary drops those counts.
         RpcPrivacySummary {
             permission_level: permission_level_label(p.permission_level).into(),
-            block_list_count: p.block_list_count,
-            whitelist_count: p.whitelist_count,
             rejected_scene_types: p.rejected_scene_types.into_iter().map(scene_type_label).collect(),
         }
     }
@@ -278,6 +300,22 @@ pub trait ChatApi<BlockHash> {
         who: AccountId,
         at: Option<BlockHash>,
     ) -> RpcResult<RpcPrivacySummary>;
+
+    /// EN: Inbox-keyed revocation epoch of an off-chain delivery inbox; `None` if
+    /// the inbox is not registered. Relays compare it against the epoch embedded
+    /// in a blinded delivery token. CN: 链下投递信箱的 inbox 维度撤销纪元；信箱未注册
+    /// 则为 `None`。relay 用它与盲化投递令牌内嵌纪元比对。
+    #[method(name = "chat_inboxEpoch")]
+    fn inbox_epoch(&self, inbox_id: Hash, at: Option<BlockHash>) -> RpcResult<Option<u32>>;
+
+    /// EN: Whether a contact `tag` is currently revoked for `inbox_id` (targeted
+    /// revocation). CN: 联系人 `tag` 当前是否在 `inbox_id` 下被撤销（定向撤销）。
+    #[method(name = "chat_isTagRevoked")]
+    fn is_tag_revoked(&self, inbox_id: Hash, tag: Hash, at: Option<BlockHash>) -> RpcResult<bool>;
+
+    /// EN: Whether `inbox_id` is registered. CN: `inbox_id` 是否已注册。
+    #[method(name = "chat_inboxExists")]
+    fn inbox_exists(&self, inbox_id: Hash, at: Option<BlockHash>) -> RpcResult<bool>;
 }
 
 /// EN: RPC handler holding a client handle. CN: 持有 client 的 RPC 处理器。
@@ -304,6 +342,7 @@ where
     C: ProvideRuntimeApi<Block> + HeaderBackend<Block> + Send + Sync + 'static,
     C::Api: ChatViewRuntimeApi<Block, AccountId, Hash, BlockNumber>,
     C::Api: ChatPermissionRuntimeApi<Block, AccountId>,
+    C::Api: ChatInboxRuntimeApi<Block>,
 {
     fn list_conversations(
         &self,
@@ -379,5 +418,36 @@ where
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
         let summary = api.get_privacy_settings_summary(at, who).map_err(runtime_err)?;
         Ok(summary.into())
+    }
+
+    fn inbox_epoch(
+        &self,
+        inbox_id: Hash,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<Option<u32>> {
+        let api = self.client.runtime_api();
+        let at = at.unwrap_or_else(|| self.client.info().best_hash);
+        api.inbox_epoch(at, inbox_id.0).map_err(runtime_err)
+    }
+
+    fn is_tag_revoked(
+        &self,
+        inbox_id: Hash,
+        tag: Hash,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<bool> {
+        let api = self.client.runtime_api();
+        let at = at.unwrap_or_else(|| self.client.info().best_hash);
+        api.is_tag_revoked(at, inbox_id.0, tag.0).map_err(runtime_err)
+    }
+
+    fn inbox_exists(
+        &self,
+        inbox_id: Hash,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<bool> {
+        let api = self.client.runtime_api();
+        let at = at.unwrap_or_else(|| self.client.info().best_hash);
+        api.inbox_exists(at, inbox_id.0).map_err(runtime_err)
     }
 }

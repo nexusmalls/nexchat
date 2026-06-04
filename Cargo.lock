@@ -5956,6 +5956,7 @@ dependencies = [
  "jsonrpsee",
  "nexus-runtime",
  "pallet-chat-common",
+ "pallet-chat-inbox",
  "pallet-chat-permission",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc",
@@ -6016,6 +6017,7 @@ dependencies = [
  "pallet-chat-common",
  "pallet-chat-core",
  "pallet-chat-group",
+ "pallet-chat-inbox",
  "pallet-chat-permission",
  "pallet-collective",
  "pallet-commission-common",
@@ -6600,12 +6602,9 @@ dependencies = [
 name = "pallet-chat-common"
 version = "0.1.0"
 dependencies = [
- "frame-support",
  "parity-scale-codec",
  "scale-info",
  "sp-api 41.0.0",
- "sp-core 40.0.0",
- "sp-io 45.0.0",
  "sp-runtime 46.0.0",
  "sp-std",
 ]
@@ -6618,7 +6617,6 @@ dependencies = [
  "frame-support",
  "frame-system",
  "log",
- "pallet-chat-common",
  "pallet-chat-permission",
  "parity-scale-codec",
  "scale-info",
@@ -6646,6 +6644,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-chat-inbox"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-balances",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api 41.0.0",
+ "sp-core 40.0.0",
+ "sp-io 45.0.0",
+ "sp-runtime 46.0.0",
+ "sp-std",
+]
+
+[[package]]
 name = "pallet-chat-permission"
 version = "0.1.0"
 dependencies = [
@@ -6653,7 +6669,6 @@ dependencies = [
  "frame-support",
  "frame-system",
  "log",
- "pallet-chat-common",
  "parity-scale-codec",
  "scale-info",
  "sp-api 41.0.0",

@@ -7,9 +7,15 @@
 本模块提供聊天权限管理功能：
 
 - **场景授权**：业务模块可为用户授予基于场景的聊天权限
-- **黑白名单**：用户可屏蔽特定用户或设置白名单
-- **权限级别**：Open/FriendsOnly/Whitelist/Closed
+- **权限级别**：Open/FriendsOnly/Whitelist/Closed（`Whitelist` 已等同 `FriendsOnly`，见隐私章节）
 - **聊天能力撤销纪元**：`CapabilityEpoch` —— 链下能力令牌的链上撤销锚点
+
+> ⚠️ **黑白名单已下链（审计 P1）**：链上 `block_list` / `whitelist` 明文存储及
+> `block_user`/`unblock_user`/`add_to_whitelist`/`remove_from_whitelist` extrinsic
+> 与对应事件**已整体删除**。理由：链上明文（乃至哈希）的拉黑 / 放行名单可被枚举，会
+> 泄露本设计要隐藏的通信关系。拉黑 / 放行改由**链下、接收方签名的能力令牌**承载，撤销以
+> `bump_capability_epoch`（账户级）+ `pallet-chat-inbox::revoke_tag`（每联系人定向）实现。
+> `Whitelist` 级别现等同 `FriendsOnly`。call_index 2/3/6/7 留空不复用。
 
 ## 隐私：好友图谱已移出链上（C 方案定稿）
 
@@ -47,10 +53,11 @@ T::ChatPermission::grant_bidirectional_scene_authorization(
 ### 权限检查优先级
 
 1. **平台级禁言**（最高优先级拒绝）
-2. **黑名单检查**
-3. **场景授权检查**
-4. **隐私设置检查**（`FriendsOnly` 现表示：链上对无场景授权且不在白名单的陌生人一律拒绝；
-   真正的「联系人」闸门由链下能力令牌强制）
+2. **场景授权检查**
+3. **隐私设置检查**：`Open` 放行；`FriendsOnly` / `Whitelist` 一律 `DeniedRequiresFriend`
+   （真正的「联系人」闸门由链下能力令牌强制）；`Closed` 拒绝所有。
+
+> 注：审计 P1 后**不再有链上黑名单检查**——拉黑由链下能力令牌 / 信箱标签撤销执行。
 
 ## 平台合规（治理）
 
@@ -84,4 +91,5 @@ T::ChatPermission::grant_bidirectional_scene_authorization(
 
 ## 依赖
 
-- `pallet-chat-common`: 共享类型和工具
+- 仅 Substrate 核心库（`frame-support` / `frame-system` / `sp-*`）。
+  审计 P1 后**不再依赖 `pallet-chat-common`**（原为声明但零 import 的 dead dep）。

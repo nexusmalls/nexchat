@@ -82,13 +82,10 @@ pub mod pallet {
     /// Pallet 配置 trait
     #[pallet::config]
     pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
-        /// 黑名单最大数量
-        #[pallet::constant]
-        type MaxBlockListSize: Get<u32>;
-
-        /// 白名单最大数量
-        #[pallet::constant]
-        type MaxWhitelistSize: Get<u32>;
+        // NOTE / 注意（审计 P1）：`MaxBlockListSize` / `MaxWhitelistSize` 已随链上
+        // 黑名单 / 白名单一并移除——拉黑与放行改由链下能力令牌承载（见 `PrivacySettings`
+        // 与 `CapabilityEpoch` 说明）。The on-chain block/whitelist (and their size
+        // bounds) were removed for privacy; blocking/allowing is off-chain now.
 
         /// 单对用户最大场景授权数量
         /// 考虑场景：多个订单 + 多个纪念馆 + 群聊等
@@ -187,6 +184,24 @@ pub mod pallet {
     ///
     /// Key: (user1, user2) 按字典序排列，保证双向查询一致性
     /// Value: 场景授权列表
+    ///
+    /// # 隐私（审计 P2，固有权衡）/ Privacy (audit P2, inherent trade-off)
+    /// EN: This map exposes that two accounts share a business context (the
+    /// `(user1, user2)` pair + `scene_type` + `scene_id`). This is an **accepted**
+    /// trade-off, not a new leak: scene authorizations are granted by business
+    /// pallets whose source records already make the relationship public (e.g. a
+    /// bounty has `poster`/`solver` on-chain, a group has its members on-chain).
+    /// On-chain scene-based permission inherently mirrors that public link. The
+    /// truly sensitive layer — message *content* and the social *contact graph* —
+    /// is off-chain (MLS E2EE + off-chain capability tokens). To avoid widening
+    /// the leak, callers MUST pass opaque/empty `metadata` (see field doc) and the
+    /// design does not store amounts/names/notes here.
+    /// CN: 本表会暴露两账户存在业务上下文（`(user1, user2)` 对 + `scene_type` +
+    /// `scene_id`）。这是**可接受**的固有权衡，而非新增泄漏：场景授权由业务 pallet 授予，
+    /// 其来源记录本就已公开该关系（如悬赏的 `poster`/`solver`、群的成员均在链上）。基于
+    /// 场景的链上权限天然镜像该公开链接。真正敏感的层面——消息**内容**与社交**联系人图谱**
+    /// ——在链下（MLS 端到端加密 + 链下能力令牌）。为不扩大泄漏面，调用方**必须**传入
+    /// 不透明/空 `metadata`（见字段说明），本设计不在此存储金额/名称/备注。
     #[pallet::storage]
     #[pallet::getter(fn scene_authorizations)]
     pub type SceneAuthorizations<T: Config> = StorageDoubleMap<
@@ -209,17 +224,12 @@ pub mod pallet {
             who: T::AccountId,
         },
 
-        /// 用户已被屏蔽
-        UserBlocked {
-            blocker: T::AccountId,
-            blocked: T::AccountId,
-        },
-
-        /// 用户已被解除屏蔽
-        UserUnblocked {
-            unblocker: T::AccountId,
-            unblocked: T::AccountId,
-        },
+        // NOTE / 注意（审计 P1）：`UserBlocked` / `UserUnblocked` /
+        // `UserAddedToWhitelist` / `UserRemovedFromWhitelist` 事件已移除——它们会把
+        // 拉黑 / 放行的对端账户明文广播到链上日志，泄露通信关系。拉黑 / 放行改由链下
+        // 能力令牌承载，撤销以 `CapabilityEpochBumped` 表达。These events were removed
+        // because they broadcast blocked/allowed counterparties in plaintext logs,
+        // leaking relationships; blocking/allowing is off-chain (see CapabilityEpoch).
 
         /// EN: An account advanced its chat-capability revocation epoch, making all
         /// previously issued chat capability tokens (with the old epoch) stale.
@@ -256,18 +266,6 @@ pub mod pallet {
             new_expires_at: Option<BlockNumberFor<T>>,
         },
 
-        /// 用户添加到白名单
-        UserAddedToWhitelist {
-            owner: T::AccountId,
-            user: T::AccountId,
-        },
-
-        /// 用户从白名单移除
-        UserRemovedFromWhitelist {
-            owner: T::AccountId,
-            user: T::AccountId,
-        },
-
         /// EN: An account was platform-muted by governance. CN: 账户被治理平台级禁言。
         AccountMuted {
             who: T::AccountId,
@@ -298,20 +296,10 @@ pub mod pallet {
 
     #[pallet::error]
     pub enum Error<T> {
-        /// 黑名单已满
-        BlockListFull,
-
-        /// 白名单已满
-        WhitelistFull,
-
-        /// 用户已在黑名单中
-        AlreadyBlocked,
-
-        /// 用户不在黑名单中
-        NotInBlockList,
-
-        /// 不能添加自己
-        CannotAddSelf,
+        // NOTE / 注意（审计 P1）：黑名单 / 白名单相关错误（`BlockListFull`/`WhitelistFull`/
+        // `AlreadyBlocked`/`NotInBlockList`/`CannotAddSelf`/`AlreadyInWhitelist`/
+        // `NotInWhitelist`）已随链上名单移除一并删除。
+        // Block/whitelist errors were removed together with the on-chain lists.
 
         /// 场景授权数量已达上限
         TooManyScenes,
@@ -321,12 +309,6 @@ pub mod pallet {
 
         /// 场景授权已存在
         SceneAuthorizationAlreadyExists,
-
-        /// 用户已在白名单中
-        AlreadyInWhitelist,
-
-        /// 用户不在白名单中
-        NotInWhitelist,
 
         /// 元数据过长
         MetadataTooLong,
@@ -390,59 +372,14 @@ pub mod pallet {
             Ok(())
         }
 
-        /// 添加用户到黑名单
-        ///
-        /// 被屏蔽的用户将无法向屏蔽者发送消息，
-        /// 即使存在有效的场景授权或好友关系。
-        #[pallet::call_index(2)]
-        #[pallet::weight(T::WeightInfo::block_user())]
-        pub fn block_user(origin: OriginFor<T>, user: T::AccountId) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            ensure!(who != user, Error::<T>::CannotAddSelf);
-
-            PrivacySettingsOf::<T>::try_mutate(&who, |settings| {
-                ensure!(
-                    !settings.block_list.contains(&user),
-                    Error::<T>::AlreadyBlocked
-                );
-                settings
-                    .block_list
-                    .try_push(user.clone())
-                    .map_err(|_| Error::<T>::BlockListFull)?;
-                settings.updated_at = frame_system::Pallet::<T>::block_number();
-                Ok::<_, DispatchError>(())
-            })?;
-
-            Self::deposit_event(Event::UserBlocked {
-                blocker: who,
-                blocked: user,
-            });
-            Ok(())
-        }
-
-        /// 从黑名单移除用户
-        #[pallet::call_index(3)]
-        #[pallet::weight(T::WeightInfo::unblock_user())]
-        pub fn unblock_user(origin: OriginFor<T>, user: T::AccountId) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-
-            PrivacySettingsOf::<T>::try_mutate(&who, |settings| {
-                let pos = settings
-                    .block_list
-                    .iter()
-                    .position(|x| x == &user)
-                    .ok_or(Error::<T>::NotInBlockList)?;
-                settings.block_list.remove(pos);
-                settings.updated_at = frame_system::Pallet::<T>::block_number();
-                Ok::<_, DispatchError>(())
-            })?;
-
-            Self::deposit_event(Event::UserUnblocked {
-                unblocker: who,
-                unblocked: user,
-            });
-            Ok(())
-        }
+        // NOTE / 注意（审计 P1）：`block_user`（原 call_index 2）/ `unblock_user`
+        // （原 call_index 3）已移除。链上黑名单会泄露「谁拉黑了谁」，故拉黑改由链下
+        // 能力令牌实现：撤销该联系人的令牌（`bump_capability_epoch` 使旧令牌全失效）
+        // 或定向撤销其信箱标签（`pallet-chat-inbox::revoke_tag`）。索引 2/3 刻意留空。
+        // `block_user` / `unblock_user` were removed: an on-chain blocklist leaks
+        // who-blocked-whom. Blocking is off-chain now (revoke the contact's
+        // capability token via `bump_capability_epoch`, or the per-contact inbox
+        // tag via `pallet-chat-inbox::revoke_tag`). Indices 2/3 left vacant.
 
         // NOTE / 注意：旧版好友握手 extrinsics（`add_friend`/`request_friend`/
         // `accept_friend`/`reject_friend`/`cancel_friend_request`/`remove_friend`/
@@ -473,52 +410,14 @@ pub mod pallet {
             Ok(())
         }
 
-        /// 添加用户到白名单
-        ///
-        /// 在 Whitelist 模式下，只有白名单中的用户才能发起聊天。
-        #[pallet::call_index(6)]
-        #[pallet::weight(T::WeightInfo::add_to_whitelist())]
-        pub fn add_to_whitelist(origin: OriginFor<T>, user: T::AccountId) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            ensure!(who != user, Error::<T>::CannotAddSelf);
-
-            PrivacySettingsOf::<T>::try_mutate(&who, |settings| {
-                ensure!(
-                    !settings.whitelist.contains(&user),
-                    Error::<T>::AlreadyInWhitelist
-                );
-                settings
-                    .whitelist
-                    .try_push(user.clone())
-                    .map_err(|_| Error::<T>::WhitelistFull)?;
-                settings.updated_at = frame_system::Pallet::<T>::block_number();
-                Ok::<_, DispatchError>(())
-            })?;
-
-            Self::deposit_event(Event::UserAddedToWhitelist { owner: who, user });
-            Ok(())
-        }
-
-        /// 从白名单移除用户
-        #[pallet::call_index(7)]
-        #[pallet::weight(T::WeightInfo::remove_from_whitelist())]
-        pub fn remove_from_whitelist(origin: OriginFor<T>, user: T::AccountId) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-
-            PrivacySettingsOf::<T>::try_mutate(&who, |settings| {
-                let pos = settings
-                    .whitelist
-                    .iter()
-                    .position(|x| x == &user)
-                    .ok_or(Error::<T>::NotInWhitelist)?;
-                settings.whitelist.remove(pos);
-                settings.updated_at = frame_system::Pallet::<T>::block_number();
-                Ok::<_, DispatchError>(())
-            })?;
-
-            Self::deposit_event(Event::UserRemovedFromWhitelist { owner: who, user });
-            Ok(())
-        }
+        // NOTE / 注意（审计 P1）：`add_to_whitelist`（原 call_index 6）/
+        // `remove_from_whitelist`（原 call_index 7）已移除。链上白名单本质是一份
+        // 「可向我私聊的联系人清单」，明文上链直接暴露社交关系。放行改由链下、接收方
+        // 签名的能力令牌承载（`Whitelist` 级别现等同 `FriendsOnly`）。索引 6/7 刻意留空。
+        // `add_to_whitelist` / `remove_from_whitelist` were removed: an on-chain
+        // whitelist is a plaintext contact list that leaks relationships. Allowing
+        // is off-chain via receiver-signed capability tokens (the `Whitelist`
+        // level now behaves like `FriendsOnly`). Indices 6/7 left vacant.
 
         /// EN: Governance platform-mutes an account so it is denied as a chat
         /// *sender* (private chat via `can_send_message`, and on-chain group
@@ -648,16 +547,32 @@ pub mod pallet {
         }
 
         /// EN: Check whether `sender` may chat with `receiver`. Priority:
-        /// 1. platform mute (highest-priority deny), 2. receiver block list,
-        /// 3. valid scene authorization, 4. receiver privacy level. The on-chain
-        /// friend graph was removed: the social "contact" gate (`FriendsOnly`) is
-        /// now enforced off-chain via capability tokens, so on-chain a stranger
-        /// without a scene authorization or whitelist entry is denied
-        /// (`DeniedRequiresFriend`). CN: 检查 `sender` 是否可与 `receiver` 聊天。
-        /// 优先级：1. 平台禁言（最高优先级拒绝），2. 接收方黑名单，3. 有效场景授权，
-        /// 4. 接收方隐私级别。链上好友图谱已删除：社交「联系人」闸门（`FriendsOnly`）
-        /// 改由链下能力令牌强制，故链上对无场景授权且不在白名单的陌生人一律拒绝
+        /// 1. platform mute (highest-priority deny), 2. valid scene authorization,
+        /// 3. receiver privacy level. The on-chain friend graph was removed: the
+        /// social "contact" gate (`FriendsOnly`) is now enforced off-chain via
+        /// capability tokens, so on-chain a stranger without a scene authorization
+        /// is denied (`DeniedRequiresFriend`).
+        ///
+        /// AUDIT U2 — scene authorizations INTENTIONALLY override `Closed`: a scene
+        /// authorization means the two parties share an active transactional context
+        /// (order / dispute / market-making), where the counterparty MUST be able to
+        /// reach the receiver about that business regardless of the receiver's general
+        /// privacy level. This is not a leak: the receiver retains per-scene control
+        /// via `rejected_scene_types` — rejecting a `SceneType` filters its
+        /// authorizations out here, after which `Closed` (or `FriendsOnly`) applies
+        /// normally. So `Closed` blocks all *non-transactional* contact, while
+        /// not-yet-rejected transactional scenes still pass.
+        ///
+        /// CN: 检查 `sender` 是否可与 `receiver` 聊天。优先级：1. 平台禁言（最高优先级拒绝），
+        /// 2. 有效场景授权，3. 接收方隐私级别。链上好友图谱已删除：社交「联系人」闸门
+        /// （`FriendsOnly`）改由链下能力令牌强制，故链上对无场景授权的陌生人一律拒绝
         /// （`DeniedRequiresFriend`）。
+        ///
+        /// 审计 U2——场景授权「有意」覆盖 `Closed`：存在场景授权意味着双方处于活跃交易上下文
+        /// （订单 / 争议 / 做市），此时对方「必须」能就该业务联系到接收方，与接收方的总体隐私
+        /// 级别无关。这并非泄漏：接收方仍可通过 `rejected_scene_types` 做按场景控制——拒绝某个
+        /// `SceneType` 后，该类授权会在此被过滤掉，随后正常套用 `Closed`（或 `FriendsOnly`）。
+        /// 即 `Closed` 屏蔽一切「非交易」联系，而尚未被拒绝的交易场景仍可放行。
         pub fn check_permission(
             sender: &T::AccountId,
             receiver: &T::AccountId,
@@ -670,11 +585,13 @@ pub mod pallet {
                 return PermissionResult::DeniedSenderMuted;
             }
 
-            // 1. 检查是否被屏蔽
+            // 1. 读取接收方设置（用于场景拒绝过滤 + 权限级别）。
+            //    审计 P1：链上黑名单已移除——拉黑改由链下能力令牌 / 信箱标签撤销，
+            //    故此处不再做 block_list 判定。
+            //    Audit P1: the on-chain blocklist was removed; blocking is enforced
+            //    off-chain (capability tokens / inbox tag revocation), so there is
+            //    no block_list check here.
             let receiver_settings = PrivacySettingsOf::<T>::get(receiver);
-            if receiver_settings.block_list.contains(sender) {
-                return PermissionResult::DeniedBlocked;
-            }
 
             // 2. 检查场景授权
             let (user1, user2) = Self::sorted_pair(sender, receiver);
@@ -701,16 +618,16 @@ pub mod pallet {
                 return PermissionResult::AllowedByScene(valid_scenes);
             }
 
-            // 3. 根据隐私设置判断
+            // 3. 根据隐私设置判断。
+            //    审计 P1：`Whitelist` 级别的链上白名单已移除，现等同 `FriendsOnly`
+            //    ——「是否放行的联系人」由链下能力令牌判定，链上对无场景授权者一律按
+            //    需要联系人处理。Audit P1: the on-chain whitelist was removed, so
+            //    `Whitelist` now behaves like `FriendsOnly`; the off-chain capability
+            //    token decides, and on-chain a scene-less sender requires a contact.
             match receiver_settings.permission_level {
                 ChatPermissionLevel::Open => PermissionResult::Allowed,
-                ChatPermissionLevel::FriendsOnly => PermissionResult::DeniedRequiresFriend,
-                ChatPermissionLevel::Whitelist => {
-                    if receiver_settings.whitelist.contains(sender) {
-                        PermissionResult::Allowed
-                    } else {
-                        PermissionResult::DeniedNotInWhitelist
-                    }
+                ChatPermissionLevel::FriendsOnly | ChatPermissionLevel::Whitelist => {
+                    PermissionResult::DeniedRequiresFriend
                 }
                 ChatPermissionLevel::Closed => PermissionResult::DeniedClosed,
             }
@@ -765,8 +682,6 @@ pub mod pallet {
             let settings = PrivacySettingsOf::<T>::get(user);
             PrivacySettingsSummary {
                 permission_level: settings.permission_level,
-                block_list_count: settings.block_list.len() as u32,
-                whitelist_count: settings.whitelist.len() as u32,
                 rejected_scene_types: settings.rejected_scene_types.to_vec(),
             }
         }
@@ -786,7 +701,9 @@ pub mod pallet {
             metadata: Vec<u8>,
         ) -> DispatchResult {
             let current_block = frame_system::Pallet::<T>::block_number();
-            let expires_at = duration.map(|d| current_block + d);
+            // Saturating add hardens against block-number overflow on long durations (audit P2).
+            // 饱和加法，防止超长时长导致区块号溢出（审计 P2）。
+            let expires_at = duration.map(|d| current_block.saturating_add(d));
             let (user1, user2) = Self::sorted_pair(from, to);
 
             let bounded_metadata: BoundedVec<u8, ConstU32<128>> =
@@ -921,8 +838,10 @@ pub mod pallet {
                     .ok_or(Error::<T>::SceneAuthorizationNotFound)?;
 
                 // 从当前时间或原过期时间延长
+                // Saturating add hardens against block-number overflow (audit P2).
+                // 饱和加法，防止区块号溢出（审计 P2）。
                 let base = auth.expires_at.unwrap_or(current_block);
-                let new_time = base.max(current_block) + additional_duration;
+                let new_time = base.max(current_block).saturating_add(additional_duration);
                 auth.expires_at = Some(new_time);
                 new_expires_at = Some(new_time);
 

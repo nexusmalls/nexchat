@@ -264,7 +264,7 @@ mod benches {
         seed_fulldao_config::<T>(ENTITY_ID);
 
         let title = b"Benchmark proposal title".to_vec();
-        let proposal_type = ProposalType::<BalanceOf<T>>::General {
+        let proposal_type = ProposalType::<T::AccountId, BalanceOf<T>>::General {
             title_cid: BoundedVec::truncate_from(b"QmBenchAction".to_vec()),
             content_cid: BoundedVec::truncate_from(b"QmBenchContent".to_vec()),
         };

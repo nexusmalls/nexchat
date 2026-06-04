@@ -163,6 +163,11 @@ impl pallet_chat::Config for Test {
 	type MaxNicknameLength = frame_support::traits::ConstU32<64>;
 	type MaxSignatureLength = frame_support::traits::ConstU32<256>;
 	type ChatPermission = MockPermission;
+	// 测试中保持「签名即可」语义（sender = 签名者），令既有用例无需改写；
+	// 生产 runtime 则收敛到治理 / 系统账户（见 runtime 配置）。
+	// Permissive in tests (signed origin → sender = signer) so existing cases
+	// stay valid; production gates this to governance / a system account.
+	type SystemMessageOrigin = frame_system::EnsureSigned<u64>;
 }
 
 /// 函数级详细中文注释：构建测试存储

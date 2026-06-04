@@ -11,7 +11,7 @@ use crate::Pallet as ChatGroup;
 use frame_benchmarking::v2::*;
 use frame_support::traits::{Currency, EnsureOrigin, Get};
 use frame_system::RawOrigin;
-use sp_runtime::traits::{One, Saturating};
+use sp_runtime::traits::Saturating;
 use sp_std::vec::Vec;
 
 /// Fund an account well above all deposits. / 给账户充值远超各项押金。
@@ -57,12 +57,34 @@ fn welcomes_for<T: Config>(member: &T::AccountId) -> Vec<(T::AccountId, Vec<u8>)
     w
 }
 
+/// EN: Make `member` addable to a public group by funding it and publishing a
+/// KeyPackage (audit U3 opt-in gate). Idempotent. CN: 为被加成员充值并发布 KeyPackage，
+/// 使其可被加入公开群（审计 U3 的同意闸门）。幂等。
+fn make_joinable<T: Config>(member: &T::AccountId) {
+    fund::<T>(member);
+    if KeyPackageCount::<T>::get(member) == 0 {
+        ChatGroup::<T>::publish_key_package(
+            RawOrigin::Signed(member.clone()).into(),
+            [7u8; 32].to_vec(),
+        )
+        .expect("publish keypackage for addee");
+    }
+}
+
 /// Add `member` to `gid` via an owner `commit`. / 由群主 `commit` 把 `member` 加入群。
+///
+/// EN: Reads the group's current epoch (each commit advances it) and clears the
+/// owner's MLS rate-limit state so repeated setup commits don't hit the
+/// per-window cap. CN: 读取群当前 epoch（每次 commit 都会推进），并清除群主的
+/// MLS 限频状态，避免基准 setup 中的多次 commit 触发窗口限频。
 fn add_member<T: Config>(owner: &T::AccountId, gid: GroupId, member: &T::AccountId) {
+    make_joinable::<T>(member);
+    MlsActionRate::<T>::remove(owner);
+    let epoch = GroupMls::<T>::get(gid).expect("group exists").epoch;
     ChatGroup::<T>::commit(
         RawOrigin::Signed(owner.clone()).into(),
         gid,
-        0,
+        epoch,
         [1u8; 16].to_vec(),
         [1u8; 32],
         [2u8; 32],
@@ -110,24 +132,63 @@ mod benchmarks {
         assert!(GroupMls::<T>::contains_key(gid));
     }
 
+    /// EN: `commit` weight scales with the membership delta. Bench across `a` added
+    /// and `r` removed members so the generated formula captures both slopes. Ranges
+    /// stay within the mock `MaxGroupMembers` (owner + members ≤ bound).
+    /// CN: `commit` 权重随成员增减规模变化。对 `a` 个新增、`r` 个移除成员做基准，使生成的
+    /// 权重公式同时覆盖两个斜率。取值范围受 mock `MaxGroupMembers` 约束（群主 + 成员 ≤ 上限）。
     #[benchmark]
-    fn commit() {
+    fn commit(a: Linear<0, 4>, r: Linear<0, 3>) {
         let owner: T::AccountId = whitelisted_caller();
         let gid = new_group::<T>(&owner, true);
-        let member: T::AccountId = account("member", 0, 0);
+
+        // 预先加入将被本次 commit 移除的成员 / pre-add members the bench commit removes
+        let mut to_remove: Vec<T::AccountId> = Vec::new();
+        for i in 0..r {
+            let m: T::AccountId = account("rem", i, 0);
+            add_member::<T>(&owner, gid, &m);
+            to_remove.push(m);
+        }
+
+        // 准备将被加入的成员（已可加入、尚非成员）/ prepare addable, not-yet-member accounts
+        let mut to_add: Vec<T::AccountId> = Vec::new();
+        let mut welcomes: Vec<(T::AccountId, Vec<u8>)> = Vec::new();
+        for i in 0..a {
+            let m: T::AccountId = account("add", i, 0);
+            make_joinable::<T>(&m);
+            welcomes.push((m.clone(), [1u8; 8].to_vec()));
+            to_add.push(m);
+        }
+
+        let epoch = GroupMls::<T>::get(gid).expect("group exists").epoch;
+        let delta = MemberDelta::<T> {
+            added: to_add.clone().try_into().expect("a <= bound"),
+            removed: to_remove.clone().try_into().expect("r <= bound"),
+        };
+
+        // 清除 setup 累积的限频状态，使被测 commit 在新窗口内执行 / clear rate-limit
+        // state accumulated during setup so the measured commit runs in a fresh window.
+        MlsActionRate::<T>::remove(&owner);
+
         #[extrinsic_call]
         commit(
             RawOrigin::Signed(owner),
             gid,
-            0,
+            epoch,
             [1u8; 16].to_vec(),
             [1u8; 32],
             [2u8; 32],
             b"cid2".to_vec(),
-            welcomes_for::<T>(&member),
-            add_delta::<T>(&member),
+            welcomes,
+            delta,
         );
-        assert!(GroupMembers::<T>::contains_key(gid, &member));
+
+        for m in to_add.iter() {
+            assert!(GroupMembers::<T>::contains_key(gid, m));
+        }
+        for m in to_remove.iter() {
+            assert!(!GroupMembers::<T>::contains_key(gid, m));
+        }
     }
 
     #[benchmark]
@@ -135,6 +196,7 @@ mod benchmarks {
         let owner: T::AccountId = whitelisted_caller();
         let gid = new_group::<T>(&owner, true);
         let member: T::AccountId = account("member", 0, 0);
+        make_joinable::<T>(&member);
         ChatGroup::<T>::commit(
             RawOrigin::Signed(owner).into(),
             gid,
@@ -208,6 +270,7 @@ mod benchmarks {
         let owner: T::AccountId = whitelisted_caller();
         let gid = new_group::<T>(&owner, true);
         let member: T::AccountId = account("member", 0, 0);
+        make_joinable::<T>(&member);
         ChatGroup::<T>::commit(
             RawOrigin::Signed(owner.clone()).into(),
             gid,
@@ -230,6 +293,7 @@ mod benchmarks {
         let owner: T::AccountId = whitelisted_caller();
         let gid = new_group::<T>(&owner, true);
         let member: T::AccountId = account("member", 0, 0);
+        make_joinable::<T>(&member);
         ChatGroup::<T>::commit(
             RawOrigin::Signed(owner.clone()).into(),
             gid,
@@ -301,7 +365,9 @@ mod benchmarks {
         let gid = new_group::<T>(&owner, true);
         let member: T::AccountId = account("member", 0, 0);
         add_member::<T>(&owner, gid, &member);
-        let until = frame_system::Pallet::<T>::block_number().saturating_add(One::one());
+        // 到期时间须严格大于当前块；取足够大的未来值以稳健通过校验。
+        // Expiry must be strictly after `now`; use a comfortably future value.
+        let until = frame_system::Pallet::<T>::block_number().saturating_add(1_000u32.into());
         #[extrinsic_call]
         set_member_mute(RawOrigin::Signed(owner), gid, member.clone(), Some(until));
         assert!(MemberMutedUntil::<T>::contains_key(gid, &member));

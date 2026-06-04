@@ -1307,8 +1307,9 @@ impl pallet_task_bounty::Config for Runtime {
 // -------------------- Chat (聊天系统) --------------------
 
 impl pallet_chat_permission::Config for Runtime {
-    type MaxBlockListSize = ConstU32<256>;
-    type MaxWhitelistSize = ConstU32<256>;
+    // 审计 P1：链上黑/白名单已移除（去明文，拉黑/放行改走链下能力令牌），
+    // 故不再配置 MaxBlockListSize / MaxWhitelistSize。
+    // Audit P1: on-chain block/whitelist removed (off-chain capability tokens).
     // 单对用户最大并存场景授权数（多订单 / 多悬赏 / 群聊等共存）。
     type MaxScenesPerPair = ConstU32<64>;
     // 平台合规：Root 或技术委员会多数可禁言账号、处理举报。
@@ -1321,6 +1322,15 @@ impl pallet_chat_permission::Config for Runtime {
     // 举报冷却 ~1 分钟 / report cooldown ~1 minute.
     type ReportCooldown = ConstU32<MINUTES>;
     type WeightInfo = pallet_chat_permission::weights::SubstrateWeight<Runtime>;
+}
+
+parameter_types! {
+    /// EN: Account recorded as the `sender` for governance-issued on-chain chat
+    /// `System` messages. Derived from a PalletId so it is deterministic and not
+    /// controlled by any user key. CN: 治理签发的链上聊天 `System` 消息所记录的
+    /// `sender` 账户；由 PalletId 派生，确定且不受任何用户密钥控制。
+    pub ChatSystemMessenger: AccountId =
+        frame_support::PalletId(*b"chat/sys").into_account_truncating();
 }
 
 impl pallet_chat_core::Config for Runtime {
@@ -1338,6 +1348,12 @@ impl pallet_chat_core::Config for Runtime {
     type MaxSignatureLength = ConstU32<256>;
     // 发送前权限校验：场景授权 / 好友 / 黑白名单 / 隐私级别。
     type ChatPermission = ChatPermission;
+    // System 通道仅对治理（Root）开放，sender 记为派生系统账户（审计 B2）：
+    // 防止任意用户伪造系统通知。人类聊天走链下 MLS，不经此入口。
+    // System channel is governance-only (Root), sender = derived system account
+    // (audit B2): prevents forged system notifications. Human chat is off-chain.
+    type SystemMessageOrigin =
+        frame_system::EnsureRootWithSuccess<AccountId, ChatSystemMessenger>;
 }
 
 /// Adapter mapping `pallet-chat-group` membership hooks to `chat-permission`
@@ -1389,7 +1405,7 @@ impl pallet_chat_group::Config for Runtime {
     type MaxPendingJoins = ConstU32<256>;
     // 成员↔群主场景授权（可选 1:1 私聊）/ member↔owner scene auth
     type ChatHook = GroupChatAuthorizer;
-    type MaxGroupMembers = ConstU32<256>; // 对齐 XMTP 群上限量级
+    type MaxGroupMembers = ConstU32<500>; // 单群最大成员数 / max members per group
     type MaxGroupsPerUser = ConstU32<500>;
     type MaxKeyPackageLen = ConstU32<4096>;
     type MaxHandshakeLen = ConstU32<16384>;
@@ -1408,6 +1424,23 @@ impl pallet_chat_group::Config for Runtime {
     // Compliance: Root or technical-committee majority can force-disband/freeze.
     type GovernanceOrigin = RootOrTechnicalMajority;
     type WeightInfo = pallet_chat_group::weights::SubstrateWeight<Runtime>;
+}
+
+parameter_types! {
+    /// 投递信箱注册押金 / delivery-inbox registration deposit (0.5 NEX)
+    pub const InboxDeposit: Balance = UNIT / 2;
+}
+
+// 链下投递信箱注册表（盲化一次性投递令牌的链上锚点）。
+// Off-chain delivery inbox registry (on-chain anchor for blinded one-time tokens).
+impl pallet_chat_inbox::Config for Runtime {
+    type Currency = Balances;
+    type InboxDeposit = InboxDeposit;
+    // 每信箱定向撤销标签上限（epoch 轮换清空）/ per-inbox revoked-tag cap (cleared on epoch bump).
+    type MaxRevokedTags = ConstU32<256>;
+    // 单控制账户信箱上限 / max inboxes per controller account.
+    type MaxInboxesPerController = ConstU32<16>;
+    type WeightInfo = pallet_chat_inbox::weights::SubstrateWeight<Runtime>;
 }
 
 // ============================================================================

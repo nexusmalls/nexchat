@@ -42,48 +42,9 @@ mod benchmarks {
         );
     }
 
-    #[benchmark]
-    fn block_user() {
-        let caller: T::AccountId = whitelisted_caller();
-        let target: T::AccountId = account("target", 0, 0);
-        #[extrinsic_call]
-        block_user(RawOrigin::Signed(caller.clone()), target.clone());
-        assert!(PrivacySettingsOf::<T>::get(&caller).block_list.contains(&target));
-    }
-
-    #[benchmark]
-    fn unblock_user() {
-        let caller: T::AccountId = whitelisted_caller();
-        let target: T::AccountId = account("target", 0, 0);
-        ChatPermission::<T>::block_user(RawOrigin::Signed(caller.clone()).into(), target.clone())
-            .expect("block");
-        #[extrinsic_call]
-        unblock_user(RawOrigin::Signed(caller.clone()), target.clone());
-        assert!(!PrivacySettingsOf::<T>::get(&caller).block_list.contains(&target));
-    }
-
-    #[benchmark]
-    fn add_to_whitelist() {
-        let caller: T::AccountId = whitelisted_caller();
-        let target: T::AccountId = account("target", 0, 0);
-        #[extrinsic_call]
-        add_to_whitelist(RawOrigin::Signed(caller.clone()), target.clone());
-        assert!(PrivacySettingsOf::<T>::get(&caller).whitelist.contains(&target));
-    }
-
-    #[benchmark]
-    fn remove_from_whitelist() {
-        let caller: T::AccountId = whitelisted_caller();
-        let target: T::AccountId = account("target", 0, 0);
-        ChatPermission::<T>::add_to_whitelist(
-            RawOrigin::Signed(caller.clone()).into(),
-            target.clone(),
-        )
-        .expect("add");
-        #[extrinsic_call]
-        remove_from_whitelist(RawOrigin::Signed(caller.clone()), target.clone());
-        assert!(!PrivacySettingsOf::<T>::get(&caller).whitelist.contains(&target));
-    }
+    // NOTE / 注意（审计 P1）：`block_user` / `unblock_user` / `add_to_whitelist` /
+    // `remove_from_whitelist` 基准已随对应 extrinsic 移除（链上黑/白名单去明文）。
+    // Benches removed along with the extrinsics (on-chain block/whitelist dropped).
 
     #[benchmark]
     fn bump_capability_epoch() {

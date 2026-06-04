@@ -26,7 +26,7 @@ fn bench_tx_hashes() -> TxHashVec {
         .to_vec()
         .try_into()
         .unwrap_or_default();
-    BoundedVec::try_from(vec![hash]).unwrap_or_default()
+    BoundedVec::try_from(alloc::vec![hash]).unwrap_or_default()
 }
 
 /// 创建一个有足够余额的账户

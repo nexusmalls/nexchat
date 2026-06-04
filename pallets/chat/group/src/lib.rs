@@ -34,6 +34,28 @@
 //! 通信关系。1:1 私聊仅走链下：由接收方签名的聊天能力令牌（受 `pallet-chat-permission`
 //! 的 `CapabilityEpoch` 约束）+ 经 relay 投递的成对 MLS 会话；链上不写 `create_group`/
 //! 成员记录。链上群仅用于真正的多人（3+）房间。
+//!
+//! ## 群成员公开性 / Group membership is public (audit P3, inherent trade-off)
+//!
+//! EN: For genuine multi-party groups, membership (`GroupMembers`, `UserGroups`)
+//! and roles are stored on-chain in clear. This is **inherent** to the DS+AS
+//! role: the chain must know the member set to globally order Commits, enforce
+//! `MaxGroupMembers`, route Welcomes, and prevent forks. It is an **accepted**
+//! trade-off, scoped by the 1:1 invariant above (the most sensitive case — who
+//! DMs whom — never becomes an on-chain group). What stays private even for
+//! groups: message *content* (off-chain MLS E2EE; ciphertext never touches the
+//! chain). Product guidance: model a cohort as an on-chain group only when its
+//! membership being publicly visible is acceptable; for relationship-sensitive
+//! cohorts, prefer the off-chain pairwise path. Hiding multi-party membership
+//! itself would require a different primitive (e.g. anonymous-credential groups)
+//! and is out of scope for the MLS DS+AS anchor.
+//! CN: 对真正的多人群，成员关系（`GroupMembers`、`UserGroups`）与角色以明文存于链上。
+//! 这是 DS+AS 角色的**固有**属性：链必须知道成员集合，才能为 Commit 全局定序、强制
+//! `MaxGroupMembers`、路由 Welcome 并防分叉。这是**可接受**的权衡，并由上文 1:1 不变量
+//! 收口（最敏感的「谁私聊谁」永不成为链上群）。即便是群，仍保持私密的是：消息**内容**
+//! （链下 MLS 端到端加密，密文不触链）。产品建议：仅当群成员公开可见可接受时才用链上群；
+//! 关系敏感的群体优先走链下成对路径。隐藏多人成员关系本身需另一种原语（如匿名凭证群），
+//! 不在 MLS DS+AS 锚的范围内。
 
 pub use pallet::*;
 pub use weights::WeightInfo;
@@ -70,6 +92,14 @@ pub type GroupId = u64;
 /// EN: Per-account KeyPackage identifier.
 /// CN: 账户内 KeyPackage 标识。
 pub type KeyPackageId = u64;
+
+/// EN: Max storage items removed per `disband` call, per prefix. Bounds the
+/// extrinsic's worst-case weight against unbounded per-group prefixes
+/// (`HandshakeLog` / `MessageDigestAnchor` / `Banned` …); a large group needs a
+/// few repeated `disband` calls (audit B4). CN: 单次 `disband` 每个前缀最多移除的
+/// 存储项数，用于约束最坏权重以对抗无上界的群前缀（`HandshakeLog` /
+/// `MessageDigestAnchor` / `Banned` 等）；大群需重复调用几次（审计 B4）。
+pub const MAX_DISBAND_ITEMS_PER_CALL: u32 = 128;
 
 /// EN: Application-level member role on top of MLS (MLS itself is flat).
 /// CN: MLS 之上的应用层成员角色（MLS 本身无角色）。
@@ -532,6 +562,10 @@ pub mod pallet {
         WelcomeClaimed { group_id: GroupId, who: T::AccountId },
         /// EN: Group disbanded / CN: 群已解散
         GroupDisbanded { group_id: GroupId },
+        /// EN: A disband call made bounded progress but the group is not yet fully
+        /// torn down (large group); call disband again to continue (audit B4).
+        /// CN: 一次解散调用按预算推进，但群尚未完全拆除（大群）；再次调用以继续（审计 B4）。
+        GroupDisbandProgress { group_id: GroupId },
         /// EN: Message-batch digest anchored (optional audit) / CN: 消息批次 digest 已锚（可选审计）
         MessageDigestAnchored { group_id: GroupId, batch_seq: u64, epoch: u64 },
         /// EN: Join requested (private group) / CN: 已申请入群（私群）
@@ -610,6 +644,9 @@ pub mod pallet {
         TooManyPendingJoins,
         /// 私群加入未获批准 / Add to private group not approved
         NotApproved,
+        /// EN: Addee has not opted into being added to a public group (no published
+        /// KeyPackage). CN: 被加成员未选择可被加入公开群（无已发布 KeyPackage）。
+        AddeeNotJoinable,
         /// 目标不是群成员 / Target is not a member
         TargetNotMember,
         /// 群主退群前须先转让 / Owner must transfer ownership before leaving
@@ -749,7 +786,14 @@ pub mod pallet {
         /// CN: 提交成员变更（MLS Commit）：应用 Add/Remove 并推进 epoch。
         /// `expected_epoch` 闸门借区块全序仲裁并发 commit（唯一 committer）。
         #[pallet::call_index(3)]
-        #[pallet::weight(T::WeightInfo::commit())]
+        // EN: Weight scales with the membership delta size: `commit` does O(added)
+        // + O(removed) storage work, so charge per added/removed member instead of a
+        // fixed under-estimate. CN: 权重随成员增减规模线性增长：`commit` 的存储开销为
+        // O(added)+O(removed)，故按增/删成员数计费，而非固定低估。
+        #[pallet::weight(T::WeightInfo::commit(
+            member_delta.added.len() as u32,
+            member_delta.removed.len() as u32,
+        ))]
         #[allow(clippy::too_many_arguments)]
         pub fn commit(
             origin: OriginFor<T>,
@@ -799,8 +843,21 @@ pub mod pallet {
                 ensure!(!GroupMembers::<T>::contains_key(group_id, acct), Error::<T>::AlreadyMember);
                 // 封禁名单链上强制：被封禁账户不可被加入 / banned accounts cannot be added
                 ensure!(!Banned::<T>::contains_key(group_id, acct), Error::<T>::Banned);
-                // 私群：被加成员必须已获管理员批准 / private group: addee must be approved
-                if !g.is_public {
+                if g.is_public {
+                    // 公开群（审计 U3）：被加成员必须已发布至少一个 KeyPackage。
+                    // 这既是「同意被加入」的链上信号（成员主动发布、可随时吊销退出），也符合 MLS
+                    // ——没有对方 KeyPackage 本就无法 Add。杜绝群主/管理员把任意人拉进公开群。
+                    // Public group (audit U3): the addee must have published a KeyPackage.
+                    // This is both the on-chain opt-in/consent signal (the member chose to
+                    // publish, and can revoke to opt out) and MLS-correct (you cannot Add
+                    // without their KeyPackage), preventing owners/admins from pulling
+                    // arbitrary accounts into a public group.
+                    ensure!(
+                        KeyPackageCount::<T>::get(acct) > 0,
+                        Error::<T>::AddeeNotJoinable
+                    );
+                } else {
+                    // 私群：被加成员必须已获管理员批准 / private group: addee must be approved
                     ensure!(
                         JoinApprovals::<T>::contains_key(group_id, acct),
                         Error::<T>::NotApproved
@@ -903,7 +960,9 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             let g = GroupMls::<T>::get(group_id).ok_or(Error::<T>::GroupNotFound)?;
             ensure!(g.admin == who, Error::<T>::NotGroupOwner);
-            Self::do_disband(group_id);
+            // 有界拆除（审计 B4）：大群可能需重复调用，未清完会发 GroupDisbandProgress。
+            // Bounded teardown (audit B4): large groups may need repeated calls.
+            let _ = Self::do_disband(group_id);
             Ok(())
         }
 
@@ -1237,8 +1296,14 @@ pub mod pallet {
         pub fn force_disband_group(origin: OriginFor<T>, group_id: GroupId) -> DispatchResult {
             T::GovernanceOrigin::ensure_origin(origin)?;
             ensure!(GroupMls::<T>::contains_key(group_id), Error::<T>::GroupNotFound);
-            Self::do_disband(group_id);
-            Self::deposit_event(Event::GroupForceDisbanded { group_id });
+            // 有界拆除（审计 B4）：仅在完全拆除时发终态事件；未清完发 GroupDisbandProgress，
+            // 治理重复调用直至完成（群在拆除期间已被冻结，无法继续增长）。
+            // Bounded teardown (audit B4): emit the terminal event only on full
+            // teardown; otherwise GroupDisbandProgress is emitted and governance
+            // repeats (the group is frozen during teardown, so it cannot grow).
+            if Self::do_disband(group_id) {
+                Self::deposit_event(Event::GroupForceDisbanded { group_id });
+            }
             Ok(())
         }
 
@@ -1371,12 +1436,36 @@ pub mod pallet {
             UserGroups::<T>::mutate(who, |groups| groups.retain(|g| *g != group_id));
         }
 
-        /// EN: Tear down all storage for a group and sync every member's list.
-        /// CN: 清理一个群的全部存储并同步每个成员的群列表。
-        fn do_disband(group_id: GroupId) {
+        /// EN: Tear down a group's storage in **bounded** work per call and sync
+        /// members' lists. Returns `true` once the group is fully removed.
+        ///
+        /// # DoS（审计 B4）/ DoS (audit B4)
+        /// `HandshakeLog` / `MessageDigestAnchor` / `Banned` 等前缀随群生命周期无上界增长，
+        /// 旧实现用 `clear_prefix(u32::MAX)` 配固定权重会被严重低估。改为单次最多处理
+        /// `MAX_DISBAND_ITEMS_PER_CALL` 项：进入即冻结群（阻止 `commit` 等在拆除期间继续
+        /// 写入），按预算分批清理，全部清空后才移除 `GroupMls` 并退押金；未清完则发
+        /// `GroupDisbandProgress` 事件，调用方重复调用直至返回 `true`。小群（含全部单测）
+        /// 一次即完成。The legacy `clear_prefix(u32::MAX)` under a fixed weight was
+        /// under-charged because these prefixes grow without bound. We now process at
+        /// most `MAX_DISBAND_ITEMS_PER_CALL` items per call: freeze the group on entry
+        /// (so `commit` cannot grow storage mid-teardown), clear within budget, and
+        /// only finalize (remove `GroupMls`, refund deposit) once everything is empty;
+        /// otherwise emit `GroupDisbandProgress` and let the caller repeat. Small groups
+        /// (including every unit test) finish in a single call.
+        fn do_disband(group_id: GroupId) -> bool {
+            let budget = crate::MAX_DISBAND_ITEMS_PER_CALL;
             let admin = GroupMls::<T>::get(group_id).map(|g| g.admin);
-            let members: Vec<T::AccountId> =
-                GroupMembers::<T>::iter_key_prefix(group_id).collect();
+
+            // 冻结群，阻止拆除期间的写入型操作继续增长存储（幂等）。
+            // Freeze to block write-heavy ops from growing storage mid-teardown.
+            GroupFrozen::<T>::insert(group_id, ());
+
+            // 1. 本次最多处理 `budget` 个成员：每个成员只处理一次（处理即移除其行，
+            //    故重复调用不会重复触发 hook）。Process up to `budget` members; each is
+            //    handled exactly once (its row is removed), so repeats never double-fire.
+            let members: Vec<T::AccountId> = GroupMembers::<T>::iter_key_prefix(group_id)
+                .take(budget as usize)
+                .collect();
             for acct in members.iter() {
                 Self::user_groups_remove(acct, group_id);
                 // 镜像撤销（群主与自身的对授权无意义，跳过）/ mirror revoke (skip owner-self)
@@ -1385,20 +1474,40 @@ pub mod pallet {
                         T::ChatHook::on_member_removed(group_id, acct, a);
                     }
                 }
+                GroupMembers::<T>::remove(group_id, acct);
             }
-            let _ = GroupMembers::<T>::clear_prefix(group_id, u32::MAX, None);
-            let _ = HandshakeLog::<T>::clear_prefix(group_id, u32::MAX, None);
-            let _ = WelcomeMailbox::<T>::clear_prefix(group_id, u32::MAX, None);
-            let _ = MessageDigestAnchor::<T>::clear_prefix(group_id, u32::MAX, None);
-            let _ = JoinRequests::<T>::clear_prefix(group_id, u32::MAX, None);
-            let _ = JoinApprovals::<T>::clear_prefix(group_id, u32::MAX, None);
-            // 清理应用层附加存储（群资料 / 群昵称 / 封禁 / 禁言）。
-            // Clear app-layer extras (profile / nicknames / bans / mutes).
+
+            // 2. 有界清理其余（可能很大的）前缀。/ Bounded-clear the other prefixes.
+            let c_hand = HandshakeLog::<T>::clear_prefix(group_id, budget, None);
+            let c_welc = WelcomeMailbox::<T>::clear_prefix(group_id, budget, None);
+            let c_dig = MessageDigestAnchor::<T>::clear_prefix(group_id, budget, None);
+            let c_jreq = JoinRequests::<T>::clear_prefix(group_id, budget, None);
+            let c_japp = JoinApprovals::<T>::clear_prefix(group_id, budget, None);
+            let c_nick = GroupNicknames::<T>::clear_prefix(group_id, budget, None);
+            let c_ban = Banned::<T>::clear_prefix(group_id, budget, None);
+            let c_mute = MemberMutedUntil::<T>::clear_prefix(group_id, budget, None);
+
+            // 3. 仅当无成员残留且每个前缀都已清空时才算完成。
+            //    Done only when no members remain and every prefix is fully cleared.
+            let members_left = GroupMembers::<T>::iter_key_prefix(group_id).next().is_some();
+            let more = members_left
+                || c_hand.maybe_cursor.is_some()
+                || c_welc.maybe_cursor.is_some()
+                || c_dig.maybe_cursor.is_some()
+                || c_jreq.maybe_cursor.is_some()
+                || c_japp.maybe_cursor.is_some()
+                || c_nick.maybe_cursor.is_some()
+                || c_ban.maybe_cursor.is_some()
+                || c_mute.maybe_cursor.is_some();
+            if more {
+                Self::deposit_event(Event::GroupDisbandProgress { group_id });
+                return false;
+            }
+
+            // 4. 收尾：清理单值存储、退押金、移除群根、发终态事件。
+            //    Finalize: clear singletons, refund deposit, remove root, emit done.
             GroupProfiles::<T>::remove(group_id);
             GroupMutedAll::<T>::remove(group_id);
-            let _ = GroupNicknames::<T>::clear_prefix(group_id, u32::MAX, None);
-            let _ = Banned::<T>::clear_prefix(group_id, u32::MAX, None);
-            let _ = MemberMutedUntil::<T>::clear_prefix(group_id, u32::MAX, None);
             PendingJoinCount::<T>::remove(group_id);
             GroupFrozen::<T>::remove(group_id);
             // 退还建群押金 / refund group creation deposit
@@ -1407,6 +1516,7 @@ pub mod pallet {
             }
             GroupMls::<T>::remove(group_id);
             Self::deposit_event(Event::GroupDisbanded { group_id });
+            true
         }
 
         /// EN: Clear a member's pending join request + approval (consumed on Add).

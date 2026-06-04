@@ -13,30 +13,56 @@ use super::*;
 use frame_benchmarking::v2::*;
 use frame_support::traits::Get;
 use frame_support::BoundedVec;
+use frame_system::pallet_prelude::BlockNumberFor;
 use frame_system::RawOrigin;
 use pallet::*;
+use pallet_entity_common::PoolRewardCapBehavior;
 use sp_runtime::traits::Zero;
 use sp_runtime::Saturating;
 
-fn make_level_ratios<T: Config>(count: u32) -> BoundedVec<(u8, u16), T::MaxPoolRewardLevels> {
-    let per_level = 10000u16 / (count as u16);
-    let mut v: alloc::vec::Vec<(u8, u16)> =
-        (0..count).map(|i| ((i + 1) as u8, per_level)).collect();
-    let sum: u16 = v.iter().map(|(_, r)| r).sum();
-    if sum < 10000 && !v.is_empty() {
-        v.last_mut().unwrap().1 += 10000 - sum;
+/// Build a simple `Fixed` per-level claim rule. / 构造简单的 `Fixed` 单级领取规则。
+fn fixed_rule(base_cap_percent: u16) -> LevelClaimRule {
+    LevelClaimRule {
+        base_cap_percent,
+        cap_behavior: PoolRewardCapBehavior::Fixed,
+        baseline_direct: 0,
+        baseline_team: 0,
     }
-    v.try_into()
-        .expect("count should be <= MaxPoolRewardLevels")
+}
+
+/// Build `count` distinct level rules (ids 1..=count, each a valid `Fixed` rule).
+/// 构造 `count` 条不同等级规则（id 1..=count，每条均为合法 `Fixed` 规则）。
+fn make_level_rules<T: Config>(
+    count: u32,
+) -> BoundedVec<(u8, LevelClaimRule), T::MaxPoolRewardLevels> {
+    let per_level = if count == 0 { 10000u16 } else { 10000u16 / (count as u16) }.max(1);
+    let v: alloc::vec::Vec<(u8, LevelClaimRule)> =
+        (0..count).map(|i| ((i + 1) as u8, fixed_rule(per_level))).collect();
+    v.try_into().expect("count should be <= MaxPoolRewardLevels")
+}
+
+/// Build `levels` level-quota snapshots for a round. / 为一轮构造 `levels` 个等级配额快照。
+fn make_level_quotas<T: Config>(
+    levels: u32,
+) -> BoundedVec<LevelQuotaSnapshot, T::MaxPoolRewardLevels> {
+    let mut q = BoundedVec::default();
+    for i in 1..=levels {
+        let _ = q.try_push(LevelQuotaSnapshot {
+            level_id: i as u8,
+            member_count: 10,
+            claimed_count: 0,
+        });
+    }
+    q
 }
 
 fn seed_config<T: Config>(entity_id: u64, levels: u32) {
-    let ratios = make_level_ratios::<T>(levels);
+    let rules = make_level_rules::<T>(levels);
     let rd = T::MinRoundDuration::get();
     PoolRewardConfigs::<T>::insert(
         entity_id,
         PoolRewardConfig {
-            level_ratios: ratios,
+            level_rules: rules,
             round_duration: rd,
             token_pool_enabled: false,
         },
@@ -45,42 +71,69 @@ fn seed_config<T: Config>(entity_id: u64, levels: u32) {
 
 /// Seed a config with token pool enabled.
 fn seed_config_with_token<T: Config>(entity_id: u64, levels: u32) {
-    let ratios = make_level_ratios::<T>(levels);
+    let rules = make_level_rules::<T>(levels);
     let rd = T::MinRoundDuration::get();
     PoolRewardConfigs::<T>::insert(
         entity_id,
         PoolRewardConfig {
-            level_ratios: ratios,
+            level_rules: rules,
             round_duration: rd,
             token_pool_enabled: true,
         },
     );
 }
 
+/// Build a `RoundInfo` with `levels` quota snapshots. / 构造含 `levels` 个配额快照的 `RoundInfo`。
+fn make_round_info<T: Config>(
+    round_id: u64,
+    start_block: BlockNumberFor<T>,
+    levels: u32,
+    token: bool,
+) -> RoundInfoOf<T> {
+    RoundInfo {
+        round_id,
+        start_block,
+        pool_snapshot: BalanceOf::<T>::from(10000u32),
+        nex_usdt_rate_snapshot: None,
+        eligible_count: 10u32.saturating_mul(levels),
+        per_member_reward: BalanceOf::<T>::from(100u32),
+        claimed_count: 0,
+        level_quotas: make_level_quotas::<T>(levels),
+        token_pool_snapshot: if token { Some(TokenBalanceOf::<T>::from(5000u32)) } else { None },
+        token_per_member_reward: if token { Some(TokenBalanceOf::<T>::from(50u32)) } else { None },
+        token_claimed_count: 0,
+        token_level_quotas: if token { Some(make_level_quotas::<T>(levels)) } else { None },
+    }
+}
+
+/// Build a `CompletedRoundSummary` from a round. / 由一轮构造 `CompletedRoundSummary`。
+fn make_completed_summary<T: Config>(
+    round: &RoundInfoOf<T>,
+    end_block: BlockNumberFor<T>,
+) -> CompletedRoundSummaryOf<T> {
+    CompletedRoundSummary {
+        round_id: round.round_id,
+        start_block: round.start_block,
+        end_block,
+        pool_snapshot: round.pool_snapshot,
+        nex_usdt_rate_snapshot: round.nex_usdt_rate_snapshot,
+        eligible_count: round.eligible_count,
+        per_member_reward: round.per_member_reward,
+        claimed_count: round.claimed_count,
+        level_quotas: round.level_quotas.clone(),
+        token_pool_snapshot: round.token_pool_snapshot,
+        token_per_member_reward: round.token_per_member_reward,
+        token_claimed_count: round.token_claimed_count,
+        token_level_quotas: round.token_level_quotas.clone(),
+        funding_summary: RoundFundingSummary::default(),
+    }
+}
+
 /// Seed a round so that extrinsics requiring an active round can proceed.
 fn seed_round<T: Config>(entity_id: u64, levels: u32) {
     let now = frame_system::Pallet::<T>::block_number();
-    let mut level_snapshots = BoundedVec::default();
-    for i in 1..=levels {
-        let _ = level_snapshots.try_push(LevelSnapshot {
-            level_id: i as u8,
-            member_count: 10,
-            per_member_reward: BalanceOf::<T>::from(100u32),
-            claimed_count: 0,
-        });
-    }
     let round_id = LastRoundId::<T>::get(entity_id).saturating_add(1);
-    CurrentRound::<T>::insert(
-        entity_id,
-        RoundInfo {
-            round_id,
-            start_block: now,
-            pool_snapshot: BalanceOf::<T>::from(10000u32),
-            level_snapshots,
-            token_pool_snapshot: None,
-            token_level_snapshots: None,
-        },
-    );
+    CurrentRound::<T>::insert(entity_id, make_round_info::<T>(round_id, now, levels, false));
 }
 
 /// Seed user claim records for force_clear worst-case.
@@ -116,7 +169,7 @@ mod benches {
     #[benchmark]
     fn set_pool_reward_config() {
         let entity_id: u64 = 9999;
-        let levels = make_level_ratios::<T>(3);
+        let levels = make_level_rules::<T>(3);
         let rd = T::MinRoundDuration::get();
 
         #[extrinsic_call]
@@ -133,17 +186,6 @@ mod benches {
     ///
     /// Since claim requires MemberProvider/EntityProvider wiring, we benchmark
     /// the storage-equivalent path via #[block] that exercises the same I/O.
-    /// Reads:  entity_active(1) + global_paused(1) + per_entity_paused(1) +
-    ///         is_member(1) + is_banned(1) + is_member_active(1) + participation(1) +
-    ///         config(1) + custom_level(1) + current_round(1) + last_claimed(1) +
-    ///         pool_balance(1) + entity_account(1) +
-    ///         token_pool_balance(1) + token_snapshots(in round) +
-    ///         claim_records(1) + distribution_stats(1) +
-    ///         [round creation: last_round_id(1) + round_history(1) + N×member_count_by_level]
-    /// Writes: pool_deduct(1) + currency_transfer(2) + current_round(1) +
-    ///         last_claimed_round(1) + claim_records(1) + distribution_stats(1) +
-    ///         [round creation: current_round(1) + round_history(1) + distribution_stats(1) + last_round_id(1)]
-    ///         [worst: token_pool_deficit(1)]
     #[benchmark]
     fn claim_pool_reward() {
         let entity_id: u64 = 9999;
@@ -153,15 +195,8 @@ mod benches {
         // Seed an old round in history for archive path
         let old_round = CurrentRound::<T>::get(entity_id).unwrap();
         RoundHistory::<T>::mutate(entity_id, |history| {
-            let summary = CompletedRoundSummary {
-                round_id: 0,
-                start_block: frame_system::Pallet::<T>::block_number(),
-                end_block: frame_system::Pallet::<T>::block_number(),
-                pool_snapshot: BalanceOf::<T>::from(0u32),
-                token_pool_snapshot: None,
-                level_snapshots: BoundedVec::default(),
-                token_level_snapshots: None,
-            };
+            let now = frame_system::Pallet::<T>::block_number();
+            let summary = make_completed_summary::<T>(&old_round, now);
             let _ = history.try_push(summary);
         });
 
@@ -190,16 +225,7 @@ mod benches {
                 if history.is_full() {
                     history.remove(0);
                 }
-                let summary = CompletedRoundSummary {
-                    round_id: old_round.round_id,
-                    start_block: old_round.start_block,
-                    end_block: now,
-                    pool_snapshot: old_round.pool_snapshot,
-                    token_pool_snapshot: old_round.token_pool_snapshot,
-                    level_snapshots: old_round.level_snapshots.clone(),
-                    token_level_snapshots: old_round.token_level_snapshots.clone(),
-                };
-                let _ = history.try_push(summary);
+                let _ = history.try_push(make_completed_summary::<T>(&old_round, now));
             });
             // 3. Update distribution stats (round completed)
             DistributionStatistics::<T>::mutate(entity_id, |stats| {
@@ -207,25 +233,9 @@ mod benches {
             });
             // 4. Write new round
             let new_round_id = old_round.round_id.saturating_add(1);
-            let mut new_snapshots = BoundedVec::default();
-            for i in 1..=3u8 {
-                let _ = new_snapshots.try_push(LevelSnapshot {
-                    level_id: i,
-                    member_count: 10,
-                    per_member_reward: BalanceOf::<T>::from(100u32),
-                    claimed_count: 0,
-                });
-            }
-            let mut new_round = RoundInfo {
-                round_id: new_round_id,
-                start_block: now,
-                pool_snapshot: BalanceOf::<T>::from(10000u32),
-                level_snapshots: new_snapshots,
-                token_pool_snapshot: Some(TokenBalanceOf::<T>::from(5000u32)),
-                token_level_snapshots: Some(BoundedVec::default()),
-            };
+            let mut new_round = make_round_info::<T>(new_round_id, now, 3, true);
             // 5. Update claimed_count in round
-            new_round.level_snapshots[0].claimed_count += 1;
+            new_round.level_quotas[0].claimed_count += 1;
             CurrentRound::<T>::insert(entity_id, &new_round);
             // 6. Write last_claimed_round
             LastClaimedRound::<T>::insert(entity_id, &caller, new_round_id);
@@ -275,10 +285,6 @@ mod benches {
     }
 
     /// Benchmark `create_new_round` internal path (no extrinsic — used by on_initialize + claim).
-    /// Storage: config(1R) + current_round(1R) + last_round_id(1R) +
-    ///          round_history(1R+1W) + distribution_stats(1R+1W) +
-    ///          N×member_count_by_level(NR) + [token_pool_balance(1R)]
-    /// Writes: current_round(1W) + round_history(1W) + distribution_stats(1W) + last_round_id(1W)
     #[benchmark]
     fn start_new_round() {
         let entity_id: u64 = 9999;
@@ -295,16 +301,7 @@ mod benches {
                 if history.is_full() {
                     history.remove(0);
                 }
-                let summary = CompletedRoundSummary {
-                    round_id: old_round.round_id,
-                    start_block: old_round.start_block,
-                    end_block: now,
-                    pool_snapshot: old_round.pool_snapshot,
-                    token_pool_snapshot: old_round.token_pool_snapshot,
-                    level_snapshots: old_round.level_snapshots.clone(),
-                    token_level_snapshots: old_round.token_level_snapshots.clone(),
-                };
-                let _ = history.try_push(summary);
+                let _ = history.try_push(make_completed_summary::<T>(&old_round, now));
             });
             DistributionStatistics::<T>::mutate(entity_id, |stats| {
                 stats.total_rounds_completed = stats.total_rounds_completed.saturating_add(1);
@@ -313,25 +310,9 @@ mod benches {
 
             // Create new round with snapshots
             let new_round_id = old_round.round_id.saturating_add(1);
-            let mut new_snapshots = BoundedVec::default();
-            for i in 1..=3u8 {
-                let _ = new_snapshots.try_push(LevelSnapshot {
-                    level_id: i,
-                    member_count: 10,
-                    per_member_reward: BalanceOf::<T>::from(100u32),
-                    claimed_count: 0,
-                });
-            }
             CurrentRound::<T>::insert(
                 entity_id,
-                RoundInfo {
-                    round_id: new_round_id,
-                    start_block: now,
-                    pool_snapshot: BalanceOf::<T>::from(10000u32),
-                    level_snapshots: new_snapshots,
-                    token_pool_snapshot: None,
-                    token_level_snapshots: None,
-                },
+                make_round_info::<T>(new_round_id, now, 3, false),
             );
             Pallet::<T>::deposit_event(Event::NewRoundStarted {
                 entity_id,
@@ -374,21 +355,15 @@ mod benches {
         PendingPoolRewardConfig::<T>::insert(
             entity_id,
             PendingConfigChange {
-                level_ratios: make_level_ratios::<T>(2),
+                level_rules: make_level_rules::<T>(2),
                 round_duration: T::MinRoundDuration::get(),
                 apply_after: frame_system::Pallet::<T>::block_number(),
             },
         );
+        let seed = CurrentRound::<T>::get(entity_id).unwrap();
+        let end = frame_system::Pallet::<T>::block_number();
         RoundHistory::<T>::mutate(entity_id, |h| {
-            let _ = h.try_push(CompletedRoundSummary {
-                round_id: 0,
-                start_block: frame_system::Pallet::<T>::block_number(),
-                end_block: frame_system::Pallet::<T>::block_number(),
-                pool_snapshot: BalanceOf::<T>::from(0u32),
-                token_pool_snapshot: None,
-                level_snapshots: BoundedVec::default(),
-                token_level_snapshots: None,
-            });
+            let _ = h.try_push(make_completed_summary::<T>(&seed, end));
         });
 
         #[block]
@@ -491,7 +466,7 @@ mod benches {
     fn schedule_pool_reward_config_change() {
         let entity_id: u64 = 9999;
         seed_config::<T>(entity_id, 3);
-        let new_ratios = make_level_ratios::<T>(2);
+        let new_rules = make_level_rules::<T>(2);
         let rd = T::MinRoundDuration::get();
         let apply_after = frame_system::Pallet::<T>::block_number() + T::ConfigChangeDelay::get();
 
@@ -500,7 +475,7 @@ mod benches {
             PendingPoolRewardConfig::<T>::insert(
                 entity_id,
                 PendingConfigChange {
-                    level_ratios: new_ratios,
+                    level_rules: new_rules,
                     round_duration: rd,
                     apply_after,
                 },
@@ -522,14 +497,14 @@ mod benches {
     fn apply_pending_pool_reward_config() {
         let entity_id: u64 = 9999;
         seed_config::<T>(entity_id, 3);
-        let new_ratios = make_level_ratios::<T>(2);
+        let new_rules = make_level_rules::<T>(2);
         let rd = T::MinRoundDuration::get();
         let current_block = frame_system::Pallet::<T>::block_number();
 
         PendingPoolRewardConfig::<T>::insert(
             entity_id,
             PendingConfigChange {
-                level_ratios: new_ratios.clone(),
+                level_rules: new_rules.clone(),
                 round_duration: rd,
                 apply_after: current_block, // already ready
             },
@@ -545,7 +520,7 @@ mod benches {
             PoolRewardConfigs::<T>::insert(
                 entity_id,
                 PoolRewardConfig {
-                    level_ratios: pending.level_ratios,
+                    level_rules: pending.level_rules,
                     round_duration: pending.round_duration,
                     token_pool_enabled,
                 },
@@ -572,7 +547,7 @@ mod benches {
         PendingPoolRewardConfig::<T>::insert(
             entity_id,
             PendingConfigChange {
-                level_ratios: make_level_ratios::<T>(2),
+                level_rules: make_level_rules::<T>(2),
                 round_duration: T::MinRoundDuration::get(),
                 apply_after: frame_system::Pallet::<T>::block_number() + 100u32.into(),
             },

@@ -1,158 +1,61 @@
 # Pallet Chat Common
 
-聊天系统共享模块，提供所有聊天子模块共用的类型和工具。
+聊天系统的轻量共享构件。**不是 pallet**：无 storage、无 extrinsic、无权重。
 
-## 概述
+链下收敛后（人类消息 Text/Image/File/Voice，无论私聊还是群聊，均走链下 MLS + relay；
+链上仅存 `System` 通知），本 crate 仅保留**真正跨 pallet / runtime 共享**的两块：
 
-本模块是聊天系统的基础模块，不包含任何存储或业务逻辑，仅提供：
+| 模块 | 内容 | 使用方 |
+| --- | --- | --- |
+| `rate_limit` | 窗口化反垃圾计数器 | `pallet-chat-group`（约束写入型 MLS 操作） |
+| `runtime_api` | 统一会话视图 `ChatViewApi` + `ConversationSummary` | `runtime/src/apis.rs` 聚合、`node/src/chat_rpc.rs` 封装为 `chat_*` RPC |
 
-- **共享类型**：MessageType、MessageStatus、EncryptionMode、ChatUserId
-- **共享Trait**：ChatPermissionCheck、FriendshipCheck、ChatUserIdProvider
-- **工具函数**：CID验证、频率限制
+## 1. `rate_limit`
 
-## 模块结构
-
-```
-common/
-├── src/
-│   ├── lib.rs          # 模块入口
-│   ├── types.rs        # 共享类型定义
-│   ├── traits.rs       # 共享trait定义
-│   ├── validation.rs   # CID验证工具
-│   └── rate_limit.rs   # 频率限制工具
-├── Cargo.toml
-└── README.md
-```
-
-## 共享类型
-
-### MessageType
-
-统一的消息类型枚举：
+滑动窗口限频：窗口（区块数）+ 窗口内最大次数。状态 `RateLimitState { last_time, count }`
+可上链存储（实现 `MaxEncodedLen`）。
 
 ```rust
-pub enum MessageType {
-    Text,    // 文本消息
-    Image,   // 图片消息
-    File,    // 文件消息
-    Voice,   // 语音消息
-    Video,   // 视频消息
-    System,  // 系统消息
-    AI,      // AI生成消息
-}
+use pallet_chat_common::rate_limit::{check_and_update_rate_limit, RateLimitResult, RateLimitState};
+
+let mut state = RateLimitState::<BlockNumber>::new();
+let res = check_and_update_rate_limit(&mut state, now, window, max_count);
+ensure!(res == RateLimitResult::Allowed, Error::<T>::RateLimited);
 ```
 
-### EncryptionMode
+辅助函数：`check_rate_limit`（只读不更新）、`reset_rate_limit`、`remaining_quota`。
 
-加密模式枚举（用于群聊）：
+## 2. `runtime_api`：统一会话视图
+
+`ChatViewApi` 把私聊（`pallet-chat-core`）+ 群聊（`pallet-chat-group`）聚合为单一会话
+列表。trait 定义在 `common`（core / group 互不依赖），聚合逻辑在 runtime 的
+`impl_runtime_apis!` 落地（那里能同时访问 `ChatCore` 与 `ChatGroup`）。
 
 ```rust
-pub enum EncryptionMode {
-    Military,    // 军用级（量子抗性）
-    Business,    // 商用级（标准加密）
-    Selective,   // 选择性
-    Transparent, // 透明公开
-}
+fn list_conversations(who) -> Vec<ConversationSummary<AccountId, Hash, BlockNumber>>;
+fn total_direct_unread(who) -> u32;
 ```
 
-### ChatUserId
+> **⚠️ 链上切片 ≠ 完整消息列表（客户端必读）**
+> 本 API 仅返回**链上切片**。人类聊天（私聊与群聊）在链下；链上唯一消息是 `System` 通知。
+> 因此私聊 `unread` / `last_active` 只反映 **System 通道**（纯链下聊过的用户对**没有**私聊行），
+> 群聊 `unread` / `last_active` 恒为 `0`，`muted` 在私聊（免打扰 DND）与群聊（管理员禁言/不能
+> 发言）下语义不同。渲染真实「消息」页**必须**与本地/链下 MLS 状态合并——详见
+> `pallets/chat/README.md` 的「链上 / 链下边界」与「客户端 Merge Spec」。
 
-11位数字的用户ID类型，用于隐私保护：
+## 3. 依赖
 
-```rust
-pub type ChatUserId = u64;
-// 范围：10,000,000,000 - 99,999,999,999
-```
+仅依赖 Substrate 核心库（`codec` / `scale-info` / `sp-std` / `sp-runtime` / `sp-api`），
+不依赖任何 pallet。
 
-## 共享Trait
+## 4. 设计变更说明（审计 P1：类型收敛）
 
-### ChatPermissionCheck
+历史版本曾把 common 设计为「聊天统一类型库」，提供 `MessageType` / `MessageStatus` /
+`EncryptionMode` / `ChatUserId` 与 `ChatPermissionCheck` 等跨 pallet trait，以及 CID
+「加密」启发式。这些在链下收敛后**无任何调用方**，且 `MessageType` 的判别值与
+`pallet-chat-core` 链上枚举发散，是潜在编码地雷，故**已整体删除**。当前唯一事实来源：
 
-```rust
-pub trait ChatPermissionCheck<AccountId> {
-    fn can_send_message(sender: &AccountId, receiver: &AccountId) -> bool;
-    fn is_blocked(blocker: &AccountId, blocked: &AccountId) -> bool;
-}
-```
-
-### ChatUserIdProvider
-
-```rust
-pub trait ChatUserIdProvider<AccountId> {
-    fn get_chat_user_id(account: &AccountId) -> Option<ChatUserId>;
-    fn get_account(chat_user_id: ChatUserId) -> Option<AccountId>;
-}
-```
-
-## 工具函数
-
-### CID验证
-
-> **审计 C**：`is_cid_encrypted` / `validate_encrypted_cid` 是**可绕过的长度/前缀启发式**，
-> **不能**当作内容已加密的证明，也不得用作链上加密闸门。`pallet-chat-core` 已移除该启发式，
-> 仅做非空 + 长度 sanity；加密由客户端 MLS E2EE 保证。下列“加密”相关函数当前未被在用 pallet
-> 调用，保留仅作格式探测。
-
-```rust
-// 【启发式，非证明】长度/前缀猜测 CID 是否“像”加密内容；勿用作加密闸门
-pub fn is_cid_encrypted(cid: &[u8]) -> bool;
-
-// 验证CID格式（非空 + 长度 + CIDv0/v1 形态）
-pub fn validate_cid(cid: &[u8], max_len: usize) -> CidValidationResult;
-
-// 【启发式，非证明】在 validate_cid 基础上额外要求“看起来已加密”；勿用作加密闸门
-pub fn validate_encrypted_cid(cid: &[u8], max_len: usize) -> Result<(), &'static str>;
-```
-
-### 频率限制
-
-```rust
-// 检查并更新频率限制
-pub fn check_and_update_rate_limit<BlockNumber>(
-    state: &mut RateLimitState<BlockNumber>,
-    current_block: BlockNumber,
-    window: BlockNumber,
-    max_count: u32,
-) -> RateLimitResult;
-
-// 计算剩余配额
-pub fn remaining_quota<BlockNumber>(...) -> u32;
-```
-
-## 使用示例
-
-```rust
-use pallet_chat_common::{
-    MessageType, EncryptionMode, ChatUserId,
-    is_cid_encrypted, validate_encrypted_cid,
-    check_and_update_rate_limit, RateLimitState,
-};
-
-// 使用消息类型
-let msg_type = MessageType::from_u8(1); // Image
-
-// 验证CID
-let cid = b"QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
-if !is_cid_encrypted(cid) {
-    // 要求加密
-}
-
-// 频率限制
-let mut state = RateLimitState::new();
-if check_and_update_rate_limit(&mut state, 100, 10, 5).is_allowed() {
-    // 允许发送
-}
-```
-
-## 依赖
-
-本模块仅依赖 Substrate 核心库，不依赖任何 pallet。
-
-```toml
-[dependencies]
-codec = { package = "parity-scale-codec" }
-scale-info = { ... }
-frame-support = { ... }
-sp-std = { ... }
-sp-runtime = { ... }
-```
+- 链上权威 `MessageType` → `pallet-chat-core`（仅 `System` 真正上链）。
+- 权限端口 → `pallet-chat-permission::ChatPermissionChecker`。
+- `ChatUserId` → `pallet-chat-core` 内定义与注册表。
+- 消息分类 / 加密 → 客户端 / 链下职责，由 MLS 端到端加密保证（链不做 CID 加密校验）。
