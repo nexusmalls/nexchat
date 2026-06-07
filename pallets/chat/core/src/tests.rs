@@ -48,13 +48,15 @@ fn test_send_message_works() {
 		let unread = Chat::get_unread_count(BOB, None);
 		assert_eq!(unread, 1);
 
-		// 验证：事件已触发（`MessageSent` 之后还会发 `MessageSentWithChatId`，故用 has_event）。
+		// 验证：单一 `MessageSent` 事件已触发（已合并旧 `MessageSentWithChatId`，审计 2.4）。
 		System::assert_has_event(
 			Event::MessageSent {
 				msg_id: 0,
 				session_id: msg.session_id,
 				sender: ALICE,
 				receiver: BOB,
+				sender_chat_id: msg.sender_chat_id,
+				receiver_chat_id: msg.receiver_chat_id,
 			}.into()
 		);
 	});
@@ -927,17 +929,19 @@ fn test_send_message_allowed_when_permission_grants() {
 }
 
 // ============================================================================
-// C2 职责收窄：send_system_message（仅 System 类）与统一权限闸门
+// C2 职责收窄：send_message（仅 System 类）与统一权限闸门
+// 注：旧的重复入口 send_system_message 已删除（审计 2.1），下面改用 send_message。
 // ============================================================================
 
 #[test]
 fn test_send_system_message_sets_system_type() {
 	new_test_ext().execute_with(|| {
-		// send_system_message 强制 MessageType::System，并复用同一套校验与落库。
-		assert_ok!(Chat::send_system_message(
+		// send_message 强制 MessageType::System，并复用同一套校验与落库。
+		assert_ok!(Chat::send_message(
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
+			4,
 			None
 		));
 		let msg = Chat::get_message(0).unwrap();
@@ -951,17 +955,83 @@ fn test_send_system_message_sets_system_type() {
 fn test_send_system_message_bypasses_permission_gate() {
 	new_test_ext().execute_with(|| {
 		// 系统消息来自受信来源，不受接收方隐私级别约束：即便 chat-permission 拒绝，
-		// `send_system_message` 仍成功送达。
+		// `send_message` 仍成功送达。
 		// System messages come from a trusted origin and are not gated by the
 		// recipient's privacy level: even when chat-permission denies, delivery succeeds.
 		crate::mock::deny_permission(ALICE, BOB);
-		assert_ok!(Chat::send_system_message(
+		assert_ok!(Chat::send_message(
 			RuntimeOrigin::signed(ALICE),
 			BOB,
 			encrypted_cid(1),
+			4,
 			None
 		));
 		assert_eq!(Chat::get_message(0).unwrap().msg_type, MessageType::System);
+	});
+}
+
+// ============================================================================
+// 2.3 修复：SystemNotifier 受信程序化通知端口
+// audit 2.3 fix: SystemNotifier programmatic notification port
+// ============================================================================
+
+#[test]
+fn test_notify_emits_system_message_from_system_account() {
+	use crate::SystemNotifier;
+	new_test_ext().execute_with(|| {
+		// 系统账户（mock=9999）向 BOB 推送一条平台通知（模板描述符 payload）。
+		let notice = b"order:shipped:1234".to_vec();
+		assert_ok!(<Chat as SystemNotifier<u64>>::notify(&BOB, notice.clone()));
+
+		let msg = Chat::get_message(0).unwrap();
+		// sender 为配置的系统账户，而非任何用户；类型为 System。
+		assert_eq!(msg.sender, 9_999);
+		assert_eq!(msg.receiver, BOB);
+		assert_eq!(msg.msg_type, MessageType::System);
+		assert_eq!(msg.content_cid.to_vec(), notice);
+
+		// 落入 system↔BOB 的平台通知会话，BOB 未读 +1。
+		let session_id = msg.session_id;
+		assert_eq!(Chat::get_unread_count(BOB, Some(session_id)), 1);
+	});
+}
+
+#[test]
+fn test_notify_bypasses_permission_gate() {
+	use crate::SystemNotifier;
+	new_test_ext().execute_with(|| {
+		// 即便 chat-permission 拒绝 system→BOB，受信通知仍必达（平台通知无视隐私级别）。
+		crate::mock::deny_permission(9_999, BOB);
+		assert_ok!(<Chat as SystemNotifier<u64>>::notify(&BOB, b"sys:1".to_vec()));
+		assert_eq!(Chat::get_message(0).unwrap().msg_type, MessageType::System);
+	});
+}
+
+#[test]
+fn test_notify_not_rate_limited() {
+	use crate::SystemNotifier;
+	new_test_ext().execute_with(|| {
+		// 连发 25 条 System 通知应全部成功（链上限频已移除；System 本就不限频）。
+		// Many System notifications all succeed (on-chain rate limit removed; System
+		// never was rate-limited anyway).
+		for i in 0..25u32 {
+			let mut notice = b"sys:".to_vec();
+			notice.extend_from_slice(i.to_string().as_bytes());
+			assert_ok!(<Chat as SystemNotifier<u64>>::notify(&BOB, notice));
+		}
+		assert!(Chat::get_message(24).is_some());
+	});
+}
+
+#[test]
+fn test_notify_rejects_empty_notice() {
+	use crate::SystemNotifier;
+	new_test_ext().execute_with(|| {
+		// 空 payload 仍受 CID 非空 sanity 约束。
+		assert_noop!(
+			<Chat as SystemNotifier<u64>>::notify(&BOB, Vec::new()),
+			Error::<Test>::InvalidCid
+		);
 	});
 }
 
@@ -973,10 +1043,10 @@ fn test_send_system_message_bypasses_permission_gate() {
 #[test]
 fn test_system_messages_not_rate_limited() {
 	new_test_ext().execute_with(|| {
-		// System 消息来自受信特权来源（生产为治理 / Root），不应被反垃圾限频拦截。
-		// 连发远超 `MaxMessagesPerWindow`（=10）的条数，全部应成功。
-		// System messages come from a trusted origin and must not be throttled by
-		// the anti-spam rate limit; sending well beyond the window cap all succeed.
+		// System 消息来自受信特权来源（生产为治理 / Root）；链上限频已整体移除
+		// （审计：chat-core 历史层），连发任意条数都应成功。
+		// System messages come from a trusted origin; on-chain rate limiting was
+		// removed entirely (chat-core historical layer), so any volume succeeds.
 		for i in 1..=25u8 {
 			assert_ok!(Chat::send_message(
 				RuntimeOrigin::signed(ALICE),
@@ -986,7 +1056,7 @@ fn test_system_messages_not_rate_limited() {
 				None
 			));
 		}
-		// 第 25 条仍成功（不存在 RateLimitExceeded）。/ the 25th still succeeded.
+		// 第 25 条仍成功（限频已移除）。/ the 25th still succeeded (rate limit gone).
 		assert!(Chat::get_message(24).is_some());
 	});
 }
@@ -1297,7 +1367,7 @@ fn test_register_chat_user_works() {
 		let profile = Chat::get_chat_user_profile(chat_user_id).unwrap();
 		assert_eq!(profile.nickname, None);
 		assert_eq!(profile.status, crate::UserStatus::Online);
-		assert_eq!(profile.privacy_settings.allow_stranger_messages, true);
+		assert_eq!(profile.privacy_settings.show_online_status, true);
 
 		// 测试重复注册应该失败
 		assert_noop!(
@@ -1417,17 +1487,15 @@ fn test_privacy_settings() {
 		assert_ok!(Chat::register_chat_user(RuntimeOrigin::signed(ALICE), None));
 		let chat_user_id = Chat::get_chat_user_id_by_account(&ALICE).unwrap();
 
-		// 更新隐私设置
+		// 更新展示设置（allow_stranger_messages 参数已删除，审计 2.8）
 		assert_ok!(Chat::update_privacy_settings(
 			RuntimeOrigin::signed(ALICE),
-			Some(false), // 不允许陌生人消息
 			Some(false), // 不显示在线状态
 			Some(false), // 不显示最后活跃时间
 		));
 
-		// 验证：隐私设置已更新
+		// 验证：展示设置已更新
 		let profile = Chat::get_chat_user_profile(chat_user_id).unwrap();
-		assert_eq!(profile.privacy_settings.allow_stranger_messages, false);
 		assert_eq!(profile.privacy_settings.show_online_status, false);
 		assert_eq!(profile.privacy_settings.show_last_active, false);
 	});
@@ -1464,8 +1532,8 @@ fn test_send_message_with_chat_user_id() {
 
 // C1 权限单一化：陌生人消息限制已从 chat-core 移除，统一由 pallet-chat-permission
 // 的 permission_level（FriendsOnly / Whitelist / Closed）表达；其拒绝路径由
-// `test_send_message_denied_by_chat_permission` 覆盖。chat-core 的
-// `allow_stranger_messages` 退化为纯展示标志（见 test_privacy_settings）。
+// `test_send_message_denied_by_chat_permission` 覆盖。chat-core 原 profile 上的
+// `allow_stranger_messages` 死字段已删除（审计 2.8），仅保留展示偏好。
 
 #[test]
 fn test_automatic_chat_user_creation() {

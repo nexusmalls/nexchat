@@ -72,6 +72,39 @@ fn dispute_self_dispute_rejected() {
     });
 }
 
+#[test]
+fn notifier_fires_on_dispute_open_and_arbitrate() {
+    new_test_ext().execute_with(|| {
+        // 发起方=1，被诉方=2（mock counterparty）。
+        assert_ok!(Arbitration::dispute_with_two_way_deposit(
+            RuntimeOrigin::signed(1),
+            DOMAIN,
+            1,
+            42,
+        ));
+        assert_eq!(
+            notify_log(),
+            vec![(2, b"dispute:opened:otc_ord_:1".to_vec())]
+        );
+
+        assert_ok!(Arbitration::arbitrate(
+            RawOrigin::Root.into(),
+            DOMAIN,
+            1,
+            0,
+            None,
+        ));
+        assert_eq!(
+            notify_log(),
+            vec![
+                (2, b"dispute:opened:otc_ord_:1".to_vec()),
+                (1, b"dispute:arbitrated:otc_ord_:1:0".to_vec()),
+                (2, b"dispute:arbitrated:otc_ord_:1:0".to_vec()),
+            ]
+        );
+    });
+}
+
 // ==================== arbitrate (call_index 1) ====================
 
 #[test]
@@ -251,6 +284,7 @@ fn file_complaint_works() {
         assert_eq!(ActiveComplaintCount::<Test>::get(1), 1);
         let stats = DomainStats::<Test>::get(DOMAIN);
         assert_eq!(stats.total_complaints, 1);
+        assert_eq!(notify_log(), vec![(2, b"complaint:filed:0".to_vec())]);
     });
 }
 
@@ -604,6 +638,14 @@ fn resolve_complaint_complainant_wins() {
         assert_eq!(complaint.status, ComplaintStatus::ResolvedComplainantWin);
         assert!(ComplaintDeposits::<Test>::get(0).is_none());
         assert_eq!(ActiveComplaintCount::<Test>::get(1), 0);
+        assert_eq!(
+            notify_log(),
+            vec![
+                (2, b"complaint:filed:0".to_vec()),
+                (1, b"complaint:resolved:0:0".to_vec()),
+                (2, b"complaint:resolved:0:0".to_vec()),
+            ]
+        );
     });
 }
 

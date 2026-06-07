@@ -62,6 +62,13 @@ application message 加密后由节点中继投递。如需审计留痕，群主
 成员加入 / 退出 / 移除通过 `commit` 提交 MLS Commit 并推进 epoch；`expected_epoch` 闸门借
 区块全序仲裁并发 commit（唯一 committer）。新成员经 `WelcomeMailbox` 领取 Welcome 后入群。
 
+**P0 链上约束（2026-06）：**
+- `welcomes` 必须与 `member_delta.added` **双射一致**（每名新成员恰一条非空 Welcome）。
+- 公开群与私群 Add 均要求被加者 `KeyPackageCount > 0`（U3 opt-in + MLS 必需）。
+- **禁止恰好 2 人的链上群**（`TwoMemberGroupForbidden`）：合法人数为 1（仅创建者）或 3+；
+  1:1 私聊走链下，不得用 2 人链上群锚定关系。
+- 群主转让时会重绑 `ChatHook`，将现有成员的场景授权从旧群主迁移到新群主。
+
 ## 群角色与权限矩阵
 
 群成员分三种应用层角色（MLS 协议本身是扁平的，角色是其上的应用层叠加）：

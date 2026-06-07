@@ -16,7 +16,7 @@ P3 审计列出的「引用回复 / @提及 / reaction / 转发 / 阅后即焚 /
 
 - **core 私聊**：`send_message`（`Text/Image/File/Voice`）已在代码中**显式标注弃用**
   （见 `core/src/lib.rs` 的 Deprecation 注释，引《chat-core × MLS 收敛》§13）：人类消息
-  改走**链下 MLS + 节点广播**，链上仅保留 `send_system_message`（`System` 类，低频系统通道）。
+  改走**链下 MLS + 节点广播**，链上仅保留 `send_message`（仅 `System` 类，低频系统通道）。
 - **group 群聊**：消息**全程链下**（MLS / RFC 9420），链上只存群元数据、握手日志与
   可选的 `anchor_message_digest` 审计锚点，**密文不触链**。
 - **统一会话视图**：README「链上 / 链下边界」已写明群 `unread` / `last_active` 链上无从得知。
@@ -116,7 +116,7 @@ P3 审计列出的「引用回复 / @提及 / reaction / 转发 / 阅后即焚 /
 
 仅当产品后续明确需要、且收益大于隐私/成本代价时再评估，**当前一律不实现**：
 
-- **系统消息 reaction（niche）**：`send_system_message` 产生的消息确实在链上，理论上可对
+- **系统消息 reaction（niche）**：`send_message`（System）产生的消息确实在链上，理论上可对
   其加轻量 on-chain reaction；但场景狭窄，默认不做。
 - **争议存证**：若仲裁/合规需要为某条链下消息留不可抵赖证据，复用 group 既有
   `anchor_message_digest`（锚 hash，不锚明文），无需新原语。

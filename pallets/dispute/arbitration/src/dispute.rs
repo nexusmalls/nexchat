@@ -226,4 +226,62 @@ impl<T: Config> Pallet<T> {
         EvidenceIds::<T>::remove(domain, id);
         TwoWayDeposits::<T>::remove(domain, id);
     }
+
+    /// 8 字节 domain 标识转 ASCII 标签（截断于首个 `0` 字节）。
+    /// 8-byte domain id → ASCII tag (trim at first `0` byte).
+    pub(crate) fn domain_tag(domain: [u8; 8]) -> alloc::vec::Vec<u8> {
+        let n = domain.iter().position(|&b| b == 0).unwrap_or(8);
+        domain[..n].to_vec()
+    }
+
+    /// `u64` → 十进制 ASCII（no_std 友好）。
+    fn u64_ascii(mut n: u64) -> alloc::vec::Vec<u8> {
+        if n == 0 {
+            return alloc::vec![b'0'];
+        }
+        let mut buf = alloc::vec::Vec::new();
+        while n > 0 {
+            buf.push(b'0' + (n % 10) as u8);
+            n /= 10;
+        }
+        buf.reverse();
+        buf
+    }
+
+    /// 构造争议类通知描述符：`{kind}:{domain}:{id}[:{extra}]`。
+    /// Build a dispute notice descriptor: `{kind}:{domain}:{id}[:{extra}]`.
+    pub(crate) fn notice_dispute(
+        kind: &[u8],
+        domain: [u8; 8],
+        id: u64,
+        extra: Option<u8>,
+    ) -> alloc::vec::Vec<u8> {
+        let mut v = kind.to_vec();
+        v.push(b':');
+        v.extend_from_slice(&Self::domain_tag(domain));
+        v.push(b':');
+        v.extend_from_slice(&Self::u64_ascii(id));
+        if let Some(e) = extra {
+            v.push(b':');
+            v.push(b'0' + e);
+        }
+        v
+    }
+
+    /// 构造投诉类通知描述符：`{kind}:{complaint_id}[:{extra}]`。
+    /// Build a complaint notice descriptor: `{kind}:{complaint_id}[:{extra}]`.
+    pub(crate) fn notice_complaint(
+        kind: &[u8],
+        complaint_id: u64,
+        extra: Option<u8>,
+    ) -> alloc::vec::Vec<u8> {
+        let mut v = kind.to_vec();
+        v.push(b':');
+        v.extend_from_slice(&Self::u64_ascii(complaint_id));
+        if let Some(e) = extra {
+            v.push(b':');
+            v.push(b'0' + e);
+        }
+        v
+    }
 }

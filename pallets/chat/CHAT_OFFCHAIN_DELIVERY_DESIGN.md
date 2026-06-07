@@ -97,8 +97,12 @@ inbox_id ──▶ InboxRecord {
   `inbox_id → controller_account` 关联。**为不可关联，`controller` 必须是与拥有者主聊天账户无关的
   一次性钥**；relay 只读 inbox 维度 `epoch/revoked_tags`、从不读 `controller`。账户无关（unsigned +
   inbox 钥签名 + PoW）注册列为后续加固（见 §10.7）。
-- `revoked_tags` 由 `MaxRevokedTags`（默认 256）上限约束；`bump_epoch` 整表清空。
-- 每条消息**不**触链；链只在「注册 / 换 epoch / 定向撤销 / 注销」时被写。
+- `revoked_tags` 由 `MaxRevokedTags`（默认 256）上限约束；`bump_epoch` 整表清空。**误撤恢复**可用
+  `unrevoke_tag(inbox_id, ct_c)` 解除单个标签、不动 epoch（避免轮换作废所有联系人）。
+- **controller 生命周期**：`transfer_controller(inbox_id, new)` 支持计划内密钥轮换（押金随之迁移、
+  epoch/标签状态保留）；`force_deregister_inbox` 经治理 `ForceOrigin`（runtime = Root/技术委员会多数）
+  在 controller **丢钥**时强制注销并把押金退还 controller，回收 orphaned 押金与槽位。
+- 每条消息**不**触链；链只在「注册 / 换 epoch / 定向撤销±解除 / 转移 / 注销」时被写。
 
 读取面（relay 离线校验用）：runtime API `ChatInboxApi { inbox_epoch, is_tag_revoked, inbox_exists }`
 与 JSON-RPC `chat_inboxEpoch / chat_isTagRevoked / chat_inboxExists`。
@@ -107,8 +111,9 @@ inbox_id ──▶ InboxRecord {
 
 ## 4. 密钥与标签模型 / Key & tag model
 
-- **每 epoch 一把 Blind-RSA 签发密钥** `IPK_e`。换 epoch（`bump_capability_epoch`）= 发布新公钥，
-  旧令牌因验签用当前 epoch 公钥而**整批作废**（核弹式撤销）。
+- **每 epoch 一把 Blind-RSA 签发密钥** `IPK_e`。换 epoch（`pallet-chat-inbox::bump_epoch(inbox_id)`，
+  inbox 维度；**≠** 账户级 `bump_capability_epoch`）= 发布新公钥，旧令牌因验签用当前 epoch 公钥而
+  **整批作废**（核弹式撤销）。
 - **每联系人一个标签** `ct_c`（不是每联系人一把 RSA 密钥——避免在链上堆多个模数）。`ct_c` 绑入签名消息
   `H(t ‖ ct_c ‖ epoch)`，并在兑付时**明文呈现**给 relay 以便过滤撤销表。
 - **定向撤销** = Bob 把 `ct_c` 加入 `revoked_tags[inbox_id]`；relay 拒绝该标签的令牌。其余联系人不受影响、
@@ -149,15 +154,16 @@ Alice:  for i: s_i = s'_i · r_i^{-1}   mod N   =   H(t_i ‖ ct_c ‖ epoch)^d
 
 ```text
 Alice → Relay:
-    POST inbox_id, token=(epoch, ct_c, t, s), sealed_ct
-        # sealed_ct = 对 Bob 加密的密文，内部封装【真实 sender 身份 + 正文/引用信封】
+    POST inbox_id, IPK=(N,e), token=(epoch, ct_c, t, s), sealed_ct
+        # IPK 由发送方携带（链上不存）；sealed_ct = 对 Bob 加密的密文，
+        # 内部封装【真实 sender 身份 + 正文/引用信封】
 
-Relay 验证（全部离线、仅用链上公开数据）：
-    1. epoch == CapabilityEpoch[Bob] ?                     // 新鲜度
-    2. ct ∉ revoked_tags[inbox_id] ?                       // 定向撤销
-    3. (N,e) = ipk_by_epoch[inbox_id][epoch]
-       s^e mod N == H(t ‖ ct ‖ epoch) ?                    // RSABSSA 验签（不可伪造授权）
-    4. t ∉ SpentSet[inbox_id] ?                            // 一次性（本 relay 视角）
+Relay 验证（全部离线；链上数据经 ChatInboxApi / RPC 读取）：
+    0. inbox_id == H(IPK ‖ salt) ?                         // 自验证：把携带的 IPK 绑回 inbox_id
+    1. epoch == inbox_epoch(inbox_id) ?                    // 新鲜度（inbox 维度 epoch，≠ 账户级 CapabilityEpoch）
+    2. !is_tag_revoked(inbox_id, ct) ?                     // 定向撤销
+    3. s^e mod N == H(t ‖ ct ‖ epoch) ?                    // RSABSSA 验签（不可伪造授权；N,e 来自携带的 IPK）
+    4. t ∉ SpentSet[inbox_id] ?                            // 一次性（本 relay 视角，relay 本地状态）
     通过 ⇒ SpentSet[inbox_id].insert(t)；存 sealed_ct 入信箱；ACK
 ```
 
@@ -190,11 +196,15 @@ relay 学到：`inbox_id`、`ct`（联系人伪名）、随机 `t`、签名 `s`�
 
 | 场景 | 手段 | 代价 |
 |---|---|---|
-| 怀疑泄露 / 换设备 / 整批失效 | `bump_capability_epoch()` → 换 `IPK_e`，旧令牌全废 | 需向所有现存联系人重签 |
-| 删除/拉黑**单个**联系人 c | 把 `ct_c` 加入 `revoked_tags[inbox_id]` | 该联系人流量被 relay 伪名暴露（见 §4 取舍）；其余不受影响 |
+| 怀疑泄露 / 换设备 / 整批失效 | `pallet-chat-inbox::bump_epoch(inbox_id)`（inbox 维度）→ 换 `IPK_e`，旧令牌全废 | 需向所有现存联系人重签 |
+| 删除/拉黑**单个**联系人 c | `pallet-chat-inbox::revoke_tag(inbox_id, ct_c)`（加入 `revoked_tags[inbox_id]`） | 该联系人流量被 relay 伪名暴露（见 §4 取舍）；其余不受影响 |
 
-两者正交：epoch 是「全量核弹」，标签是「定点清除」。`CapabilityEpoch` 已在
-`pallet-chat-permission` 落地，`revoked_tags` 待随 inbox 注册表落地。
+两者正交：inbox `epoch` 是「全量核弹」，标签是「定点清除」。两者均为 **inbox 维度**、已随
+`pallet-chat-inbox`（runtime index 78）落地，由信箱 `controller` 调用。
+
+> 注 / Note：此处的 inbox `epoch` 与账户级 `pallet-chat-permission::CapabilityEpoch`
+> （`bump_capability_epoch`）**正交、不共用**——后者按 `AccountId` 撤销链下能力令牌，relay
+> 读取它会把 inbox 链回账户，违背不可关联性（见 §3）。投递令牌的撤销一律走 inbox 维度入口。
 
 ---
 

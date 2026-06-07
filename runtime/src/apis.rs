@@ -895,4 +895,40 @@ impl_runtime_apis! {
             ChatInbox::inbox_exists(inbox_id)
         }
     }
+
+    // MLS 群 DS/AS 只读查询：Welcome / HandshakeLog / 群 MLS 快照。
+    // MLS group DS/AS read queries: Welcome / HandshakeLog / MLS snapshot.
+    impl pallet_chat_group::runtime_api::ChatGroupApi<Block, AccountId> for Runtime {
+        fn pending_welcome(group_id: u64, who: AccountId) -> Option<Vec<u8>> {
+            ChatGroup::pending_welcome(group_id, &who)
+        }
+
+        fn handshake_at_epoch(group_id: u64, epoch: u64) -> Option<Vec<u8>> {
+            ChatGroup::handshake_at_epoch(group_id, epoch)
+        }
+
+        fn group_mls_snapshot(
+            group_id: u64,
+        ) -> Option<pallet_chat_group::runtime_api::GroupMlsSnapshot> {
+            let g = ChatGroup::group_mls_state(group_id)?;
+            Some(pallet_chat_group::runtime_api::GroupMlsSnapshot {
+                epoch: g.epoch,
+                tree_hash: g.tree_hash,
+                confirmed_transcript_hash: g.confirmed_transcript_hash,
+                group_info_cid: g.group_info_cid.into_inner(),
+                member_count: g.member_count,
+                cipher_suite: g.cipher_suite,
+                is_public: g.is_public,
+                frozen: ChatGroup::is_group_frozen(group_id),
+            })
+        }
+
+        fn group_exists(group_id: u64) -> bool {
+            ChatGroup::group_exists(group_id)
+        }
+
+        fn is_group_frozen(group_id: u64) -> bool {
+            ChatGroup::is_group_frozen(group_id)
+        }
+    }
 }

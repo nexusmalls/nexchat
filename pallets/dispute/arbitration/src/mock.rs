@@ -259,6 +259,26 @@ impl SortedMembers<u64> for ArbitrationGovernanceMembers {
     }
 }
 
+thread_local! {
+    /// 记录系统通知调用 (to, notice)。/ Records notify calls as (to, notice).
+    pub static NOTIFY_LOG: core::cell::RefCell<Vec<(u64, Vec<u8>)>> =
+        core::cell::RefCell::new(Vec::new());
+}
+
+/// 记录式仲裁通知 mock。/ Recording arbitration-notifier mock.
+pub struct RecordingNotifier;
+impl crate::ArbitrationNotifier<u64> for RecordingNotifier {
+    fn notify(to: &u64, notice: Vec<u8>) {
+        NOTIFY_LOG.with(|l| l.borrow_mut().push((*to, notice)));
+    }
+}
+
+/// 读取通知日志（测试辅助）。/ Read the notify log (test helper).
+#[allow(dead_code)]
+pub fn notify_log() -> Vec<(u64, Vec<u8>)> {
+    NOTIFY_LOG.with(|l| l.borrow().clone())
+}
+
 impl pallet_dispute_arbitration::pallet::Config for Test {
     type MaxEvidence = ConstU32<10>;
     type MaxCidLen = ConstU32<64>;
@@ -286,6 +306,7 @@ impl pallet_dispute_arbitration::pallet::Config for Test {
     type AppealWindowBlocks = AppealWindowBlocks;
     type AutoEscalateBlocks = AutoEscalateBlocks;
     type MaxActivePerUser = MaxActivePerUser;
+    type Notifier = RecordingNotifier;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
@@ -294,6 +315,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     ORDER_AMOUNT.with(|v| *v.borrow_mut() = Some(10_000));
     APPLY_DECISION_OK.with(|v| *v.borrow_mut() = true);
     EVIDENCE_EXISTS.with(|v| *v.borrow_mut() = true);
+    NOTIFY_LOG.with(|l| l.borrow_mut().clear());
 
     let mut t = frame_system::GenesisConfig::<Test>::default()
         .build_storage()

@@ -27,6 +27,81 @@ fn create_single(poster: AccountId, reward: Balance) -> u64 {
 }
 
 #[test]
+fn notifier_fires_on_submit_accept_and_dispute_settle() {
+    new_test_ext().execute_with(|| {
+        let id = create_single(1, 1000);
+        assert_ok!(TaskBounty::submit(RuntimeOrigin::signed(2), id, Some(11), None));
+        assert_eq!(
+            notify_log(),
+            vec![(1, format_notice(b"bounty:submitted", id, &[0]))]
+        );
+
+        run_to(4);
+        assert_ok!(TaskBounty::accept(RuntimeOrigin::signed(1), id, 0));
+        assert_eq!(
+            notify_log(),
+            vec![
+                (1, format_notice(b"bounty:submitted", id, &[0])),
+                (2, format_notice(b"bounty:accepted", id, &[0])),
+                (1, format_notice(b"bounty:completed", id, &[])),
+            ]
+        );
+
+        // 新一轮：争议 + 仲裁结案（`create_single` 恒返回 FIRST_ID，故第二次单独 create）。
+        assert_ok!(TaskBounty::create_bounty(
+            RuntimeOrigin::signed(1),
+            BountyKind::Single,
+            500,
+            1,
+            0,
+            None,
+            None,
+        ));
+        let id2 = pallet_task_bounty::NextBountyId::<Test>::get().saturating_sub(1);
+        assert_ok!(TaskBounty::submit(RuntimeOrigin::signed(2), id2, Some(1), None));
+        run_to(4);
+        assert_ok!(TaskBounty::open_dispute(RuntimeOrigin::signed(2), id2, 0));
+        assert_eq!(notify_log().last().map(|(a, _)| *a), Some(1u64));
+        assert_eq!(
+            notify_log().last().unwrap().1,
+            format_notice(b"bounty:disputed", id2, &[0])
+        );
+
+        assert_ok!(<Escrow as EscrowTrait<AccountId, Balance>>::set_resolved(id2));
+        assert_ok!(<Escrow as EscrowTrait<AccountId, Balance>>::release_all(id2, &2));
+        assert_ok!(TaskBounty::settle_from_arbitration(id2, ArbitrationOutcome::Release));
+
+        let settled = format_notice(b"bounty:dispute_settled", id2, &[0]);
+        assert!(notify_log().iter().any(|(a, n)| *a == 1 && *n == settled));
+        assert!(notify_log().iter().any(|(a, n)| *a == 2 && *n == settled));
+    });
+}
+
+fn format_notice(kind: &[u8], bounty_id: u64, parts: &[u64]) -> Vec<u8> {
+    let mut v = kind.to_vec();
+    v.push(b':');
+    v.extend_from_slice(&u64_ascii(bounty_id));
+    for p in parts {
+        v.push(b':');
+        v.extend_from_slice(&u64_ascii(*p));
+    }
+    v
+}
+
+fn u64_ascii(mut n: u64) -> Vec<u8> {
+    if n == 0 {
+        return vec![b'0'];
+    }
+    let mut buf = Vec::new();
+    while n > 0 {
+        buf.push(b'0' + (n % 10) as u8);
+        n /= 10;
+    }
+    buf.reverse();
+    buf
+}
+
+#[test]
 fn single_flow_works() {
     new_test_ext().execute_with(|| {
         let id = create_single(1, 1000);

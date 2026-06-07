@@ -38,15 +38,21 @@ pub enum SceneType {
     /// 使用最多32字节的标识符来区分不同的自定义场景
     Custom(BoundedVec<u8, ConstU32<32>>),
 
-    /// 1:1 direct chat scene: two users may message each other directly.
-    /// 直聊场景：两名用户可直接 1:1 通信。
+    /// 1:1 direct chat scene — LEGACY / TEST-ONLY.
+    /// 直聊场景——**遗留 / 仅测试**。
     ///
-    /// Granted when a 1:1 conversation is established (treated as a 2-member
-    /// MLS group under the chat-core × MLS convergence). This is the
-    /// single-source authorization for direct messaging, replacing chat-core's
-    /// former self-managed blacklist / stranger checks.
-    /// 当建立 1:1 会话（收敛方案中视为 2 人 MLS 群）时授予。作为直聊的
-    /// 单一授权来源，取代 chat-core 旧版自管的黑名单 / 陌生人校验。
+    /// EN: This variant predates the final privacy model and is NOT granted by any
+    /// production caller. 1:1 DMs are now off-chain only: they MUST NOT create a
+    /// 2-member on-chain group (see `pallet-chat-group`'s `TwoMemberGroupForbidden`
+    /// invariant), and the "may DM me" right is a receiver-signed off-chain
+    /// capability token (see `CapabilityEpoch`), NOT an on-chain `Direct` scene
+    /// authorization. The variant is kept only to preserve SCALE indices and is
+    /// referenced solely by unit tests / the RPC string mapping.
+    /// CN: 本变体早于最终隐私模型，**生产无任何调用方授予**。1:1 私聊现仅走链下：
+    /// 禁止建成 2 人链上群（见 `pallet-chat-group` 的 `TwoMemberGroupForbidden`
+    /// 不变量），「允许向我私聊」由接收方签名的链下能力令牌承载（见 `CapabilityEpoch`），
+    /// 而**非**链上 `Direct` 场景授权。保留该变体仅为维持 SCALE 索引，目前仅单测 /
+    /// RPC 字符串映射引用。
     ///
     /// NOTE: appended at the end of the enum on purpose to preserve SCALE
     /// variant indices of pre-existing variants. / 注意：刻意追加在末尾，
@@ -192,14 +198,20 @@ pub enum PermissionResult {
     /// 包含有效的场景类型列表
     AllowedByScene(sp_std::vec::Vec<SceneType>),
 
-    /// 拒绝：已被屏蔽
-    DeniedBlocked,
-
-    /// 拒绝：需要好友关系
+    /// EN: Denied: receiver requires a contact relationship (off-chain capability
+    /// token). Returned for `FriendsOnly` / `Whitelist` levels when there is no
+    /// valid scene authorization. CN: 拒绝：接收方要求联系人关系（链下能力令牌）。
+    /// 在 `FriendsOnly` / `Whitelist` 级别且无有效场景授权时返回。
+    ///
+    /// NOTE (audit cleanup): the former `DeniedBlocked` / `DeniedNotInWhitelist`
+    /// variants were removed — they were unreachable after the on-chain
+    /// blocklist/whitelist were dropped (audit P1). Blocking is off-chain now, so
+    /// `check_permission` never produced them. `PermissionResult` is a transient
+    /// runtime-API result (not stored), so removing dead variants is safe.
+    /// 注（审计清理）：原 `DeniedBlocked` / `DeniedNotInWhitelist` 变体已删除——
+    /// 链上黑/白名单移除后（审计 P1）它们不可达，`check_permission` 从不返回；本类型
+    /// 仅为 runtime API 瞬时返回值（不入存储），删除死变体安全。
     DeniedRequiresFriend,
-
-    /// 拒绝：不在白名单
-    DeniedNotInWhitelist,
 
     /// 拒绝：对方已关闭聊天
     DeniedClosed,

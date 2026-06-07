@@ -29,6 +29,56 @@ extern crate alloc;
 pub use pallet::*;
 pub use pallet_entity_common::OrderStatus;
 
+/// 订单系统通知端口（runtime 适配器桥接到 chat-core 的 System 通道）。
+/// Order system-notification port; the runtime adapter bridges these calls to
+/// chat-core's System channel.
+///
+/// # 解耦与尽力而为 / Decoupling & best-effort
+/// 与 `pallet-chat-core` 解耦（仿 `pallet-task-bounty::ChatAuthorizer`）：order 仅依赖
+/// 本 trait，由 runtime 适配器调用 `ChatCore::notify`。调用为**尽力而为**：通知失败
+/// **绝不**回滚订单状态转移（适配器吞错）。`()` 提供 no-op 默认实现,便于 mock/可选接线。
+/// Decoupled from `pallet-chat-core`; the runtime adapter calls `ChatCore::notify`.
+/// Best-effort: a notification failure must NEVER abort an order state transition
+/// (the adapter swallows errors). `()` is a no-op default for mocks/optional wiring.
+pub trait OrderNotifier<AccountId> {
+    /// 向 `to` 推送一条订单系统通知（payload 为客户端本地化的模板描述符）。
+    /// Push an order system notice to `to` (payload = client-localized template descriptor).
+    fn notify(to: &AccountId, notice: alloc::vec::Vec<u8>);
+}
+
+impl<AccountId> OrderNotifier<AccountId> for () {
+    fn notify(_to: &AccountId, _notice: alloc::vec::Vec<u8>) {}
+}
+
+/// 订单聊天授权端口（runtime 适配器映射为 chat-permission 场景授权）。
+/// Chat-authorization port for the order scene; the runtime adapter maps these
+/// calls to chat-permission scene authorizations.
+///
+/// # 解耦与尽力而为 / Decoupling & best-effort
+/// EN: Decoupled from `pallet-chat-permission` (mirrors
+/// `pallet-task-bounty::ChatAuthorizer`): the order pallet depends only on this
+/// trait, and the runtime adapter grants/revokes a bidirectional buyer↔seller
+/// scene authorization (`source = *b"entorder"`, `SceneType::Order`,
+/// `scene_id = Numeric(order_id)`). Calls are **best-effort**: a failure (e.g.
+/// the pair's scene table is full) MUST NEVER abort an order state transition —
+/// the adapter swallows errors. `()` is a no-op default for mocks/optional wiring.
+/// CN: 与 `pallet-chat-permission` 解耦（仿 `pallet-task-bounty::ChatAuthorizer`）：
+/// 订单模块仅依赖本 trait，由 runtime 适配器授予/撤销买卖双方的双向场景授权
+/// （`source = *b"entorder"`，`SceneType::Order`，`scene_id = Numeric(order_id)`）。
+/// 调用为**尽力而为**：失败（如该用户对的场景表已满）**绝不**回滚订单状态转移——
+/// 适配器吞错。`()` 提供 no-op 默认实现，便于 mock/可选接线。
+pub trait OrderChatAuthorizer<AccountId> {
+    /// Grant bidirectional buyer↔seller chat for this order. / 为该订单授予买卖双方双向聊天。
+    fn grant(order_id: u64, buyer: &AccountId, seller: &AccountId);
+    /// Revoke this order's buyer↔seller chat authorization. / 撤销该订单的买卖双方聊天授权。
+    fn revoke(order_id: u64, buyer: &AccountId, seller: &AccountId);
+}
+
+impl<AccountId> OrderChatAuthorizer<AccountId> for () {
+    fn grant(_order_id: u64, _buyer: &AccountId, _seller: &AccountId) {}
+    fn revoke(_order_id: u64, _buyer: &AccountId, _seller: &AccountId) {}
+}
+
 #[cfg(test)]
 mod mock;
 
@@ -351,6 +401,16 @@ pub mod pallet {
         /// 每区块过期队列最大订单数
         #[pallet::constant]
         type MaxExpiryQueueSize: Get<u32>;
+
+        /// 订单系统通知端口（桥接到聊天 System 通道；尽力而为，失败不回滚订单）。
+        /// Order system-notification port (bridged to chat System channel;
+        /// best-effort, never aborts an order transition).
+        type Notifier: OrderNotifier<Self::AccountId>;
+
+        /// 订单聊天授权端口：订单存续期间授予买卖双方双向聊天，终态撤销（尽力而为）。
+        /// Order chat-authorization port: grant buyer↔seller chat for the order's
+        /// lifetime and revoke at terminal states (best-effort, never aborts).
+        type Chat: OrderChatAuthorizer<Self::AccountId>;
 
         /// 权重信息
         type WeightInfo: WeightInfo;
@@ -712,7 +772,9 @@ pub mod pallet {
 
         /// 发货（服务/订阅类不可用，须走 start_service）
         #[pallet::call_index(2)]
-        #[pallet::weight(T::WeightInfo::ship_order())]
+        // 叠加系统通知的存储成本（chat-core `notify` ≈ do_send 的 System 分支）。
+        // Add the system-notification storage cost on top of base ship weight.
+        #[pallet::weight(T::WeightInfo::ship_order().saturating_add(T::DbWeight::get().reads_writes(8, 8)))]
         pub fn ship_order(
             origin: OriginFor<T>,
             order_id: u64,
@@ -720,9 +782,9 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
-            let created_at = Orders::<T>::try_mutate(
+            let (created_at, buyer) = Orders::<T>::try_mutate(
                 order_id,
-                |maybe_order| -> Result<BlockNumberFor<T>, DispatchError> {
+                |maybe_order| -> Result<(BlockNumberFor<T>, T::AccountId), DispatchError> {
                     let order = maybe_order.as_mut().ok_or(Error::<T>::OrderNotFound)?;
                     ensure!(order.seller == who, Error::<T>::NotOrderSeller);
                     ensure!(
@@ -743,7 +805,7 @@ pub mod pallet {
                     let ca = order.created_at;
                     order.status = OrderStatus::Shipped;
                     order.shipped_at = Some(<frame_system::Pallet<T>>::block_number());
-                    Ok(ca)
+                    Ok((ca, order.buyer.clone()))
                 },
             )?;
 
@@ -761,12 +823,18 @@ pub mod pallet {
             })?;
 
             Self::deposit_event(Event::OrderShipped { order_id });
+
+            // 系统通知买家「订单已发货」（模板描述符 + order_id 深链）。尽力而为：
+            // 适配器内部吞错，通知失败不影响发货成功。
+            // Notify the buyer of shipment (best-effort; adapter swallows errors).
+            T::Notifier::notify(&buyer, Self::notice(b"order:shipped:", order_id));
             Ok(())
         }
 
         /// 确认收货
         #[pallet::call_index(3)]
-        #[pallet::weight(T::WeightInfo::confirm_receipt())]
+        // 叠加系统通知的存储成本（同 ship_order）。/ Add notify storage cost.
+        #[pallet::weight(T::WeightInfo::confirm_receipt().saturating_add(T::DbWeight::get().reads_writes(8, 8)))]
         pub fn confirm_receipt(origin: OriginFor<T>, order_id: u64) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
@@ -781,7 +849,12 @@ pub mod pallet {
                 Error::<T>::InvalidOrderStatus
             );
 
-            Self::do_complete_order(order_id, &order)
+            Self::do_complete_order(order_id, &order)?;
+
+            // 系统通知卖家「买家已确认收货 / 订单完成」。尽力而为,不影响完成流程。
+            // Notify the seller that the buyer confirmed receipt (best-effort).
+            T::Notifier::notify(&order.seller, Self::notice(b"order:confirmed:", order_id));
+            Ok(())
         }
 
         /// 申请退款（数字商品不可退款）
@@ -1857,7 +1930,14 @@ pub mod pallet {
             });
 
             if product_category == ProductCategory::Digital {
+                // 数字商品即时完成，无存续期，不开聊天（避免每笔 grant+revoke 无谓写入）。
+                // Digital orders complete instantly (no lifetime), so no chat is opened.
                 Self::do_complete_order(order_id, &order)?;
+            } else {
+                // 非即时订单：为买卖双方开通订单存续期内的双向聊天（尽力而为，失败不影响下单）。
+                // Non-instant order: open buyer↔seller chat for the order's lifetime
+                // (best-effort; a failure must not affect order placement).
+                T::Chat::grant(order_id, &buyer, &seller);
             }
 
             Ok(())
@@ -1869,6 +1949,31 @@ pub mod pallet {
                 cat,
                 ProductCategory::Physical | ProductCategory::Bundle | ProductCategory::Other
             )
+        }
+
+        /// 构造系统通知描述符：`prefix + 十进制 order_id`（如 `order:shipped:1234`）。
+        /// 这是客户端本地化用的不透明模板描述符，非 IPFS CID（见 chat-core `SystemNotifier`）。
+        /// Build a notice descriptor `prefix + decimal order_id`; an opaque,
+        /// client-localized template token (NOT an IPFS CID).
+        pub(crate) fn notice(prefix: &[u8], order_id: u64) -> Vec<u8> {
+            let mut v = prefix.to_vec();
+            v.extend_from_slice(Self::u64_ascii(order_id).as_slice());
+            v
+        }
+
+        /// `u64` 转十进制 ASCII 字节（no_std 友好，避免依赖 `to_string`）。
+        /// `u64` → decimal ASCII bytes (no_std friendly).
+        fn u64_ascii(mut n: u64) -> Vec<u8> {
+            if n == 0 {
+                return alloc::vec![b'0'];
+            }
+            let mut buf = Vec::new();
+            while n > 0 {
+                buf.push(b'0' + (n % 10) as u8);
+                n /= 10;
+            }
+            buf.reverse();
+            buf
         }
 
         /// 是否为服务类/订阅类（共享 start_service/complete_service/confirm_service 流程）
@@ -1943,6 +2048,10 @@ pub mod pallet {
                 });
             }
             Self::notify_order_cancelled(order, order_id);
+            // 终态撤销订单场景聊天授权（尽力而为；未授予过则为 no-op）。
+            // Revoke the order's chat authorization at terminal state (best-effort;
+            // a no-op if it was never granted, e.g. digital/instant orders).
+            T::Chat::revoke(order_id, &order.buyer, &order.seller);
             Orders::<T>::mutate(order_id, |maybe_order| {
                 if let Some(o) = maybe_order {
                     o.status = final_status;
@@ -2086,6 +2195,11 @@ pub mod pallet {
                 shopping_balance_used: order.shopping_balance_used,
             };
             T::OnOrderCompleted::on_completed(&info);
+
+            // 订单完成：撤销买卖双方场景聊天授权（尽力而为；数字/即时订单未授予则 no-op）。
+            // Order completed: revoke the buyer↔seller chat authorization (best-effort;
+            // a no-op for digital/instant orders that never opened chat).
+            T::Chat::revoke(order_id, &order.buyer, &order.seller);
 
             // 内部统计更新（不是外部副作用，保留在 order 内）
             OrderStats::<T>::mutate(|stats| {

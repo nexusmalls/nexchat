@@ -236,6 +236,21 @@ impl<AccountId> ChatAuthorizer<AccountId> for () {
     fn revoke(_bounty_id: u64, _poster: &AccountId, _solver: &AccountId) {}
 }
 
+/// 悬赏系统通知端口（runtime 适配器桥接到 chat-core 的 System 通道）。
+/// Bounty system-notification port; runtime adapter bridges to chat-core.
+///
+/// 与 `pallet-chat-core` 解耦；尽力而为，失败不回滚悬赏状态转移。`()` 为 no-op 默认。
+/// Decoupled from chat-core; best-effort; `()` is the no-op default.
+pub trait BountyNotifier<AccountId> {
+    /// 向 `to` 推送悬赏系统通知（客户端本地化模板描述符）。
+    /// Push a bounty system notice (client-localized template descriptor).
+    fn notify(to: &AccountId, notice: alloc::vec::Vec<u8>);
+}
+
+impl<AccountId> BountyNotifier<AccountId> for () {
+    fn notify(_to: &AccountId, _notice: alloc::vec::Vec<u8>) {}
+}
+
 /// Bounty-domain reputation inspection (derived 0..10000). / 悬赏域声誉查询（派生 0..10000）。
 pub trait BountyReputationInspect<AccountId> {
     /// Derived reputation; neutral default when no record. / 派生声誉，无记录返回中性默认值。
@@ -339,6 +354,10 @@ pub mod pallet {
 
         /// Chat authorization port (scene-based grant/revoke). / 聊天授权端口（基于场景的授予/撤销）。
         type Chat: ChatAuthorizer<Self::AccountId>;
+
+        /// 悬赏系统通知端口（桥接到聊天 System 通道；尽力而为）。
+        /// Bounty system-notification port (chat System channel; best-effort).
+        type Notifier: BountyNotifier<Self::AccountId>;
 
         /// Bounty-domain reputation (this pallet implements it). / 悬赏域声誉（本模块自实现）。
         type BountyReputation: BountyReputationInspect<Self::AccountId>;
@@ -570,6 +589,13 @@ pub mod pallet {
             if Self::chat_visibility(bounty_id) == ContactVisibility::OnSubmit {
                 T::Chat::grant(bounty_id, &bounty.poster, &solver);
             }
+
+            // 通知发布方：有新提交。
+            T::Notifier::notify(
+                &bounty.poster,
+                Self::notice_bounty(b"bounty:submitted", bounty_id, &[index as u64]),
+            );
+
             Self::deposit_event(Event::Submitted { id: bounty_id, index, solver });
             if state == SubmissionState::Delivered {
                 Self::deposit_event(Event::Delivered { id: bounty_id, index });
@@ -701,6 +727,15 @@ pub mod pallet {
             bounty.contested = Some(sub.solver.clone());
             bounty.state = BountyState::Disputed;
             Bounties::<T>::insert(bounty_id, &bounty);
+
+            // 通知对方：争议已开启（poster↔solver）。
+            let notice = Self::notice_bounty(b"bounty:disputed", bounty_id, &[index as u64]);
+            if who == bounty.poster {
+                T::Notifier::notify(&sub.solver, notice);
+            } else {
+                T::Notifier::notify(&bounty.poster, notice);
+            }
+
             Self::deposit_event(Event::BountyDisputed { id: bounty_id, index, contested: sub.solver });
             Ok(())
         }
@@ -722,6 +757,9 @@ pub mod pallet {
             Bounties::<T>::insert(bounty_id, &bounty);
             Self::revoke_non_accepted_chat(bounty_id, &bounty);
             UserStats::<T>::mutate(&poster, |s| s.poster_refunded = s.poster_refunded.saturating_add(1));
+
+            T::Notifier::notify(&poster, Self::notice_bounty(b"bounty:expired", bounty_id, &[]));
+
             Self::deposit_event(Event::BountyExpired { id: bounty_id });
             Ok(())
         }
@@ -808,6 +846,42 @@ pub mod pallet {
                 .unwrap_or(ContactVisibility::AfterAccept)
         }
 
+        /// `u64` → 十进制 ASCII（no_std 友好）。
+        fn u64_ascii(mut n: u64) -> alloc::vec::Vec<u8> {
+            if n == 0 {
+                return alloc::vec![b'0'];
+            }
+            let mut buf = alloc::vec::Vec::new();
+            while n > 0 {
+                buf.push(b'0' + (n % 10) as u8);
+                n /= 10;
+            }
+            buf.reverse();
+            buf
+        }
+
+        /// 构造悬赏通知描述符：`{kind}:{bounty_id}[:part…]`。
+        /// Build a bounty notice descriptor: `{kind}:{bounty_id}[:part…]`.
+        pub(crate) fn notice_bounty(kind: &[u8], bounty_id: u64, parts: &[u64]) -> alloc::vec::Vec<u8> {
+            let mut v = kind.to_vec();
+            v.push(b':');
+            v.extend_from_slice(&Self::u64_ascii(bounty_id));
+            for p in parts {
+                v.push(b':');
+                v.extend_from_slice(&Self::u64_ascii(*p));
+            }
+            v
+        }
+
+        /// 仲裁结果编码（供通知 payload 使用）。/ Arbitration outcome code for notices.
+        fn outcome_code(outcome: ArbitrationOutcome) -> u64 {
+            match outcome {
+                ArbitrationOutcome::Release => 0,
+                ArbitrationOutcome::Refund => 1,
+                ArbitrationOutcome::Partial(_) => 2,
+            }
+        }
+
         /// Revoke bounty-scene chat for every non-accepted submitter (losers / withdrawn).
         /// Accepted solvers keep their chat. / 撤销所有未被验收提交者的聊天；被验收方保留。
         fn revoke_non_accepted_chat(bounty_id: u64, bounty: &BountyOf<T>) {
@@ -881,6 +955,15 @@ pub mod pallet {
 
             UserStats::<T>::mutate(&sub.solver, |s| s.solver_accepted = s.solver_accepted.saturating_add(1));
             UserStats::<T>::mutate(&bounty.poster, |s| s.poster_completed = s.poster_completed.saturating_add(1));
+            T::Notifier::notify(
+                &sub.solver,
+                Self::notice_bounty(b"bounty:accepted", bounty_id, &[index as u64]),
+            );
+            T::Notifier::notify(
+                &bounty.poster,
+                Self::notice_bounty(b"bounty:completed", bounty_id, &[]),
+            );
+
             Self::deposit_event(Event::Accepted {
                 id: bounty_id,
                 index,
@@ -924,6 +1007,12 @@ pub mod pallet {
             }
 
             UserStats::<T>::mutate(&sub.solver, |s| s.solver_accepted = s.solver_accepted.saturating_add(1));
+
+            T::Notifier::notify(
+                &sub.solver,
+                Self::notice_bounty(b"bounty:accepted", bounty_id, &[index as u64]),
+            );
+
             Self::deposit_event(Event::Accepted {
                 id: bounty_id,
                 index,
@@ -943,6 +1032,10 @@ pub mod pallet {
                 UserStats::<T>::mutate(&bounty.poster, |s| {
                     s.poster_completed = s.poster_completed.saturating_add(1)
                 });
+                T::Notifier::notify(
+                    &bounty.poster,
+                    Self::notice_bounty(b"bounty:completed", bounty_id, &[]),
+                );
                 Bounties::<T>::insert(bounty_id, &*bounty);
                 Self::deposit_event(Event::BountyCompleted { id: bounty_id });
             } else {
@@ -993,6 +1086,15 @@ pub mod pallet {
             // Dispute is terminal: revoke remaining bounty-scene chat. / 争议终结，撤销剩余聊天授权。
             if let Some(bounty) = Bounties::<T>::get(bounty_id) {
                 Self::revoke_non_accepted_chat(bounty_id, &bounty);
+                let notice = Self::notice_bounty(
+                    b"bounty:dispute_settled",
+                    bounty_id,
+                    &[Self::outcome_code(outcome)],
+                );
+                T::Notifier::notify(&bounty.poster, notice.clone());
+                if let Some(solver) = &bounty.contested {
+                    T::Notifier::notify(solver, notice);
+                }
             }
             Self::deposit_event(Event::DisputeSettled { id: bounty_id, outcome });
             Ok(())

@@ -156,6 +156,167 @@ fn deregister_returns_deposit_and_frees_slot() {
 }
 
 #[test]
+fn unrevoke_tag_restores_single_contact() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(1), ID_A));
+        assert_ok!(ChatInbox::revoke_tag(RuntimeOrigin::signed(1), ID_A, TAG1));
+        assert_ok!(ChatInbox::revoke_tag(RuntimeOrigin::signed(1), ID_A, TAG2));
+        assert!(ChatInbox::is_tag_revoked(ID_A, TAG1));
+
+        // un-revoking TAG1 leaves TAG2 untouched and does not touch the epoch
+        assert_ok!(ChatInbox::unrevoke_tag(RuntimeOrigin::signed(1), ID_A, TAG1));
+        assert!(!ChatInbox::is_tag_revoked(ID_A, TAG1));
+        assert!(ChatInbox::is_tag_revoked(ID_A, TAG2));
+        assert_eq!(ChatInbox::inbox_epoch(ID_A), Some(0));
+        assert_eq!(last_event(), Event::ContactTagUnrevoked { inbox_id: ID_A, tag: TAG1 });
+    });
+}
+
+#[test]
+fn unrevoke_tag_guards() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(1), ID_A));
+        // tag was never revoked
+        assert_noop!(
+            ChatInbox::unrevoke_tag(RuntimeOrigin::signed(1), ID_A, TAG1),
+            Error::<Test>::TagNotRevoked
+        );
+        assert_ok!(ChatInbox::revoke_tag(RuntimeOrigin::signed(1), ID_A, TAG1));
+        // only the controller may un-revoke
+        assert_noop!(
+            ChatInbox::unrevoke_tag(RuntimeOrigin::signed(2), ID_A, TAG1),
+            Error::<Test>::NotController
+        );
+        // unknown inbox
+        assert_noop!(
+            ChatInbox::unrevoke_tag(RuntimeOrigin::signed(1), ID_B, TAG1),
+            Error::<Test>::InboxNotFound
+        );
+        // un-revoking frees the slot in the bounded set
+        assert_ok!(ChatInbox::unrevoke_tag(RuntimeOrigin::signed(1), ID_A, TAG1));
+        for i in 0..4u8 {
+            assert_ok!(ChatInbox::revoke_tag(RuntimeOrigin::signed(1), ID_A, [i; 32]));
+        }
+        assert_noop!(
+            ChatInbox::revoke_tag(RuntimeOrigin::signed(1), ID_A, [99u8; 32]),
+            Error::<Test>::TooManyRevokedTags
+        );
+    });
+}
+
+#[test]
+fn transfer_controller_moves_deposit_and_state() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(1), ID_A));
+        assert_ok!(ChatInbox::revoke_tag(RuntimeOrigin::signed(1), ID_A, TAG1));
+        assert_eq!(Balances::reserved_balance(1), 100);
+
+        assert_ok!(ChatInbox::transfer_controller(RuntimeOrigin::signed(1), ID_A, 2));
+
+        // deposit moved from old to new controller
+        assert_eq!(Balances::reserved_balance(1), 0);
+        assert_eq!(Balances::reserved_balance(2), 100);
+        // epoch / tag state preserved across the transfer
+        assert!(ChatInbox::is_tag_revoked(ID_A, TAG1));
+        assert_eq!(Inboxes::<Test>::get(ID_A).unwrap().controller, 2);
+        assert_eq!(
+            last_event(),
+            Event::InboxControllerTransferred { inbox_id: ID_A, old_controller: 1, new_controller: 2 }
+        );
+
+        // old controller can no longer mutate; new controller can
+        assert_noop!(
+            ChatInbox::bump_epoch(RuntimeOrigin::signed(1), ID_A),
+            Error::<Test>::NotController
+        );
+        assert_ok!(ChatInbox::bump_epoch(RuntimeOrigin::signed(2), ID_A));
+    });
+}
+
+#[test]
+fn transfer_controller_updates_counts_and_cap() {
+    new_test_ext().execute_with(|| {
+        // account 2 fills its cap (3 inboxes)
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(2), [10u8; 32]));
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(2), [11u8; 32]));
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(2), [12u8; 32]));
+
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(1), ID_A));
+        // transferring to a maxed-out controller is rejected
+        assert_noop!(
+            ChatInbox::transfer_controller(RuntimeOrigin::signed(1), ID_A, 2),
+            Error::<Test>::TooManyInboxes
+        );
+
+        // after 2 frees a slot, the transfer succeeds and 1 regains a free slot
+        assert_ok!(ChatInbox::deregister_inbox(RuntimeOrigin::signed(2), [10u8; 32]));
+        assert_ok!(ChatInbox::transfer_controller(RuntimeOrigin::signed(1), ID_A, 2));
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(1), [13u8; 32]));
+    });
+}
+
+#[test]
+fn transfer_controller_guards() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(1), ID_A));
+        // not the controller
+        assert_noop!(
+            ChatInbox::transfer_controller(RuntimeOrigin::signed(2), ID_A, 3),
+            Error::<Test>::NotController
+        );
+        // unknown inbox
+        assert_noop!(
+            ChatInbox::transfer_controller(RuntimeOrigin::signed(1), ID_B, 2),
+            Error::<Test>::InboxNotFound
+        );
+        // new controller cannot cover the deposit (account 100 is unfunded): the
+        // call fails and nothing moves (exact balance error variant is left loose).
+        assert!(ChatInbox::transfer_controller(RuntimeOrigin::signed(1), ID_A, 100).is_err());
+        assert_eq!(Inboxes::<Test>::get(ID_A).unwrap().controller, 1);
+        assert_eq!(Balances::reserved_balance(1), 100);
+        assert_eq!(Balances::reserved_balance(100), 0);
+        // transfer to self is a no-op that preserves the controller and deposit
+        assert_ok!(ChatInbox::transfer_controller(RuntimeOrigin::signed(1), ID_A, 1));
+        assert_eq!(Inboxes::<Test>::get(ID_A).unwrap().controller, 1);
+        assert_eq!(Balances::reserved_balance(1), 100);
+    });
+}
+
+#[test]
+fn force_deregister_refunds_controller_and_frees_slot() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(1), ID_A));
+        assert_eq!(Balances::reserved_balance(1), 100);
+
+        // governance (Root) reclaims a lost-key inbox; deposit refunded to controller
+        assert_ok!(ChatInbox::force_deregister_inbox(RuntimeOrigin::root(), ID_A));
+        assert_eq!(Balances::reserved_balance(1), 0);
+        assert!(!ChatInbox::inbox_exists(ID_A));
+        assert_eq!(last_event(), Event::InboxForceDeregistered { inbox_id: ID_A, controller: 1 });
+
+        // controller's slot is freed
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(1), [9u8; 32]));
+    });
+}
+
+#[test]
+fn force_deregister_guards() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(ChatInbox::register_inbox(RuntimeOrigin::signed(1), ID_A));
+        // a signed (non-privileged) origin cannot force-deregister
+        assert_noop!(
+            ChatInbox::force_deregister_inbox(RuntimeOrigin::signed(1), ID_A),
+            sp_runtime::DispatchError::BadOrigin
+        );
+        // unknown inbox
+        assert_noop!(
+            ChatInbox::force_deregister_inbox(RuntimeOrigin::root(), ID_B),
+            Error::<Test>::InboxNotFound
+        );
+    });
+}
+
+#[test]
 fn read_helpers_on_unregistered_inbox() {
     new_test_ext().execute_with(|| {
         assert_eq!(ChatInbox::inbox_epoch(ID_A), None);

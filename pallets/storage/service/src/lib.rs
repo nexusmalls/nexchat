@@ -216,11 +216,9 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config:
-        frame_system::Config + frame_system::offchain::CreateBare<Call<Self>>
+        frame_system::Config<RuntimeEvent: From<Event<Self>>>
+        + frame_system::offchain::CreateBare<Call<Self>>
     {
-        /// Runtime event type.
-        /// 事件类型
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// Currency interface used for reserving deposits and collecting fees.
         /// 货币接口（用于预留押金或扣费）
         type Currency: Currency<Self::AccountId, Balance = Self::Balance>

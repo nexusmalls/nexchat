@@ -911,7 +911,6 @@ impl frame_system::offchain::CreateBare<pallet_im_online::Call<Runtime>> for Run
 }
 
 impl pallet_storage_service::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type Balance = Balance;
     type FeeCollector = StoragePoolAccountId;
@@ -1176,6 +1175,16 @@ impl pallet_dispute_arbitration::pallet::EvidenceExistenceChecker for EvidenceEx
     }
 }
 
+/// Bridge arbitration notifications → chat-core System channel (audit 2.3).
+/// Best-effort: errors swallowed. / 仲裁系统通知桥接到 chat-core；吞错。
+pub struct ArbitrationChatNotifier;
+impl pallet_dispute_arbitration::ArbitrationNotifier<AccountId> for ArbitrationChatNotifier {
+    fn notify(to: &AccountId, notice: alloc::vec::Vec<u8>) {
+        use pallet_chat_core::SystemNotifier;
+        let _ = <crate::ChatCore as SystemNotifier<AccountId>>::notify(to, notice);
+    }
+}
+
 impl pallet_dispute_arbitration::pallet::Config for Runtime {
     type MaxEvidence = ConstU32<20>;
     type MaxCidLen = ConstU32<64>;
@@ -1204,6 +1213,7 @@ impl pallet_dispute_arbitration::pallet::Config for Runtime {
     type AppealWindowBlocks = ConstU32<{ 3 * DAYS }>; // 3 days appeal window
     type AutoEscalateBlocks = ConstU32<{ 14 * DAYS }>; // 14 days auto-escalation
     type MaxActivePerUser = ConstU32<50>;
+    type Notifier = ArbitrationChatNotifier;
 }
 
 // -------------------- Task Bounty (任务悬赏) --------------------
@@ -1275,6 +1285,16 @@ impl pallet_task_bounty::ChatAuthorizer<AccountId> for BountyChatAuthorizer {
     }
 }
 
+/// Bridge bounty system notifications → chat-core System channel (audit 2.3).
+/// Best-effort: errors swallowed. / 悬赏系统通知桥接到 chat-core；吞错。
+pub struct BountyChatNotifier;
+impl pallet_task_bounty::BountyNotifier<AccountId> for BountyChatNotifier {
+    fn notify(to: &AccountId, notice: alloc::vec::Vec<u8>) {
+        use pallet_chat_core::SystemNotifier;
+        let _ = <crate::ChatCore as SystemNotifier<AccountId>>::notify(to, notice);
+    }
+}
+
 impl pallet_task_bounty::Config for Runtime {
     type Currency = Balances;
     type Escrow = pallet_dispute_escrow::Pallet<Runtime>;
@@ -1294,6 +1314,7 @@ impl pallet_task_bounty::Config for Runtime {
     type Evidence = BountyEvidenceOwnership; // coop_profile_ref 证据归属校验
     type GroundPromoCategory = BountyGroundPromoCategory; // 地推类目需 region
     type Chat = BountyChatAuthorizer; // 生命周期 grant/revoke → chat-permission 场景授权
+    type Notifier = BountyChatNotifier;
     type BountyReputation = TaskBounty; // 本模块自实现声誉
     // 加性中性声誉：新人=5000。门槛取 1000，仅过滤有真实负面历史的账户，不误伤新人。
     // Additive newcomer-neutral reputation (=5000); gate at 1000 filters genuinely bad
@@ -1334,11 +1355,8 @@ parameter_types! {
 }
 
 impl pallet_chat_core::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = pallet_chat_core::SubstrateWeight<Runtime>;
     type MaxCidLen = ConstU32<96>; // 加密 IPFS CID
-    type RateLimitWindow = ConstU32<{ 10 * MINUTES }>;
-    type MaxMessagesPerWindow = ConstU32<60>;
     type MessageExpirationTime = ConstU32<{ 180 * DAYS }>;
     // 撤回时间窗口：2 分钟（对齐常见 IM）。/ recall window: ~2 minutes.
     type MessageRecallWindow = ConstU32<{ 2 * MINUTES }>;
@@ -1354,6 +1372,11 @@ impl pallet_chat_core::Config for Runtime {
     // (audit B2): prevents forged system notifications. Human chat is off-chain.
     type SystemMessageOrigin =
         frame_system::EnsureRootWithSuccess<AccountId, ChatSystemMessenger>;
+    // 程序化系统通知（SystemNotifier::notify）的发信账户，复用同一派生系统账户，
+    // 使 extrinsic 路径与 trait 路径落同一 sender（审计 2.3 接线）。
+    // Same derived system account for the programmatic notify path (audit 2.3),
+    // so trait and extrinsic paths stamp one platform sender.
+    type SystemAccount = ChatSystemMessenger;
 }
 
 /// Adapter mapping `pallet-chat-group` membership hooks to `chat-permission`
@@ -1398,7 +1421,6 @@ parameter_types! {
 }
 
 impl pallet_chat_group::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type GroupDeposit = GroupDeposit;
     type KeyPackageDeposit = KeyPackageDeposit;
@@ -1435,6 +1457,10 @@ parameter_types! {
 // Off-chain delivery inbox registry (on-chain anchor for blinded one-time tokens).
 impl pallet_chat_inbox::Config for Runtime {
     type Currency = Balances;
+    // 治理回收：Root / 技术委员会多数可在 controller 丢钥时强制注销并退押金。
+    // Governance recovery: Root / technical-committee majority may force-deregister
+    // (and refund) an inbox if the controller key is lost.
+    type ForceOrigin = RootOrTechnicalMajority;
     type InboxDeposit = InboxDeposit;
     // 每信箱定向撤销标签上限（epoch 轮换清空）/ per-inbox revoked-tag cap (cleared on epoch bump).
     type MaxRevokedTags = ConstU32<256>;
@@ -2075,6 +2101,49 @@ impl pallet_entity_product::Config for Runtime {
     type WeightInfo = pallet_entity_product::weights::SubstrateWeight<Runtime>;
 }
 
+/// Bridge order system notifications → chat-core's System channel (audit 2.3).
+/// Best-effort: errors are swallowed so chat wiring never aborts an order
+/// transition. / 将订单系统通知桥接到 chat-core 的 System 通道（审计 2.3）；吞错,
+/// 聊天接线绝不中断订单状态转移。
+pub struct OrderChatNotifier;
+impl pallet_entity_order::OrderNotifier<AccountId> for OrderChatNotifier {
+    fn notify(to: &AccountId, notice: alloc::vec::Vec<u8>) {
+        use pallet_chat_core::SystemNotifier;
+        let _ = <crate::ChatCore as SystemNotifier<AccountId>>::notify(to, notice);
+    }
+}
+
+/// Adapter mapping the order pallet's chat hooks to chat-permission scene
+/// authorizations (`source = *b"entorder"`, `SceneType::Order`,
+/// `scene_id = Numeric(order_id)`). Best-effort: errors are swallowed so chat
+/// wiring never aborts an order extrinsic. / 将订单聊天钩子映射为 chat-permission
+/// 场景授权（买卖双方双向）；吞错，确保聊天接线不会中断订单交易。
+pub struct OrderChatSceneAuthorizer;
+impl pallet_entity_order::OrderChatAuthorizer<AccountId> for OrderChatSceneAuthorizer {
+    fn grant(order_id: u64, buyer: &AccountId, seller: &AccountId) {
+        use pallet_chat_permission::SceneAuthorizationManager;
+        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::grant_bidirectional_scene_authorization(
+            *b"entorder",
+            buyer,
+            seller,
+            pallet_chat_permission::SceneType::Order,
+            pallet_chat_permission::SceneId::Numeric(order_id),
+            None,
+            alloc::vec::Vec::new(),
+        );
+    }
+    fn revoke(order_id: u64, buyer: &AccountId, seller: &AccountId) {
+        use pallet_chat_permission::SceneAuthorizationManager;
+        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::revoke_scene_authorization(
+            *b"entorder",
+            buyer,
+            seller,
+            pallet_chat_permission::SceneType::Order,
+            pallet_chat_permission::SceneId::Numeric(order_id),
+        );
+    }
+}
+
 impl pallet_entity_order::Config for Runtime {
     type Currency = Balances;
     type Escrow = Escrow;
@@ -2105,6 +2174,10 @@ impl pallet_entity_order::Config for Runtime {
     type MaxPayerOrders = ConstU32<1000>;
     type MaxShopOrders = ConstU32<10000>;
     type MaxExpiryQueueSize = ConstU32<500>;
+    type Notifier = OrderChatNotifier;
+    // 订单存续期内开通买卖双方双向聊天，终态撤销（仿 bounty 的 ChatAuthorizer）。
+    // Open buyer↔seller chat for the order's lifetime, revoked at terminal states.
+    type Chat = OrderChatSceneAuthorizer;
     type WeightInfo = pallet_entity_order::weights::SubstrateWeight<Runtime>;
 }
 

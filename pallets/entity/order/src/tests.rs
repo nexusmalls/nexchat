@@ -338,6 +338,49 @@ fn confirm_receipt_works() {
 }
 
 #[test]
+fn notifier_fires_on_ship_and_confirm() {
+    // audit 2.3 fix: ship_order 通知买家、confirm_receipt 通知卖家（端到端,经 OrderNotifier 端口）。
+    new_test_ext().execute_with(|| {
+        assert_ok!(Transaction::place_order(
+            RuntimeOrigin::signed(BUYER),
+            1,
+            1,
+            Some(b"addr".to_vec()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None
+        ));
+
+        assert_ok!(Transaction::ship_order(
+            RuntimeOrigin::signed(SELLER),
+            1,
+            b"track".to_vec()
+        ));
+        // 发货后:买家收到 order:shipped:1。
+        assert_eq!(
+            notify_log(),
+            vec![(BUYER, b"order:shipped:1".to_vec())]
+        );
+
+        assert_ok!(Transaction::confirm_receipt(
+            RuntimeOrigin::signed(BUYER),
+            1
+        ));
+        // 确认收货后:卖家收到 order:confirmed:1（追加在日志末尾）。
+        assert_eq!(
+            notify_log(),
+            vec![
+                (BUYER, b"order:shipped:1".to_vec()),
+                (SELLER, b"order:confirmed:1".to_vec()),
+            ]
+        );
+    });
+}
+
+#[test]
 fn confirm_receipt_fails_not_shipped() {
     new_test_ext().execute_with(|| {
         assert_ok!(Transaction::place_order(
@@ -8089,5 +8132,87 @@ fn place_order_for_self_pay_allows_loyalty() {
         assert_eq!(order.payer, None); // stored_payer collapses to None
         assert_eq!(order.shopping_balance_used, 100);
         assert_eq!(order.total_amount, 0);
+    });
+}
+
+// ==================== chat scene authorization wiring ====================
+// Verifies the order pallet drives `OrderChatAuthorizer` (grant on creation of a
+// non-instant order; revoke at every terminal state). The runtime adapter maps
+// these to chat-permission scene authorizations; here we use the recording mock.
+// 验证订单模块驱动 `OrderChatAuthorizer`：非即时订单创建时 grant，所有终态 revoke。
+
+#[test]
+fn chat_grant_on_physical_place_and_revoke_on_cancel() {
+    new_test_ext().execute_with(|| {
+        let _ = drain_chat_log();
+        // Product 1 = Physical (has a lifecycle) → grant on placement.
+        assert_ok!(Transaction::place_order(
+            RuntimeOrigin::signed(BUYER),
+            1,
+            1,
+            Some(b"addr".to_vec()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        assert_eq!(drain_chat_log(), vec![(true, 1, BUYER, SELLER)]);
+
+        // Cancel (status Paid) → terminal revoke.
+        assert_ok!(Transaction::cancel_order(RuntimeOrigin::signed(BUYER), 1));
+        assert_eq!(drain_chat_log(), vec![(false, 1, BUYER, SELLER)]);
+    });
+}
+
+#[test]
+fn chat_revoke_on_confirm_receipt_completion() {
+    new_test_ext().execute_with(|| {
+        let _ = drain_chat_log();
+        assert_ok!(Transaction::place_order(
+            RuntimeOrigin::signed(BUYER),
+            1,
+            1,
+            Some(b"addr".to_vec()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        assert_ok!(Transaction::ship_order(
+            RuntimeOrigin::signed(SELLER),
+            1,
+            b"track".to_vec()
+        ));
+        let _ = drain_chat_log(); // discard the grant from placement
+        assert_ok!(Transaction::confirm_receipt(RuntimeOrigin::signed(BUYER), 1));
+        // Completion revokes the order's chat authorization.
+        assert_eq!(drain_chat_log(), vec![(false, 1, BUYER, SELLER)]);
+    });
+}
+
+#[test]
+fn chat_no_grant_for_digital_instant_order() {
+    new_test_ext().execute_with(|| {
+        let _ = drain_chat_log();
+        // Product 2 = Digital → completes instantly, so no chat is opened.
+        assert_ok!(Transaction::place_order(
+            RuntimeOrigin::signed(BUYER),
+            2,
+            1,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        // No grant ever recorded for an instant order.
+        let log = drain_chat_log();
+        assert!(!log.iter().any(|(granted, ..)| *granted), "digital order must not grant chat: {:?}", log);
     });
 }

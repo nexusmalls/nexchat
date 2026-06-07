@@ -6,15 +6,18 @@
 
 ```
 pallets/chat/
-├── common/       # 轻量共享构件（rate_limit + ChatViewApi）[已接入]
-├── permission/   # 权限系统（场景授权+黑白名单）   [已接入 runtime]
-├── core/         # 核心私聊模块                  [已接入 runtime]
-└── group/        # MLS 群聊模块（RFC 9420 锚定）  [已接入 runtime]
+├── common/       # 轻量共享构件（rate_limit + ChatViewApi 定义）[已接入]
+├── permission/   # 权限系统（场景授权 + 隐私级别 + 平台禁言 + 能力 epoch）[已接入 runtime]
+├── core/         # 核心私聊模块（链上仅 System 通知 + 会话/未读/资料）[已接入 runtime]
+├── group/        # MLS 群聊模块（RFC 9420 锚定）[已接入 runtime]
+└── inbox/        # 链下投递信箱注册表（inbox 维度 epoch + 定向标签撤销）[已接入 runtime, index 78]
 ```
 
 > **模块状态说明**
-> - `common` / `permission` / `core` / `group` 已在根 `Cargo.toml` 的 workspace
->   members 中，并在 `runtime` 注册（`ChatPermission` / `ChatCore` / `ChatGroup`）。
+> - `common` / `permission` / `core` / `group` / `inbox` 五个 crate 均在根
+>   `Cargo.toml` 的 workspace members 中，并在 `runtime` 注册
+>   （`ChatPermission` / `ChatCore` / `ChatGroup` / `ChatInbox`；`common` 仅提供
+>   `rate_limit` 与 `ChatViewApi` 定义，无独立 pallet 实例）。
 > - 合并前的旧版顶层 `pallet-chat`（`pallets/chat/src/`）与未接入 runtime 的 AI 对话
 >   子模块（原 `pallets/chat/ai`）已随收口删除；私聊功能统一由 `core/` 提供，
 >   AI 对话能力如需重建可基于 `pallet-deceased` / `pallet-deceased-ai` 另行规划。
@@ -27,12 +30,16 @@ pallets/chat/
        └──────┬──────┘
               │ rate_limit
               ▼
-       ┌─────────────┐      ┌────────────┐ ┌─────────┐
-       │    group    │      │ permission │ │  core   │  ← 不再依赖 common（审计 P1）
-       └─────────────┘      └─────┬──────┘ └────┬────┘
+       ┌─────────────┐      ┌────────────┐ ┌─────────┐      ┌─────────┐
+       │    group    │      │ permission │ │  core   │      │  inbox  │  ← 均不依赖 common（审计 P1）
+       └─────────────┘      └─────┬──────┘ └────┬────┘      └─────────┘
                                   └─────────────┘
                             core 依赖 permission（ChatPermissionChecker）
 ```
+
+> `inbox` 独立于其余四个：它锚定链下投递令牌（inbox 维度 epoch + 定向标签），其 epoch
+> **刻意不复用** `permission` 的账户级 `CapabilityEpoch`（避免 relay 把 inbox 链回账户），
+> 两者正交。详见 `inbox/` 与 `CHAT_OFFCHAIN_DELIVERY_DESIGN.md`。
 
 > 注：`core` / `permission` 已移除对 `common` 的依赖（原为声明但零 import 的 dead dep）。
 > `common::runtime_api` 由 `runtime/src/apis.rs` 聚合实现、`node/src/chat_rpc.rs` 封装。
@@ -71,22 +78,26 @@ pallets/chat/
 - **消息状态**: 已发送/已送达/已读/已撤回
 - **权限集成**: 基于permission模块的访问控制
 
-### group - 智能群聊
+### group - MLS（RFC 9420）群聊
 
-四种加密模式的群组聊天：
+链作为 MLS 的 **Delivery Service + Authentication Service**：只为身份（KeyPackage）与
+成员变更（Commit / epoch）提供全局定序、Welcome 短期信箱与群元数据锚定，**消息密文不上链**
+（链下 MLS + relay）。详见 `group/README.md`。
 
-| 模式 | 描述 | 适用场景 |
-|------|------|----------|
-| Military | 量子抗性加密 | 高度机密群组 |
-| Business | AES-256加密 | 普通私密群组（默认）|
-| Selective | 选择性加密 | 部分消息需加密 |
-| Transparent | 透明公开 | 公开群组 |
+> 早期"四种加密模式（Military / Business / Selective / Transparent）"是 MLS 收敛前的 legacy
+> 概念，已废弃；加密统一由群创建时指定的 MLS `cipher_suite: u16`（RFC 9420 套件 ID）表达，
+> 链不持有任何密钥或明文。
 
-功能：
-- 群组创建/解散
-- 成员管理（加入/离开/踢出）
-- 群组消息广播
-- 管理员权限管理
+链上功能：
+- 群生命周期（建群押金 + 冷却、转让群主、解散 / 治理强制解散）
+- 成员管理（KeyPackage 发布/吊销、`commit` 加入/退出/移除、入群申请—批准、封禁）
+- 应用层治理（群主/管理员角色、群资料、群名片、禁言）
+- 审计锚（可选的消息 digest 锚，只锚 hash）
+
+只读 Runtime API（`ChatGroupApi`，node 端封装为 `chat_*` RPC）：
+- `pending_welcome(group_id, who)`：待领 Welcome 字节（**先读后 `claim_welcome`**，避免丢信）
+- `handshake_at_epoch(group_id, epoch)`：指定 epoch 的 Commit 字节（离线补齐）
+- `group_mls_snapshot(group_id)` / `group_exists` / `is_group_frozen`：群 MLS 锚点 / 状态
 
 ## Runtime 配置
 
@@ -130,7 +141,7 @@ pallet-chat-inbox = { path = "../pallets/chat/inbox", default-features = false }
 >
 > 本 API 返回的是**链上切片**，不能直接当成完整 IM 首页。原因：人类聊天（Text/Image/
 > File/Voice，无论私聊还是群聊）全部走链下（MLS + relay，密文不触链）；链上唯一的消息是
-> `System` 通知（订单/争议/治理，经 `send_system_message`）。因此：
+> `System` 通知（订单/争议/治理，经 `send_message`）。因此：
 >
 > | 字段 | 私聊（Direct） | 群聊（Group） |
 > | --- | --- | --- |
@@ -202,13 +213,16 @@ polkadot-js 客户端用 JSON 友好类型直接调用。所有方法只读且�
 | `chat_totalDirectUnread(who, at?)` | 链上 System 通道未读总数；**非** App 全局角标 |
 | `chat_checkPermission(sender, receiver, at?)` | 聊天权限检查 |
 | `chat_getActiveScenes(user1, user2, at?)` | 两用户间有效场景授权 |
-| `chat_isFriend(user1, user2, at?)` | 是否好友 |
-| `chat_listFriends(who, at?)` | 好友列表 |
-| `chat_listIncomingFriendRequests(who, at?)` | 待处理的好友申请发起方 |
-| `chat_listIncomingFriendRequestsDetailed(who, at?)` | 待处理好友申请（含附言/验证消息） |
-| `chat_friendMeta(owner, friend, at?)` | 某账户对某好友的私有备注/分组 |
+| `chat_capabilityEpoch(who, at?)` | 账户聊天能力撤销 epoch（链下令牌新鲜度比对） |
 | `chat_isAccountMuted(who, at?)` | 账户是否被治理平台级禁言 |
 | `chat_privacySummary(who, at?)` | 隐私设置摘要 |
+| `chat_inboxEpoch(inboxId, at?)` | 链下投递信箱撤销 epoch |
+| `chat_isTagRevoked(inboxId, tag, at?)` | 联系人标签是否被撤销 |
+| `chat_inboxExists(inboxId, at?)` | 信箱是否已注册 |
+| `chat_pendingWelcome(groupId, who, at?)` | 待领 Welcome（hex；**claim 前**读取） |
+| `chat_handshakeAtEpoch(groupId, epoch, at?)` | 指定 epoch 的 Commit（hex） |
+| `chat_groupMlsSnapshot(groupId, at?)` | 群 MLS 锚点快照 |
+| `chat_isGroupFrozen(groupId, at?)` | 群是否冻结（治理或拆除中） |
 
 > pallet 的 DTO 仅有 SCALE 编码（无 serde）；为保持 pallet 纯净，node 端定义本地
 > serde 响应类型并从 Runtime API DTO 转换（如群名/头像/元数据以 UTF-8 有损转字符串，
@@ -305,7 +319,7 @@ polkadot-js 客户端用 JSON 友好类型直接调用。所有方法只读且�
 - 2026-06-03: 复审三项修复（B1/B2/P1）：
   - **B1（未读漂移）**：`pallet-chat-core::delete_message` 接收方删除「仍计未读」的消息时同步
     抵消 `UnreadCount`（幂等：仅未读 + 未撤回 + 此前未删除时抵消），修复角标永久 +1。
-  - **B2（System 来源限制）**：`send_message` / `send_system_message` 改用新配置
+  - **B2（System 来源限制）**：`send_message` 改用新配置
     `SystemMessageOrigin: EnsureOrigin<…, Success = AccountId>` 取代 `ensure_signed`，杜绝任意用户
     伪造 `System` 系统通知。runtime 收敛为 `EnsureRootWithSuccess<AccountId, ChatSystemMessenger>`
     （治理签发，sender = PalletId 派生系统账户）；mock 用 `EnsureSigned` 保持单测语义。
@@ -371,3 +385,16 @@ polkadot-js 客户端用 JSON 友好类型直接调用。所有方法只读且�
   `muted` 在 `kind=direct`（免打扰 DND）与 `kind=group`（管理员禁言/不能发言）下语义不同，
   客户端必须按 `kind` 分支；新增**客户端 Merge Spec**（会话主键/presence/排序/未读/静音/
   字段权威性）。同步修订 `runtime_api.rs`、`node/src/chat_rpc.rs` 文档注释（EN+CN）。
+- 2026-06-04: `permission` 审计后续修复（纯仓内，低风险）：
+  - **死枚举清理**：删除 `PermissionResult::DeniedBlocked` / `DeniedNotInWhitelist`（黑/白名单下链后
+    `check_permission` 从不返回；`PermissionResult` 为 runtime API 瞬时返回值、非存储类型，删除安全），
+    同步删 `node/src/chat_rpc.rs` 对应 `"blocked"` / `"notInWhitelist"` 映射臂。
+  - **文档一致性**：`has_any_valid_scene_authorization` 文档明确「仅判过期，**不**套 `rejected_scene_types`/
+    禁言/隐私级别，非权限门控事实来源」（门控唯一事实来源为 `check_permission` / `can_send_message`）；
+    `permission` README 事件列表删除已移除的 `UserBlocked`/`UserUnblocked`；RPC `permission_level_label`
+    标注 `"whitelist"` 为 `"friendsOnly"` 的弃用别名（保留字符串兼容，前端不应再作独立选项）。
+  - **订单场景接线**（补齐 `SceneType::Order` 生产路径，对齐 `pallet-task-bounty::ChatAuthorizer`）：
+    `pallet-entity-order` 新增 `OrderChatAuthorizer` 端口与 `Config::Chat`；**非即时订单**创建时授予买卖
+    双方双向场景授权（`source = *b"entorder"`，`scene_id = Numeric(order_id)`），完成 / 取消 / 退款 / 超时
+    等**所有终态**经统一收口 `do_complete_order` / `do_cancel_or_refund` 撤销。数字（即时完成）订单不开聊。
+    调用尽力而为（runtime 适配器吞错，绝不回滚订单）。新增 3 个单测覆盖 grant/revoke/digital-no-grant。

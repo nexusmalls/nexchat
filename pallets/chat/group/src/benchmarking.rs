@@ -57,6 +57,41 @@ fn welcomes_for<T: Config>(member: &T::AccountId) -> Vec<(T::AccountId, Vec<u8>)
     w
 }
 
+/// EN: Expand a freshly created group (1 member) to 3 members in one commit,
+/// satisfying the on-chain `TwoMemberGroupForbidden` invariant.
+/// CN: 将新建群（1 人）一次性扩至 3 人，满足链上 `TwoMemberGroupForbidden` 不变量。
+fn seed_group_to_three<T: Config>(owner: &T::AccountId, gid: GroupId) {
+    if GroupMls::<T>::get(gid).map(|g| g.member_count).unwrap_or(0) >= 3 {
+        return;
+    }
+    let m1: T::AccountId = account("seed", 0, 0);
+    let m2: T::AccountId = account("seed", 1, 0);
+    make_joinable::<T>(&m1);
+    make_joinable::<T>(&m2);
+    MlsActionRate::<T>::remove(owner);
+    let epoch = GroupMls::<T>::get(gid).expect("group exists").epoch;
+    let welcomes = vec![
+        (m1.clone(), [1u8; 8].to_vec()),
+        (m2.clone(), [1u8; 8].to_vec()),
+    ];
+    let delta = MemberDelta::<T> {
+        added: [m1, m2].to_vec().try_into().expect("2 <= bound"),
+        removed: Default::default(),
+    };
+    ChatGroup::<T>::commit(
+        RawOrigin::Signed(owner.clone()).into(),
+        gid,
+        epoch,
+        [1u8; 16].to_vec(),
+        [1u8; 32],
+        [2u8; 32],
+        b"cid-seed".to_vec(),
+        welcomes,
+        delta,
+    )
+    .expect("seed group to three");
+}
+
 /// EN: Make `member` addable to a public group by funding it and publishing a
 /// KeyPackage (audit U3 opt-in gate). Idempotent. CN: 为被加成员充值并发布 KeyPackage，
 /// 使其可被加入公开群（审计 U3 的同意闸门）。幂等。
@@ -78,6 +113,7 @@ fn make_joinable<T: Config>(member: &T::AccountId) {
 /// per-window cap. CN: 读取群当前 epoch（每次 commit 都会推进），并清除群主的
 /// MLS 限频状态，避免基准 setup 中的多次 commit 触发窗口限频。
 fn add_member<T: Config>(owner: &T::AccountId, gid: GroupId, member: &T::AccountId) {
+    seed_group_to_three::<T>(owner, gid);
     make_joinable::<T>(member);
     MlsActionRate::<T>::remove(owner);
     let epoch = GroupMls::<T>::get(gid).expect("group exists").epoch;
@@ -141,6 +177,7 @@ mod benchmarks {
     fn commit(a: Linear<0, 4>, r: Linear<0, 3>) {
         let owner: T::AccountId = whitelisted_caller();
         let gid = new_group::<T>(&owner, true);
+        seed_group_to_three::<T>(&owner, gid);
 
         // 预先加入将被本次 commit 移除的成员 / pre-add members the bench commit removes
         let mut to_remove: Vec<T::AccountId> = Vec::new();
@@ -196,7 +233,9 @@ mod benchmarks {
         let owner: T::AccountId = whitelisted_caller();
         let gid = new_group::<T>(&owner, true);
         let member: T::AccountId = account("member", 0, 0);
+        let member2: T::AccountId = account("member", 1, 0);
         make_joinable::<T>(&member);
+        make_joinable::<T>(&member2);
         ChatGroup::<T>::commit(
             RawOrigin::Signed(owner).into(),
             gid,
@@ -205,8 +244,17 @@ mod benchmarks {
             [1u8; 32],
             [2u8; 32],
             b"cid2".to_vec(),
-            welcomes_for::<T>(&member),
-            add_delta::<T>(&member),
+            vec![
+                (member.clone(), [1u8; 8].to_vec()),
+                (member2, [2u8; 8].to_vec()),
+            ],
+            MemberDelta::<T> {
+                added: [member.clone(), member2]
+                    .to_vec()
+                    .try_into()
+                    .expect("2 <= bound"),
+                removed: Default::default(),
+            },
         )
         .expect("commit add");
         #[extrinsic_call]

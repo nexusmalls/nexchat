@@ -10,6 +10,22 @@
 
 extern crate alloc;
 
+/// 仲裁系统通知端口（runtime 适配器桥接到 chat-core 的 System 通道）。
+/// Arbitration system-notification port; runtime adapter bridges to chat-core.
+///
+/// 与 `pallet-chat-core` 解耦；调用为尽力而为，失败不回滚仲裁状态转移。
+/// Decoupled from chat-core; best-effort — notification failure must NEVER
+/// abort an arbitration transition. `()` is the no-op default.
+pub trait ArbitrationNotifier<AccountId> {
+    /// 向 `to` 推送一条仲裁/投诉系统通知（不透明模板描述符）。
+    /// Push an arbitration/complaint system notice to `to`.
+    fn notify(to: &AccountId, notice: alloc::vec::Vec<u8>);
+}
+
+impl<AccountId> ArbitrationNotifier<AccountId> for () {
+    fn notify(_to: &AccountId, _notice: alloc::vec::Vec<u8>) {}
+}
+
 pub use pallet::*;
 pub mod runtime_api;
 pub mod state_machine;
@@ -208,6 +224,10 @@ pub mod pallet {
         /// Max active complaints per user（替代旧的 `BoundedVec<50>` 限制）
         #[pallet::constant]
         type MaxActivePerUser: Get<u32>;
+
+        /// 仲裁系统通知端口（桥接到聊天 System 通道；尽力而为）。
+        /// Arbitration system-notification port (chat System channel; best-effort).
+        type Notifier: crate::ArbitrationNotifier<Self::AccountId>;
     }
 
     // ==================== HoldReason ====================
@@ -558,6 +578,7 @@ pub mod pallet {
                 Disputed::<T>::get(domain, id).is_some(),
                 Error::<T>::NotDisputed
             );
+            let parties = TwoWayDeposits::<T>::get(domain, id);
             let decision = match (decision_code, bps) {
                 (0, _) => Decision::Release,
                 (1, _) => Decision::Refund,
@@ -583,6 +604,14 @@ pub mod pallet {
                 decision: out.0,
                 bps: out.1,
             });
+
+            // 通知争议双方：治理裁决已出（best-effort）。
+            if let Some(record) = parties {
+                let notice =
+                    Self::notice_dispute(b"dispute:arbitrated", domain, id, Some(decision_code));
+                T::Notifier::notify(&record.initiator, notice.clone());
+                T::Notifier::notify(&record.respondent, notice);
+            }
             Ok(())
         }
 
@@ -710,6 +739,12 @@ pub mod pallet {
 
             PendingArbitrationDisputes::<T>::insert(domain, id, ());
 
+            // 通知被诉方：争议已开启（best-effort）。
+            T::Notifier::notify(
+                &respondent,
+                Self::notice_dispute(b"dispute:opened", domain, id, None),
+            );
+
             Self::deposit_event(Event::DisputeWithDepositInitiated {
                 domain,
                 id,
@@ -735,6 +770,7 @@ pub mod pallet {
 
             let mut deposit_record =
                 TwoWayDeposits::<T>::get(domain, id).ok_or(Error::<T>::NotDisputed)?;
+            let initiator = deposit_record.initiator.clone();
             ensure!(
                 deposit_record.respondent == respondent,
                 Error::<T>::NotDisputed
@@ -781,6 +817,12 @@ pub mod pallet {
                 respondent,
                 deposit: deposit_amount,
             });
+
+            // 通知发起方：被诉方已应诉并锁定押金。
+            T::Notifier::notify(
+                &initiator,
+                Self::notice_dispute(b"dispute:responded", domain, id, None),
+            );
             Ok(())
         }
 
@@ -905,6 +947,12 @@ pub mod pallet {
             DomainStats::<T>::mutate(domain, |stats| {
                 stats.total_complaints = stats.total_complaints.saturating_add(1);
             });
+
+            // 通知被诉方：投诉已提交。
+            T::Notifier::notify(
+                &respondent,
+                Self::notice_complaint(b"complaint:filed", complaint_id, None),
+            );
 
             Self::deposit_event(Event::ComplaintFiled {
                 complaint_id,
@@ -1204,10 +1252,17 @@ pub mod pallet {
                     now + T::ResponseDeadline::get(),
                 );
 
+                let complainant = complaint.complainant.clone();
+                let respondent = complaint.respondent.clone();
                 Self::deposit_event(Event::ComplaintResolved {
                     complaint_id,
                     decision,
                 });
+
+                let notice =
+                    Self::notice_complaint(b"complaint:resolved", complaint_id, Some(decision));
+                T::Notifier::notify(&complainant, notice.clone());
+                T::Notifier::notify(&respondent, notice);
                 Ok(())
             })
         }
@@ -1248,6 +1303,12 @@ pub mod pallet {
                 id,
                 initiator: who,
             });
+
+            // 通知被诉方：应诉超时，默认裁决（退款给发起方）。
+            T::Notifier::notify(
+                &deposit_record.respondent,
+                Self::notice_dispute(b"dispute:default", domain, id, None),
+            );
             Ok(())
         }
 
@@ -1770,10 +1831,20 @@ pub mod pallet {
                     }
                 });
 
+                let complainant = complaint.complainant.clone();
+                let respondent = complaint.respondent.clone();
                 Self::deposit_event(Event::AppealResolved {
                     complaint_id,
                     decision,
                 });
+
+                let notice = Self::notice_complaint(
+                    b"complaint:appeal_resolved",
+                    complaint_id,
+                    Some(decision),
+                );
+                T::Notifier::notify(&complainant, notice.clone());
+                T::Notifier::notify(&respondent, notice);
                 Ok(())
             })
         }

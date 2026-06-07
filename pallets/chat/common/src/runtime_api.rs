@@ -17,7 +17,7 @@
 //! off-chain (MLS + node relay; ciphertext never touches the chain). The ONLY
 //! on-chain messages are `System` notifications (order / dispute / governance),
 //! and a direct session/`Session` row exists ONLY because a `System` message
-//! was sent between the pair (see `pallet-chat-core::send_system_message`).
+//! was sent between the pair (see `pallet-chat-core::send_message`).
 //! Concretely:
 //! - Direct `unread` / `last_active`: count the **System-notification channel
 //!   only**, NOT the pair's human chat. They are authoritative for System but
@@ -33,7 +33,7 @@
 //! CN: 本 API 仅返回**链上切片**，**不是完整消息列表**。人类聊天（Text/Image/File/
 //! Voice，无论私聊还是群聊）走链下（MLS + 节点中继，密文不触链）。链上**唯一**的消息
 //! 是 `System` 通知（订单/争议/治理）；一条私聊 `Session` 之所以存在，**仅**因为该对
-//! 用户间发过 `System` 消息（见 `pallet-chat-core::send_system_message`）。具体：
+//! 用户间发过 `System` 消息（见 `pallet-chat-core::send_message`）。具体：
 //! - 私聊 `unread` / `last_active`：只统计 **System 通知通道**，**不含**该对用户的
 //!   人类聊天；对 System 权威，但**不是**用户真实会话的活跃度/未读。
 //! - 只在链下聊过天的用户对，这里**根本没有**对应私聊行。

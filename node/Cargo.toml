@@ -40,6 +40,7 @@ nexus-runtime = { workspace = true }
 pallet-chat-common = { default-features = true, workspace = true }
 pallet-chat-permission = { default-features = true, workspace = true }
 pallet-chat-inbox = { default-features = true, workspace = true }
+pallet-chat-group = { default-features = true, workspace = true }
 serde = { default-features = true, workspace = true }
 sp-api = { default-features = true, workspace = true }
 sp-block-builder = { default-features = true, workspace = true }

@@ -61,6 +61,35 @@ mod benchmarks {
     }
 
     #[benchmark]
+    fn unrevoke_tag() {
+        let caller: T::AccountId = whitelisted_caller();
+        fund::<T>(&caller);
+        let id: InboxId = [7u8; 32];
+        let tag: ContactTag = [9u8; 32];
+        ChatInbox::<T>::register_inbox(RawOrigin::Signed(caller.clone()).into(), id)
+            .expect("register");
+        ChatInbox::<T>::revoke_tag(RawOrigin::Signed(caller.clone()).into(), id, tag)
+            .expect("revoke");
+        #[extrinsic_call]
+        unrevoke_tag(RawOrigin::Signed(caller.clone()), id, tag);
+        assert!(!ChatInbox::<T>::is_tag_revoked(id, tag));
+    }
+
+    #[benchmark]
+    fn transfer_controller() {
+        let caller: T::AccountId = whitelisted_caller();
+        let new_controller: T::AccountId = account("new_controller", 0, 0);
+        fund::<T>(&caller);
+        fund::<T>(&new_controller);
+        let id: InboxId = [7u8; 32];
+        ChatInbox::<T>::register_inbox(RawOrigin::Signed(caller.clone()).into(), id)
+            .expect("register");
+        #[extrinsic_call]
+        transfer_controller(RawOrigin::Signed(caller.clone()), id, new_controller.clone());
+        assert_eq!(Inboxes::<T>::get(id).map(|r| r.controller), Some(new_controller));
+    }
+
+    #[benchmark]
     fn deregister_inbox() {
         let caller: T::AccountId = whitelisted_caller();
         fund::<T>(&caller);
@@ -70,6 +99,21 @@ mod benchmarks {
         #[extrinsic_call]
         deregister_inbox(RawOrigin::Signed(caller.clone()), id);
         assert!(!Inboxes::<T>::contains_key(id));
+    }
+
+    #[benchmark]
+    fn force_deregister_inbox() -> Result<(), BenchmarkError> {
+        let caller: T::AccountId = whitelisted_caller();
+        fund::<T>(&caller);
+        let id: InboxId = [7u8; 32];
+        ChatInbox::<T>::register_inbox(RawOrigin::Signed(caller.clone()).into(), id)
+            .expect("register");
+        let origin = T::ForceOrigin::try_successful_origin()
+            .map_err(|_| BenchmarkError::Weightless)?;
+        #[extrinsic_call]
+        force_deregister_inbox(origin, id);
+        assert!(!Inboxes::<T>::contains_key(id));
+        Ok(())
     }
 
     impl_benchmark_test_suite!(ChatInbox, crate::mock::new_test_ext(), crate::mock::Test);

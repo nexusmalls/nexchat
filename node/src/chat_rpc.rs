@@ -36,6 +36,10 @@
 //! - `chat_inboxEpoch(inboxId, at?)` — 链下投递信箱的撤销纪元（未注册返回 null）
 //! - `chat_isTagRevoked(inboxId, tag, at?)` — 联系人标签是否被定向撤销
 //! - `chat_inboxExists(inboxId, at?)` — 信箱是否已注册
+//! - `chat_pendingWelcome(groupId, who, at?)` — 待领取 Welcome 字节（只读，不消费）
+//! - `chat_handshakeAtEpoch(groupId, epoch, at?)` — 指定 epoch 的 Commit 字节
+//! - `chat_groupMlsSnapshot(groupId, at?)` — 群 MLS 锚点快照
+//! - `chat_isGroupFrozen(groupId, at?)` — 群是否冻结（治理或拆除中）
 
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -53,6 +57,9 @@ use sp_runtime::traits::Block as BlockT;
 use nexus_runtime::{AccountId, BlockNumber, Hash};
 use pallet_chat_common::runtime_api::{
     ChatViewApi as ChatViewRuntimeApi, ConversationKind, ConversationSummary,
+};
+use pallet_chat_group::runtime_api::{
+    ChatGroupApi as ChatGroupRuntimeApi, GroupMlsSnapshot,
 };
 use pallet_chat_inbox::runtime_api::ChatInboxApi as ChatInboxRuntimeApi;
 use pallet_chat_permission::runtime_api::ChatPermissionApi as ChatPermissionRuntimeApi;
@@ -140,9 +147,7 @@ impl From<PermissionResult> for RpcPermissionResult {
             PermissionResult::AllowedByScene(v) => {
                 ("scene", v.into_iter().map(scene_type_label).collect())
             }
-            PermissionResult::DeniedBlocked => ("blocked", Vec::new()),
             PermissionResult::DeniedRequiresFriend => ("requiresFriend", Vec::new()),
-            PermissionResult::DeniedNotInWhitelist => ("notInWhitelist", Vec::new()),
             PermissionResult::DeniedClosed => ("closed", Vec::new()),
             PermissionResult::DeniedSenderMuted => ("senderMuted", Vec::new()),
         };
@@ -218,6 +223,35 @@ impl From<PrivacySettingsSummary> for RpcPrivacySummary {
     }
 }
 
+/// EN: MLS group anchor snapshot for client sync. CN: 供客户端同步的 MLS 群锚点快照。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcGroupMlsSnapshot {
+    pub epoch: u64,
+    pub tree_hash: Hash,
+    pub confirmed_transcript_hash: Hash,
+    pub group_info_cid: String,
+    pub member_count: u32,
+    pub cipher_suite: u16,
+    pub is_public: bool,
+    pub frozen: bool,
+}
+
+impl From<GroupMlsSnapshot> for RpcGroupMlsSnapshot {
+    fn from(s: GroupMlsSnapshot) -> Self {
+        RpcGroupMlsSnapshot {
+            epoch: s.epoch,
+            tree_hash: Hash::from(s.tree_hash),
+            confirmed_transcript_hash: Hash::from(s.confirmed_transcript_hash),
+            group_info_cid: String::from_utf8_lossy(&s.group_info_cid).into_owned(),
+            member_count: s.member_count,
+            cipher_suite: s.cipher_suite,
+            is_public: s.is_public,
+            frozen: s.frozen,
+        }
+    }
+}
+
 /// EN: Stable label for a scene type. CN: 场景类型的稳定标签。
 fn scene_type_label(t: SceneType) -> String {
     match t {
@@ -233,6 +267,14 @@ fn scene_type_label(t: SceneType) -> String {
 }
 
 /// EN: Stable label for a permission level. CN: 权限级别的稳定标签。
+///
+/// NOTE: `"whitelist"` is a DEPRECATED alias that behaves identically to
+/// `"friendsOnly"` — the on-chain whitelist was removed for privacy (audit P1)
+/// and the variant is kept only to preserve SCALE indices. The label string is
+/// retained for client compatibility; UIs should stop offering it as a distinct
+/// option. / 注：`"whitelist"` 为**弃用别名**，行为与 `"friendsOnly"` 完全一致——链上
+/// 白名单已为隐私移除（审计 P1），变体仅为维持 SCALE 索引保留。标签字符串为兼容现有
+/// 客户端而保留；前端不应再将其作为独立选项展示。
 fn permission_level_label(l: ChatPermissionLevel) -> &'static str {
     match l {
         ChatPermissionLevel::Open => "open",
@@ -246,6 +288,18 @@ fn alloc_format(args: core::fmt::Arguments<'_>) -> String {
     use core::fmt::Write;
     let mut s = String::new();
     let _ = s.write_fmt(args);
+    s
+}
+
+/// EN: Encode opaque bytes as `0x`-prefixed hex for JSON-RPC. CN: 将 opaque 字节编码为
+/// JSON-RPC 用的 `0x` 前缀 hex。
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    use core::fmt::Write;
+    let mut s = String::with_capacity(2 + bytes.len() * 2);
+    s.push_str("0x");
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
     s
 }
 
@@ -316,6 +370,38 @@ pub trait ChatApi<BlockHash> {
     /// EN: Whether `inbox_id` is registered. CN: `inbox_id` 是否已注册。
     #[method(name = "chat_inboxExists")]
     fn inbox_exists(&self, inbox_id: Hash, at: Option<BlockHash>) -> RpcResult<bool>;
+
+    /// EN: Pending Welcome bytes (hex) for `who` in `group_id`; `null` if none.
+    /// Read-only — call before `claim_welcome`. CN: `who` 在群内的待领 Welcome
+    /// （hex）；无则为 `null`。只读——在 `claim_welcome` 之前调用。
+    #[method(name = "chat_pendingWelcome")]
+    fn pending_welcome(
+        &self,
+        group_id: u64,
+        who: AccountId,
+        at: Option<BlockHash>,
+    ) -> RpcResult<Option<String>>;
+
+    /// EN: Opaque Commit bytes (hex) at `epoch`. CN: `epoch` 处 Commit 字节（hex）。
+    #[method(name = "chat_handshakeAtEpoch")]
+    fn handshake_at_epoch(
+        &self,
+        group_id: u64,
+        epoch: u64,
+        at: Option<BlockHash>,
+    ) -> RpcResult<Option<String>>;
+
+    /// EN: Current MLS anchor snapshot. CN: 当前 MLS 锚点快照。
+    #[method(name = "chat_groupMlsSnapshot")]
+    fn group_mls_snapshot(
+        &self,
+        group_id: u64,
+        at: Option<BlockHash>,
+    ) -> RpcResult<Option<RpcGroupMlsSnapshot>>;
+
+    /// EN: Whether the group is frozen. CN: 群是否冻结。
+    #[method(name = "chat_isGroupFrozen")]
+    fn is_group_frozen(&self, group_id: u64, at: Option<BlockHash>) -> RpcResult<bool>;
 }
 
 /// EN: RPC handler holding a client handle. CN: 持有 client 的 RPC 处理器。
@@ -343,6 +429,7 @@ where
     C::Api: ChatViewRuntimeApi<Block, AccountId, Hash, BlockNumber>,
     C::Api: ChatPermissionRuntimeApi<Block, AccountId>,
     C::Api: ChatInboxRuntimeApi<Block>,
+    C::Api: ChatGroupRuntimeApi<Block, AccountId>,
 {
     fn list_conversations(
         &self,
@@ -449,5 +536,50 @@ where
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
         api.inbox_exists(at, inbox_id.0).map_err(runtime_err)
+    }
+
+    fn pending_welcome(
+        &self,
+        group_id: u64,
+        who: AccountId,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<Option<String>> {
+        let api = self.client.runtime_api();
+        let at = at.unwrap_or_else(|| self.client.info().best_hash);
+        let bytes = api.pending_welcome(at, group_id, who).map_err(runtime_err)?;
+        Ok(bytes.map(|b| bytes_to_hex(&b)))
+    }
+
+    fn handshake_at_epoch(
+        &self,
+        group_id: u64,
+        epoch: u64,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<Option<String>> {
+        let api = self.client.runtime_api();
+        let at = at.unwrap_or_else(|| self.client.info().best_hash);
+        let bytes = api.handshake_at_epoch(at, group_id, epoch).map_err(runtime_err)?;
+        Ok(bytes.map(|b| bytes_to_hex(&b)))
+    }
+
+    fn group_mls_snapshot(
+        &self,
+        group_id: u64,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<Option<RpcGroupMlsSnapshot>> {
+        let api = self.client.runtime_api();
+        let at = at.unwrap_or_else(|| self.client.info().best_hash);
+        let snap = api.group_mls_snapshot(at, group_id).map_err(runtime_err)?;
+        Ok(snap.map(RpcGroupMlsSnapshot::from))
+    }
+
+    fn is_group_frozen(
+        &self,
+        group_id: u64,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<bool> {
+        let api = self.client.runtime_api();
+        let at = at.unwrap_or_else(|| self.client.info().best_hash);
+        api.is_group_frozen(at, group_id).map_err(runtime_err)
     }
 }

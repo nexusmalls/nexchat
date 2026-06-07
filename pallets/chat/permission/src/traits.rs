@@ -150,14 +150,27 @@ pub trait SceneAuthorizationManager<AccountId, BlockNumber> {
     /// 检查是否有任何有效的场景授权
     ///
     /// 快速检查两个用户之间是否存在至少一个未过期的场景授权。
-    /// 用于权限判断的快速路径。
+    ///
+    /// # ⚠️ 不是权限门控事实来源 / NOT the permission gate
+    /// EN: This only checks expiry on the stored pair; it does **not** apply the
+    /// receiver's `rejected_scene_types` filter, the platform-mute gate, or the
+    /// privacy level. Its result may therefore differ from `check_permission`
+    /// (e.g. a scene the receiver rejected still counts here). Use
+    /// [`ChatPermissionChecker::can_send_message`] / `check_permission` as the
+    /// single source of truth for "may A message B"; this helper is only for
+    /// "does a (possibly-filtered-out) scene link exist" diagnostics/UX.
+    /// CN: 本方法仅按存储对检查是否过期，**不**套用接收方的 `rejected_scene_types`
+    /// 过滤、平台禁言闸门或隐私级别，因此结果可能与 `check_permission` 不一致（如接收方
+    /// 已拒绝的场景在此仍计为有效）。「A 能否给 B 发消息」的唯一事实来源是
+    /// [`ChatPermissionChecker::can_send_message`] / `check_permission`；本辅助方法仅用于
+    /// 「是否存在（可能已被过滤的）场景链接」的诊断 / 展示。
     ///
     /// # 参数
     /// - `from`: 发起聊天的用户
     /// - `to`: 被联系的用户
     ///
     /// # 返回
-    /// 如果存在有效授权返回 true，否则返回 false
+    /// 如果存在未过期授权返回 true，否则返回 false
     fn has_any_valid_scene_authorization(from: &AccountId, to: &AccountId) -> bool;
 
     /// 获取所有有效的场景授权

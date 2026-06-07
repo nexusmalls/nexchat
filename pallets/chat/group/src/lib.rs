@@ -60,6 +60,7 @@
 pub use pallet::*;
 pub use weights::WeightInfo;
 
+pub mod runtime_api;
 pub mod weights;
 
 #[cfg(test)]
@@ -227,10 +228,7 @@ pub mod pallet {
     use super::*;
 
     #[pallet::config]
-    pub trait Config: frame_system::Config {
-        /// EN: Runtime event / CN: 运行时事件
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
+    pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
         /// EN: Reservable currency used for anti-spam deposits.
         /// CN: 用于防滥用押金的可预留货币。
         type Currency: ReservableCurrency<Self::AccountId>;
@@ -665,6 +663,15 @@ pub mod pallet {
         RateLimited,
         /// 群已被治理冻结，禁止写入型操作 / Group is frozen by governance
         GroupFrozen,
+        /// EN: `welcomes` must exactly match `member_delta.added` (one non-empty Welcome
+        /// per added member; none when nobody is added). CN: `welcomes` 必须与
+        /// `member_delta.added` 精确对应（每名新成员一条非空 Welcome；无增员则须为空）。
+        WelcomeMismatch,
+        /// EN: On-chain groups must not have exactly two members (privacy invariant:
+        /// 2-member rows expose a pairwise relationship; use off-chain 1:1 instead).
+        /// Valid counts are 1 (creator only) or 3+. CN: 链上群不得恰好 2 人（隐私不变量：
+        /// 2 人关系等价于公开谁↔谁；1:1 走链下）。合法人数为 1（仅创建者）或 3+。
+        TwoMemberGroupForbidden,
     }
 
     // ---------------------------------------------------------------------
@@ -843,27 +850,21 @@ pub mod pallet {
                 ensure!(!GroupMembers::<T>::contains_key(group_id, acct), Error::<T>::AlreadyMember);
                 // 封禁名单链上强制：被封禁账户不可被加入 / banned accounts cannot be added
                 ensure!(!Banned::<T>::contains_key(group_id, acct), Error::<T>::Banned);
-                if g.is_public {
-                    // 公开群（审计 U3）：被加成员必须已发布至少一个 KeyPackage。
-                    // 这既是「同意被加入」的链上信号（成员主动发布、可随时吊销退出），也符合 MLS
-                    // ——没有对方 KeyPackage 本就无法 Add。杜绝群主/管理员把任意人拉进公开群。
-                    // Public group (audit U3): the addee must have published a KeyPackage.
-                    // This is both the on-chain opt-in/consent signal (the member chose to
-                    // publish, and can revoke to opt out) and MLS-correct (you cannot Add
-                    // without their KeyPackage), preventing owners/admins from pulling
-                    // arbitrary accounts into a public group.
-                    ensure!(
-                        KeyPackageCount::<T>::get(acct) > 0,
-                        Error::<T>::AddeeNotJoinable
-                    );
-                } else {
-                    // 私群：被加成员必须已获管理员批准 / private group: addee must be approved
+                // 公开/私群（审计 U3 + P0）：被加成员必须已发布至少一个 KeyPackage。
+                // Public & private groups (audit U3 + P0): addee must have a KeyPackage.
+                ensure!(
+                    KeyPackageCount::<T>::get(acct) > 0,
+                    Error::<T>::AddeeNotJoinable
+                );
+                if !g.is_public {
+                    // 私群：还须已获管理员批准 / private group: addee must also be approved
                     ensure!(
                         JoinApprovals::<T>::contains_key(group_id, acct),
                         Error::<T>::NotApproved
                     );
                 }
             }
+            Self::ensure_welcomes_match_added(&member_delta.added, &welcomes)?;
             for acct in member_delta.removed.iter() {
                 ensure!(GroupMembers::<T>::contains_key(group_id, acct), Error::<T>::NotMember);
                 // 群主不可被移除（须先转让，P1）/ owner cannot be removed (transfer first, P1)
@@ -876,6 +877,9 @@ pub mod pallet {
                 .saturating_add(added)
                 .saturating_sub(removed);
             ensure!(new_count <= T::MaxGroupMembers::get(), Error::<T>::GroupFull);
+            // 隐私不变量：禁止恰好 2 人的链上群（1:1 走链下，见模块头注释）。
+            // Privacy invariant: forbid exactly-2-member on-chain groups (1:1 is off-chain).
+            ensure!(new_count != 2, Error::<T>::TwoMemberGroupForbidden);
 
             // 应用成员表 + UserGroups 同步（杜绝幽灵群）
             // apply member table + UserGroups sync (no ghost entries)
@@ -1087,6 +1091,21 @@ pub mod pallet {
             GroupMembers::<T>::insert(group_id, &to, target);
             g.admin = to.clone();
             GroupMls::<T>::insert(group_id, &g);
+
+            // 重绑 ChatHook：现有成员的场景授权从旧群主切到新群主（P0）。
+            // Rebind ChatHook: migrate scene auth from old owner to new owner (P0).
+            let members: Vec<T::AccountId> =
+                GroupMembers::<T>::iter_key_prefix(group_id).collect();
+            for member in members.iter() {
+                if *member == to {
+                    continue;
+                }
+                // 原群主自身从未以 member↔owner 钩子入列，跳过对其 revoke。
+                if *member != who {
+                    T::ChatHook::on_member_removed(group_id, member, &who);
+                }
+                T::ChatHook::on_member_added(group_id, member, &to);
+            }
 
             Self::deposit_event(Event::OwnershipTransferred { group_id, from: who, to });
             Ok(())
@@ -1336,6 +1355,31 @@ pub mod pallet {
     // ---------------------------------------------------------------------
 
     impl<T: Config> Pallet<T> {
+        /// EN: Ensure `welcomes` bijectively matches `added`: same length, each added
+        /// account appears exactly once with a non-empty blob, and no extras.
+        /// CN: 校验 `welcomes` 与 `added` 双射一致：长度相同、每名新成员恰一条非空
+        /// Welcome、无多余条目。
+        fn ensure_welcomes_match_added(
+            added: &BoundedVec<T::AccountId, T::MaxGroupMembers>,
+            welcomes: &[(T::AccountId, Vec<u8>)],
+        ) -> DispatchResult {
+            ensure!(welcomes.len() == added.len(), Error::<T>::WelcomeMismatch);
+            for acct in added.iter() {
+                let mut matched = 0u32;
+                for (w_acct, w_bytes) in welcomes.iter() {
+                    if w_acct == acct {
+                        matched = matched.saturating_add(1);
+                        ensure!(!w_bytes.is_empty(), Error::<T>::WelcomeMismatch);
+                    }
+                }
+                ensure!(matched == 1, Error::<T>::WelcomeMismatch);
+            }
+            for (w_acct, _) in welcomes.iter() {
+                ensure!(added.contains(w_acct), Error::<T>::WelcomeMismatch);
+            }
+            Ok(())
+        }
+
         /// EN: Account a write-heavy MLS action (`commit` / `anchor`) against the
         /// per-account windowed rate limit; errors with `RateLimited` when the
         /// window quota is exhausted. CN: 把一次写入型 MLS 操作（`commit` / `anchor`）
@@ -1417,6 +1461,39 @@ pub mod pallet {
         /// CN: 群当前成员数（未知为 0）。
         pub fn group_member_count(group_id: GroupId) -> u32 {
             GroupMls::<T>::get(group_id).map(|g| g.member_count).unwrap_or(0)
+        }
+
+        /// EN: Pending Welcome bytes for `who` in `group_id` (read-only; does NOT
+        /// consume). Backs `ChatGroupApi::pending_welcome` so a client can fetch
+        /// the Welcome before the `claim_welcome` extrinsic deletes it.
+        /// CN: `who` 在 `group_id` 的待领 Welcome 字节（只读，不消费）。支撑
+        /// `ChatGroupApi::pending_welcome`，使客户端可在 `claim_welcome`
+        /// extrinsic 删除前先取回 Welcome。
+        pub fn pending_welcome(group_id: GroupId, who: &T::AccountId) -> Option<Vec<u8>> {
+            WelcomeMailbox::<T>::get(group_id, who).map(|w| w.into_inner())
+        }
+
+        /// EN: Opaque Commit blob logged at `epoch` (lets offline members catch up).
+        /// CN: `epoch` 处记录的不透明 Commit 字节（供离线成员补齐）。
+        pub fn handshake_at_epoch(group_id: GroupId, epoch: u64) -> Option<Vec<u8>> {
+            HandshakeLog::<T>::get(group_id, epoch).map(|c| c.into_inner())
+        }
+
+        /// EN: Full on-chain MLS state of a group (no key material), or `None`.
+        /// CN: 群的链上 MLS 状态全量（不含密钥材料）；不存在则 `None`。
+        pub fn group_mls_state(group_id: GroupId) -> Option<MlsGroupState<T>> {
+            GroupMls::<T>::get(group_id)
+        }
+
+        /// EN: Whether `group_id` exists. CN: `group_id` 是否存在。
+        pub fn group_exists(group_id: GroupId) -> bool {
+            GroupMls::<T>::contains_key(group_id)
+        }
+
+        /// EN: Whether `group_id` is frozen (governance or mid-teardown).
+        /// CN: `group_id` 是否被冻结（治理或拆除中）。
+        pub fn is_group_frozen(group_id: GroupId) -> bool {
+            GroupFrozen::<T>::contains_key(group_id)
         }
 
         /// EN: Append a group to a user's list, guarding the per-user bound.

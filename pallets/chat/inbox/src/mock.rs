@@ -71,6 +71,7 @@ impl pallet_balances::Config for Test {
 
 impl pallet_chat_inbox::Config for Test {
     type Currency = Balances;
+    type ForceOrigin = frame_system::EnsureRoot<u64>;
     type InboxDeposit = ConstU128<100>;
     type MaxRevokedTags = ConstU32<4>;
     type MaxInboxesPerController = ConstU32<3>;

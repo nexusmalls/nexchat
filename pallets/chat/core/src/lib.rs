@@ -52,6 +52,47 @@ use sp_std::convert::TryInto;
 /// 聊天用户ID类型定义 - 11位数字
 pub type ChatUserId = u64;
 
+/// 受信的程序化系统通知端口（不经 extrinsic）。
+/// Trusted programmatic port to emit on-chain `System` notifications WITHOUT an
+/// extrinsic.
+///
+/// # 定位 / Purpose
+/// 业务 pallet（订单 / 争议 / 悬赏等）需要在**状态机内部**向用户推送系统通知，
+/// 但生产环境的 `send_message` extrinsic 被 `SystemMessageOrigin`
+/// (`EnsureRootWithSuccess`) 限定为仅 Root/治理可调，普通业务流程拿不到该 origin。
+/// 本 trait 提供一个**仅供 runtime 显式接线的 pallet 调用**的内部入口，把通知能力
+/// 解耦给业务 pallet，而无需暴露任何用户可触达的 extrinsic。
+/// Business pallets must push system notices from inside their state machines, but
+/// the production `send_message` extrinsic is gated to Root/governance.
+/// This trait is the internal entry callable only by runtime-wired pallets.
+///
+/// # 安全（审计 B2）/ Security (audit B2)
+/// 这是 `impl` 上的 `pub fn`，**不是** `#[pallet::call]` extrinsic：普通用户无从触达，
+/// 唯一调用方是 runtime 在 `Config` 中显式接线的业务 pallet（**编译期门控**）。因此
+/// 防伪造系统通知的 B2 边界不仅被保留，反而由「运行时 Root 检查」收紧为「编译期接线
+/// 白名单」。This is a `pub fn`, not an extrinsic; only runtime-wired pallets can
+/// reach it (compile-time gated), which preserves and strengthens audit-B2.
+pub trait SystemNotifier<AccountId> {
+	/// 由平台系统账户向 `receiver` 投递一条 System 通知。
+	/// Deliver a System notice from the platform system account to `receiver`.
+	///
+	/// # payload 语义 / Payload semantics
+	/// `notice` 是**不透明、客户端本地化的通知描述符**（如模板代码 + 参数），存入
+	/// `MessageMeta.content_cid`。对 System 类型而言它**不要求是真 IPFS CID**——链本就
+	/// 不校验 CID 内容（审计 C），仅做非空 + 长度 sanity。
+	/// `notice` is an opaque, client-localized notice descriptor stored in
+	/// `content_cid`; for System it need NOT be a real IPFS CID.
+	///
+	/// # 会话 / Session
+	/// 落入每用户唯一的「平台通知」会话（`system_account ↔ receiver`），不重建
+	/// buyer↔seller 等业务关系，隐私友好；客户端用 payload 内的业务 id 深链跳转。
+	/// Lands in the per-user platform-notification session (system↔receiver).
+	fn notify(
+		receiver: &AccountId,
+		notice: sp_std::vec::Vec<u8>,
+	) -> frame_support::dispatch::DispatchResult;
+}
+
 /// 用户状态枚举
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq, TypeInfo, MaxEncodedLen)]
 #[codec(mel_bound())]
@@ -74,29 +115,28 @@ impl Default for UserStatus {
     }
 }
 
-/// 隐私设置结构
+/// 资料展示设置（纯 UI 偏好，不参与通信权限判定）。
+/// Profile display settings — UI-only preferences, NOT a communication gate.
+///
+/// 原名 `PrivacySettings`，因与 pallet-chat-permission 的同名结构语义冲突而重命名
+/// （审计 2.8：消除「两套 PrivacySettings」混淆）。通信权限的唯一来源是
+/// pallet-chat-permission 的 `permission_level`；旧的 `allow_stranger_messages`
+/// 门控字段已是死字段，随本次重命名一并删除（审计 2.8）。
+/// Renamed from `PrivacySettings` to remove the naming clash with
+/// pallet-chat-permission's identically named struct (audit 2.8). Communication
+/// gating is decided solely by pallet-chat-permission's `permission_level`; the
+/// dead `allow_stranger_messages` gate field is dropped together with the rename.
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq, TypeInfo, MaxEncodedLen)]
-pub struct PrivacySettings {
-    /// 是否允许陌生人发送消息（已弃用为纯展示标志）。
-    /// Whether strangers may message the user — DEPRECATED as a display-only hint.
-    ///
-    /// 通信权限的唯一判定来源已收敛到 pallet-chat-permission 的 `permission_level`
-    /// （Open / FriendsOnly / Whitelist / Closed）；本字段不再参与 `send_message`
-    /// 闸门，仅保留以兼容既有资料结构与前端展示。
-    /// Communication gating is now decided solely by pallet-chat-permission's
-    /// `permission_level`; this field no longer affects the `send_message` gate
-    /// and is kept only for profile-struct compatibility / display.
-    pub allow_stranger_messages: bool,
-    /// 是否显示在线状态
+pub struct ProfileDisplaySettings {
+    /// 是否显示在线状态 / whether to show online status.
     pub show_online_status: bool,
-    /// 是否显示最后活跃时间
+    /// 是否显示最后活跃时间 / whether to show last-active time.
     pub show_last_active: bool,
 }
 
-impl Default for PrivacySettings {
+impl Default for ProfileDisplaySettings {
     fn default() -> Self {
         Self {
-            allow_stranger_messages: true,
             show_online_status: true,
             show_last_active: true,
         }
@@ -116,8 +156,8 @@ pub struct ChatUserProfile<T: Config> {
     pub signature: Option<BoundedVec<u8, T::MaxSignatureLength>>,
     /// 用户状态
     pub status: UserStatus,
-    /// 隐私设置
-    pub privacy_settings: PrivacySettings,
+    /// 资料展示设置（UI 偏好；非通信权限）/ profile display settings (UI only).
+    pub privacy_settings: ProfileDisplaySettings,
     /// 创建时间戳
     pub created_at: u64,
     /// 最后活跃时间戳
@@ -137,6 +177,7 @@ pub const MAX_SESSION_READ_SCAN: u32 = 512;
 /// - 这里提供保守的默认估算
 pub trait WeightInfo {
 	fn send_message() -> Weight;
+	fn notify() -> Weight;
 	fn mark_as_read() -> Weight;
 	fn delete_message() -> Weight;
 	fn recall_message() -> Weight;
@@ -159,14 +200,21 @@ pub trait WeightInfo {
 /// - DbWrite = 100_000_000 weight (100微秒)
 pub struct SubstrateWeight<T>(core::marker::PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
-	/// 发送消息权重：5次读 + 4次写
-	/// - 读：RateLimit, Sessions, NextMessageId, SessionMessages, ChatPermission
+	/// 发送消息权重（保守估算，System 路径）：约 5 次读 + 4 次写
+	/// - 读：Sessions, NextMessageId, SessionMessages, ChatUserId 映射等
 	/// - 写：Messages, Sessions, SessionMessages, UnreadCount
 	fn send_message() -> Weight {
 		Weight::from_parts(
 			5 * 25_000_000 + 4 * 100_000_000, // 计算权重
 			0 // 存储权重（暂不考虑）
 		)
+	}
+
+	/// 程序化系统通知权重：等同 `send_message`（同走 `do_send` 的 System 分支）。
+	/// 业务 pallet 在其 extrinsic 权重中叠加本项以诚实计量通知成本。
+	/// Programmatic notify weight: same as `send_message` (shares `do_send`).
+	fn notify() -> Weight {
+		Self::send_message()
 	}
 
 	/// 标记已读权重：2次读 + 2次写
@@ -344,18 +392,28 @@ pub mod pallet {
 	use sp_std::vec::Vec;
 	use sp_std::vec;
 
-	/// 函数级详细中文注释：消息类型枚举
+	/// 消息类型枚举 / Message type.
+	///
+	/// EN: Only [`MessageType::System`] is ever stored on-chain. The human
+	/// variants (`Text`/`Image`/`File`/`Voice`) are **legacy / off-chain only**:
+	/// after the MLS convergence human messages move off-chain (MLS + relay) and
+	/// `send_message` rejects them with [`Error::HumanMessagesOffChain`]. The
+	/// variants are kept solely to preserve SCALE indices and historical decoding.
+	/// CN: 链上**只会**存储 [`MessageType::System`]。人类类型
+	/// （`Text`/`Image`/`File`/`Voice`）属**遗留 / 仅链下**：MLS 收敛后人类消息走链下
+	/// （MLS + relay），`send_message` 会以 [`Error::HumanMessagesOffChain`] 拒绝；
+	/// 这些变体仅为保持 SCALE 索引与历史解码而保留。
 	#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, TypeInfo, MaxEncodedLen, Debug)]
 	pub enum MessageType {
-		/// 文本消息
+		/// 文本消息（遗留 / 仅链下）/ Text (legacy / off-chain only)
 		Text,
-		/// 图片消息
+		/// 图片消息（遗留 / 仅链下）/ Image (legacy / off-chain only)
 		Image,
-		/// 文件消息
+		/// 文件消息（遗留 / 仅链下）/ File (legacy / off-chain only)
 		File,
-		/// 语音消息
+		/// 语音消息（遗留 / 仅链下）/ Voice (legacy / off-chain only)
 		Voice,
-		/// 系统消息（如订单状态变更）
+		/// 系统消息（链上唯一类型，如订单状态变更）/ System — the ONLY on-chain type
 		System,
 	}
 
@@ -369,9 +427,7 @@ pub mod pallet {
 	pub struct Pallet<T>(_);
 
 	#[pallet::config]
-	pub trait Config: frame_system::Config {
-		/// 事件类型
-		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+	pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
 
 		/// 权重信息
 		type WeightInfo: WeightInfo;
@@ -385,15 +441,11 @@ pub mod pallet {
 		// Removed dead config MaxSessionsPerUser / MaxMessagesPerSession (audit L):
 		// they were never used by any logic.
 
-		/// 频率限制：时间窗口（区块数）
-		/// 例如：100个区块 ≈ 10分钟（假设6秒一个块）
-		#[pallet::constant]
-		type RateLimitWindow: Get<BlockNumberFor<Self>>;
-
-		/// 频率限制：时间窗口内最大消息数
-		/// 例如：10条消息/10分钟
-		#[pallet::constant]
-		type MaxMessagesPerWindow: Get<u32>;
+		// 已移除死配置 RateLimitWindow / MaxMessagesPerWindow（审计：chat-core 历史层）：
+		// 仅服务于已不可达的人类消息限频路径，System 本就跳过限频。
+		// Removed dead config RateLimitWindow / MaxMessagesPerWindow (chat-core
+		// historical layer): they only fed the now-unreachable human-message rate
+		// limit; System always bypassed it.
 
 		/// 消息过期时间（区块数）
 		/// 例如：2_592_000个区块 ≈ 180天（假设6秒一个块）
@@ -433,7 +485,7 @@ pub mod pallet {
 		/// message `sender`.
 		///
 		/// # 安全（审计 B2）/ Security (audit B2)
-		/// 旧版 `send_message` / `send_system_message` 用 `ensure_signed`，任何账户
+		/// 旧版 `send_message` 用 `ensure_signed`，任何账户
 		/// 都能发出 `MessageType::System` 消息，从而伪造「看似平台」的系统通知。改用
 		/// 本特权来源后，System 通道仅对受信来源（如治理 / 特定系统账户）开放；普通
 		/// 人类聊天本就走链下 MLS，不经此入口。The former entries used `ensure_signed`,
@@ -442,6 +494,16 @@ pub mod pallet {
 		/// trusted source (e.g. governance / a system account); human chat is
 		/// off-chain and never uses this entry.
 		type SystemMessageOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
+
+		/// 程序化系统通知（`SystemNotifier::notify`）所记录的 `sender` 账户。
+		/// Account recorded as `sender` for programmatic System notifications.
+		///
+		/// 生产环境应配置为与 `SystemMessageOrigin` 的 success 账户**同一个**派生系统
+		/// 账户（如 PalletId 派生的 `ChatSystemMessenger`），使 extrinsic 路径与 trait
+		/// 路径落同一平台发信账户，避免「系统消息来源」分裂。Should be the SAME
+		/// derived system account as `SystemMessageOrigin`'s success value so both
+		/// the extrinsic and trait paths stamp one platform sender.
+		type SystemAccount: Get<Self::AccountId>;
 	}
 
 	/// 函数级详细中文注释：消息元数据存储
@@ -568,18 +630,14 @@ pub mod pallet {
 	// of truth); see audit finding I and the chat-core × MLS convergence design.
 	// chat-core 不再自存黑名单，发送闸门统一走 `ChatPermission::can_send_message`。
 
-	/// 函数级详细中文注释：消息发送频率限制
-	/// - Key: 用户账户
-	/// - Value: (最后发送时间, 时间窗口内发送次数)
-	/// - 用于防止垃圾消息
-	#[pallet::storage]
-	pub type MessageRateLimit<T: Config> = StorageMap<
-		_,
-		Blake2_128Concat,
-		T::AccountId,
-		(BlockNumberFor<T>, u32),  // (last_time, count)
-		ValueQuery,
-	>;
+	// 已移除 `MessageRateLimit` 存储与配套限频（审计：chat-core 历史层）。链下收敛后
+	// `send_message` 仅接受 `System`、人类消息全走链下，限频路径对外不可达；System 本就
+	// 受信跳过限频，故整套频率限制（storage + `check_rate_limit` + `RateLimitWindow` /
+	// `MaxMessagesPerWindow`）已删，零链上行为变更。
+	// Removed `MessageRateLimit` storage and its rate-limit machinery (chat-core
+	// historical layer): after off-chain convergence `send_message` accepts only
+	// `System`, the limited path is unreachable, and System always bypassed it —
+	// so the whole rate limit was dead code (no on-chain behavior change).
 
 	/// 函数级详细中文注释：已使用的聊天用户ID
 	/// - Key: ChatUserId
@@ -649,13 +707,19 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// 函数级详细中文注释：消息已发送
-		/// [msg_id, session_id, sender, receiver]
+		/// 消息已发送（链上仅 System）。单一发送事件，已合并旧 `MessageSentWithChatId`。
+		/// Message sent (on-chain: System only). Single event; the former
+		/// `MessageSentWithChatId` was merged in (audit 2.4: removed double event).
+		/// [msg_id, session_id, sender, receiver, sender_chat_id, receiver_chat_id]
 		MessageSent {
 			msg_id: u64,
 			session_id: T::Hash,
 			sender: T::AccountId,
 			receiver: T::AccountId,
+			/// 发送方 ChatUserId（如已注册）/ sender's ChatUserId if registered.
+			sender_chat_id: Option<ChatUserId>,
+			/// 接收方 ChatUserId（如已注册）/ receiver's ChatUserId if registered.
+			receiver_chat_id: Option<ChatUserId>,
 		},
 
 		/// 函数级详细中文注释：消息已读
@@ -757,14 +821,12 @@ pub mod pallet {
 			chat_user_id: ChatUserId,
 		},
 
-		/// 函数级详细中文注释：增强版消息已发送（包含ChatUserId）
-		/// [msg_id, sender_chat_id, receiver_chat_id, content_cid]
-		MessageSentWithChatId {
-			msg_id: u64,
-			sender_chat_id: Option<ChatUserId>,
-			receiver_chat_id: Option<ChatUserId>,
-			content_cid: BoundedVec<u8, T::MaxCidLen>,
-		},
+		// 已移除 `MessageSentWithChatId`（审计 2.4）：与 `MessageSent` 重复发送。
+		// 其 ChatUserId 字段已并入 `MessageSent`；`content_cid` 不再入事件（已在
+		// `Messages` 存储，避免事件冗余）。
+		// Removed `MessageSentWithChatId` (audit 2.4): it duplicated `MessageSent`.
+		// Its ChatUserId fields are folded into `MessageSent`; `content_cid` is no
+		// longer emitted (it lives in `Messages` storage).
 	}
 
 	#[pallet::error]
@@ -797,8 +859,6 @@ pub mod pallet {
 		/// denied by privacy level. Adjudicated solely by pallet-chat-permission
 		/// (single source for blacklist / stranger / privacy-level checks).
 		ChatNotAuthorized,
-		/// 发送消息过于频繁，请稍后再试
-		RateLimitExceeded,
 		/// 清理数量参数无效（必须大于0且小于等于1000）
 		InvalidCleanupLimit,
 
@@ -836,30 +896,37 @@ pub mod pallet {
 		/// on-chain. They move off-chain via MLS + relay so that *who talks to whom*
 		/// and message content never touch the chain (privacy: hide communication
 		/// relationship). Only [`MessageType::System`] is allowed on-chain via
-		/// [`send_system_message`]. CN: 人类聊天消息（Text/Image/File/Voice）不再上链，
+		/// [`Pallet::send_message`]. CN: 人类聊天消息（Text/Image/File/Voice）不再上链，
 		/// 改走链下 MLS + relay，使「谁与谁聊、聊什么」不触链（隐私：隐藏通信关系）。
-		/// 链上仅允许经 [`send_system_message`] 发送 [`MessageType::System`]。
+		/// 链上仅允许经 [`Pallet::send_message`] 发送 [`MessageType::System`]。
 		HumanMessagesOffChain,
 	}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// 发送消息（通用入口，已收窄为仅 System）。
-		/// Send a message (general entry — now narrowed to System only).
+		/// 发送链上 System 消息（**唯一**的 System 发送入口）。
+		/// Send an on-chain System message — the SINGLE canonical System entry.
 		///
 		/// # 收窄说明 / Narrowing (C-plan finalized)
 		/// 按《chat-core × MLS 收敛》路线，**人类聊天消息（Text/Image/File/Voice）
 		/// 已迁出链上**，改走链下 MLS + relay，使「谁与谁聊、聊什么」不触链
 		/// （隐私：隐藏通信关系）。本入口现仅接受 `System`（`msg_type_code == 4`）；
-		/// 传入人类消息类型一律返回 [`Error::HumanMessagesOffChain`]。新业务建议直接用
-		/// [`send_system_message`]。Human chat messages now live off-chain (MLS +
-		/// relay); this entry accepts `System` only and rejects human types with
-		/// [`Error::HumanMessagesOffChain`]. Prefer [`send_system_message`].
+		/// 传入人类消息类型一律返回 [`Error::HumanMessagesOffChain`]。
+		/// Human chat messages now live off-chain (MLS + relay); this entry accepts
+		/// `System` only and rejects human types with [`Error::HumanMessagesOffChain`].
+		///
+		/// # 合并说明（审计 2.1/2.3）/ Consolidation (audit 2.1/2.3)
+		/// 旧的重复入口 `send_system_message`（原 call_index 16）已删除——它与本函数
+		/// 行为完全一致（同走 `SystemMessageOrigin` + `do_send(System)`）。索引 16 留空
+		/// 不复用。程序化通知请用 [`crate::SystemNotifier::notify`]。
+		/// The duplicate `send_system_message` (former call_index 16) was removed —
+		/// it was behaviorally identical. Index 16 is left vacant; for programmatic
+		/// notifications use [`crate::SystemNotifier::notify`].
 		///
 		/// # 参数 / Params
 		/// - `receiver`: 接收方地址
 		/// - `content_cid`: IPFS CID（加密的消息内容）
-		/// - `msg_type_code`: 消息类型代码（仅 `4=System` 被接受）
+		/// - `msg_type_code`: 消息类型代码（保留参数，仅 `4=System` 被接受）
 		/// - `session_id`: 会话ID（可选，如果为None则自动创建新会话）
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::send_message())]
@@ -881,34 +948,12 @@ pub mod pallet {
 			Self::do_send(sender, receiver, content_cid, MessageType::System, session_id)
 		}
 
-		/// 发送系统消息（链上低频系统通道，C2 收窄后的受控入口）。
-		/// Send a system message — the sanctioned low-frequency on-chain channel.
-		///
-		/// # 说明 / Notes
-		/// 消息类型固定为 [`MessageType::System`]，用于订单状态、仲裁通知等
-		/// **低频** 系统事件；人类聊天请走链下路径（见 [`send_message`] 弃用说明）。
-		/// 与 `send_message` 共享同一套校验（统一权限闸门 + 会话参与者校验 + 限频 +
-		/// CID 加密），区别仅在于强制 `System` 类型，便于按系统消息单独治理与计量。
-		/// Forces the `System` type for low-frequency system events (order/dispute
-		/// notifications); shares the same checks as `send_message`.
-		///
-		/// # 参数 / Params
-		/// - `receiver`: 接收方地址
-		/// - `content_cid`: IPFS CID（加密的消息内容）
-		/// - `session_id`: 会话ID（可选，None 则自动创建）
-		#[pallet::call_index(16)]
-		#[pallet::weight(T::WeightInfo::send_message())]
-		pub fn send_system_message(
-			origin: OriginFor<T>,
-			receiver: T::AccountId,
-			content_cid: Vec<u8>,
-			session_id: Option<T::Hash>,
-		) -> DispatchResult {
-			// 仅特权来源可发 System 消息（审计 B2：防伪造系统通知）。
-			// Only the privileged origin may emit System messages (audit B2).
-			let sender = T::SystemMessageOrigin::ensure_origin(origin)?;
-			Self::do_send(sender, receiver, content_cid, MessageType::System, session_id)
-		}
+		// 已移除重复入口 `send_system_message`（原 call_index 16，审计 2.1/2.3）：与
+		// `send_message` 行为一致（`SystemMessageOrigin` + `do_send(System)`）。索引 16
+		// 留空不复用；程序化通知走 `SystemNotifier::notify`。
+		// Removed duplicate `send_system_message` (former call_index 16, audit 2.1/2.3):
+		// behaviorally identical to `send_message`. Index 16 left vacant; programmatic
+		// notifications use `SystemNotifier::notify`.
 
 		/// 函数级详细中文注释：标记消息已读
 		/// 
@@ -1544,22 +1589,22 @@ pub mod pallet {
 			Ok(())
 		}
 
-		/// 函数级详细中文注释：更新隐私设置
+		/// 更新资料展示设置（UI 偏好；非通信权限）。
+		/// Update profile display settings (UI preferences; not a communication gate).
 		///
-		/// # 参数
-		/// - `allow_stranger_messages`: 是否允许陌生人发送消息
-		/// - `show_online_status`: 是否显示在线状态
-		/// - `show_last_active`: 是否显示最后活跃时间
+		/// # 参数 / Params
+		/// - `show_online_status`: 是否显示在线状态 / show online status.
+		/// - `show_last_active`: 是否显示最后活跃时间 / show last-active time.
 		///
-		/// # 功能
-		/// - 更新调用者的隐私设置
-		/// - 如果用户未注册则自动创建
-		/// - 精确控制各项隐私选项
+		/// # 说明 / Notes
+		/// 已弃用的 `allow_stranger_messages` 参数已删除（审计 2.8）——通信权限只由
+		/// pallet-chat-permission 的 `permission_level` 决定。用户未注册则自动创建资料。
+		/// The deprecated `allow_stranger_messages` param was removed (audit 2.8);
+		/// communication gating is decided solely by pallet-chat-permission.
 		#[pallet::call_index(15)]
 		#[pallet::weight(T::WeightInfo::update_privacy_settings())]
 		pub fn update_privacy_settings(
 			origin: OriginFor<T>,
-			allow_stranger_messages: Option<bool>,
 			show_online_status: Option<bool>,
 			show_last_active: Option<bool>,
 		) -> DispatchResult {
@@ -1568,12 +1613,9 @@ pub mod pallet {
 			// 获取或创建聊天用户ID
 			let chat_user_id = Self::get_or_create_chat_user_id(&who)?;
 
-			// 更新隐私设置
+			// 更新展示设置
 			ChatUserProfiles::<T>::mutate(chat_user_id, |profile_opt| {
 				if let Some(ref mut profile) = profile_opt {
-					if let Some(allow_stranger) = allow_stranger_messages {
-						profile.privacy_settings.allow_stranger_messages = allow_stranger;
-					}
 					if let Some(show_online) = show_online_status {
 						profile.privacy_settings.show_online_status = show_online;
 					}
@@ -1593,14 +1635,32 @@ pub mod pallet {
 		}
 	}
 
+	/// 受信系统通知端口实现（见顶层 [`crate::SystemNotifier`]）。
+	/// Trusted system-notification port impl (see top-level [`crate::SystemNotifier`]).
+	impl<T: Config> crate::SystemNotifier<T::AccountId> for Pallet<T> {
+		fn notify(receiver: &T::AccountId, notice: Vec<u8>) -> DispatchResult {
+			// sender = 平台系统账户；session=None → 自动复用/创建 system↔receiver 会话。
+			// 复用 `do_send` 的 System 分支：受信来源跳过权限闸门与限频，仅做 CID sanity。
+			// sender = platform system account; reuse `do_send`'s System branch
+			// (skips permission gate + rate limit; CID sanity only).
+			Self::do_send(
+				T::SystemAccount::get(),
+				receiver.clone(),
+				notice,
+				MessageType::System,
+				None,
+			)
+		}
+	}
+
 	impl<T: Config> Pallet<T> {
-		/// 消息发送的共享内部实现（`send_message` 与 `send_system_message` 共用）。
-		/// Shared internal send path used by both `send_message` and `send_system_message`.
+		/// 消息发送的共享内部实现（`send_message` extrinsic 与 `SystemNotifier::notify` 共用）。
+		/// Shared internal send path used by the `send_message` extrinsic and `SystemNotifier::notify`.
 		///
-		/// 校验顺序：统一权限闸门（chat-permission 单一来源）→ 限频 → CID 长度 / 加密 →
+		/// 校验顺序：统一权限闸门（chat-permission 单一来源；System 跳过）→ CID 长度 →
 		/// 会话参与者校验（修复消息注入）→ 落库 + 索引 + 未读 + 事件。
-		/// Checks: unified permission gate → rate limit → CID length/encryption →
-		/// session participant validation → store + index + unread + events.
+		/// Checks: unified permission gate (chat-permission; System bypasses) → CID
+		/// length → session participant validation → store + index + unread + events.
 		fn do_send(
 			sender: T::AccountId,
 			receiver: T::AccountId,
@@ -1608,30 +1668,29 @@ pub mod pallet {
 			msg_type: MessageType,
 			session_id: Option<T::Hash>,
 		) -> DispatchResult {
-			// System 消息来自受信特权来源（`SystemMessageOrigin`，生产为治理 / Root），
-			// 属平台通知：必须无视接收方隐私级别送达，且受信来源不应受反垃圾限频约束。
-			// 受信边界由 `SystemMessageOrigin::ensure_origin` 在调用处强制，故此处对 System
-			// 跳过权限闸门与限频。人类消息（会被门控）已迁出链下，因此链上仅 System 放宽。
-			// System messages come from the trusted privileged origin
-			// (`SystemMessageOrigin`, governance/Root in production) and are platform
-			// notifications: they MUST reach the recipient regardless of the
-			// recipient's privacy level, and the trusted origin is not subject to
-			// anti-spam rate limiting. The trust boundary is enforced by
-			// `SystemMessageOrigin::ensure_origin` at the call site, so System bypasses
-			// the permission gate and rate limit here. Gateable human messages are
-			// off-chain, so on-chain we only relax these for System.
+			// 当前所有公开入口（`send_message` 仅接受 System、`SystemNotifier::notify`）
+			// 都只发 `System`，故下面 `!is_system` 分支对外 **不可达**；保留它仅作为共享
+			// 私有入口 `do_send` 的纵深防御（若未来有调用方路由可门控类型至此）。System 是
+			// 平台通知：来自受信来源（`SystemMessageOrigin::ensure_origin` 已在调用处强制），
+			// 必须无视接收方隐私级别直达，因此跳过权限闸门。人类消息已迁出链下（MLS + relay），
+			// 链上不再限频。
+			// All public entries (`send_message` accepts System only and
+			// `SystemNotifier::notify`) emit `System`, so the
+			// `!is_system` branch below is UNREACHABLE from outside; it is kept purely
+			// as defense-in-depth for the shared private helper `do_send`. System is a
+			// platform notification from a trusted origin (already enforced by
+			// `SystemMessageOrigin::ensure_origin` at the call site) and must reach the
+			// recipient regardless of privacy, so it bypasses the permission gate.
+			// Human messages are off-chain (MLS + relay); on-chain rate limiting was
+			// removed as dead code (audit: chat-core historical layer).
 			let is_system = matches!(msg_type, MessageType::System);
 			if !is_system {
-				// 【安全检查1】统一权限闸门（chat-permission 为唯一事实来源）。
+				// 统一权限闸门（chat-permission 为唯一事实来源；内部串联场景授权 / 隐私级别）。
 				// Single permission gate: chat-permission is the sole source of truth.
-				// 内部已串联：黑名单 → 好友 → 场景授权 → 隐私级别（审计 I）。
 				ensure!(
 					<T::ChatPermission as pallet_chat_permission::ChatPermissionChecker<T::AccountId>>::can_send_message(&sender, &receiver),
 					Error::<T>::ChatNotAuthorized
 				);
-
-				// 【安全检查2】频率限制检查
-				Self::check_rate_limit(&sender)?;
 			}
 
 			// CID 格式 sanity（非空 + 不超长）。
@@ -1682,7 +1741,7 @@ pub mod pallet {
 				receiver: receiver.clone(),
 				sender_chat_id,
 				receiver_chat_id,
-				content_cid: cid_bounded.clone(),
+				content_cid: cid_bounded,
 				session_id,
 				msg_type,
 				sent_at: now,
@@ -1711,55 +1770,19 @@ pub mod pallet {
 				*count = count.saturating_add(1);
 			});
 
-			// 触发双重事件：原有事件（向后兼容）+ 含 ChatUserId 的增强事件
+			// 单一发送事件（含 ChatUserId）。`content_cid` 不入事件——已在 `Messages`
+			// 存储，避免事件冗余。Single send event (with ChatUserId); `content_cid`
+			// stays in `Messages` storage to avoid event bloat.
 			Self::deposit_event(Event::MessageSent {
 				msg_id,
 				session_id,
 				sender,
 				receiver,
-			});
-
-			Self::deposit_event(Event::MessageSentWithChatId {
-				msg_id,
 				sender_chat_id,
 				receiver_chat_id,
-				content_cid: cid_bounded,
 			});
 
 			Ok(())
-		}
-
-		/// 函数级详细中文注释：检查消息发送频率限制
-		/// 
-		/// # 参数
-		/// - `sender`: 发送方账户
-		/// 
-		/// # 返回
-		/// - Ok(()): 通过频率限制
-		/// - Err(Error): 超过频率限制
-		/// 
-		/// # 说明
-		/// 防止用户在短时间内发送大量消息（防垃圾消息）
-		/// 限制：在RateLimitWindow个区块内最多发送MaxMessagesPerWindow条消息
-		fn check_rate_limit(sender: &T::AccountId) -> DispatchResult {
-			let now = <frame_system::Pallet<T>>::block_number();
-			let window = T::RateLimitWindow::get();
-			let max_messages = T::MaxMessagesPerWindow::get();
-
-			MessageRateLimit::<T>::try_mutate(sender, |(last_time, count)| -> DispatchResult {
-				// 检查是否在同一个时间窗口内
-				let elapsed = now.saturating_sub(*last_time);
-				if elapsed <= window {
-					// 在窗口内，检查计数
-					ensure!(*count < max_messages, Error::<T>::RateLimitExceeded);
-					*count = count.saturating_add(1);
-				} else {
-					// 超出窗口，重置计数
-					*last_time = now;
-					*count = 1;
-				}
-				Ok(())
-			})
 		}
 
 		/// 函数级详细中文注释：创建会话
@@ -2146,7 +2169,7 @@ pub mod pallet {
 				avatar_cid: None,
 				signature: None,
 				status: UserStatus::Online,
-				privacy_settings: PrivacySettings::default(),
+				privacy_settings: ProfileDisplaySettings::default(),
 				created_at: T::UnixTime::now().as_secs(),
 				last_active: T::UnixTime::now().as_secs(),
 			};

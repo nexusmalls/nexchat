@@ -65,7 +65,7 @@ pub use runtime_api::*;
 pub use types::*;
 pub use weights::WeightInfo;
 
-use frame_support::traits::{Currency, ReservableCurrency};
+use frame_support::traits::{Currency, EnsureOrigin, ReservableCurrency};
 
 /// EN: Balance type of the configured reservable currency.
 /// CN: 所配置可预留货币的余额类型。
@@ -88,6 +88,13 @@ pub mod pallet {
         /// EN: Reservable currency used for the anti-spam registration deposit.
         /// CN: 用于反垃圾注册押金的可预留货币。
         type Currency: ReservableCurrency<Self::AccountId>;
+
+        /// EN: Privileged origin allowed to force-deregister an inbox (governance
+        /// recovery, e.g. when the controller key is lost). It refunds the deposit
+        /// to the current controller; it cannot mutate epoch/tags. CN: 可强制注销
+        /// 信箱的特权来源（治理回收，如 controller 密钥丢失时）。押金退还给当前
+        /// controller；该来源不可改 epoch / 标签。
+        type ForceOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
         /// EN: Deposit reserved on `register_inbox`, returned on `deregister_inbox`.
         /// CN: `register_inbox` 预留、`deregister_inbox` 退还的押金。
@@ -147,9 +154,27 @@ pub mod pallet {
         /// CN: 为某信箱撤销了一个联系人标签（定向撤销）。
         ContactTagRevoked { inbox_id: InboxId, tag: ContactTag },
 
+        /// EN: A previously revoked contact tag was un-revoked (mistaken-revocation
+        /// recovery) without rotating the whole epoch. CN: 解除了此前撤销的联系人
+        /// 标签（误撤恢复），无需轮换整个 epoch。
+        ContactTagUnrevoked { inbox_id: InboxId, tag: ContactTag },
+
+        /// EN: Inbox control was transferred to a new controller (the deposit moved
+        /// with it). CN: 信箱控制权已转移给新的 controller（押金随之迁移）。
+        InboxControllerTransferred {
+            inbox_id: InboxId,
+            old_controller: T::AccountId,
+            new_controller: T::AccountId,
+        },
+
         /// EN: An inbox was deregistered and its deposit returned.
         /// CN: 注销了一个信箱并退还押金。
         InboxDeregistered { inbox_id: InboxId },
+
+        /// EN: An inbox was force-deregistered by the privileged origin (governance
+        /// recovery); the deposit was refunded to the controller. CN: 信箱被特权
+        /// 来源强制注销（治理回收）；押金退还给 controller。
+        InboxForceDeregistered { inbox_id: InboxId, controller: T::AccountId },
     }
 
     // ==================== 错误 / Errors ====================
@@ -167,6 +192,9 @@ pub mod pallet {
         TooManyRevokedTags,
         /// EN: Tag is already revoked. CN: 标签已被撤销。
         TagAlreadyRevoked,
+        /// EN: Tag is not in the revoked set (nothing to un-revoke).
+        /// CN: 标签不在撤销集中（无可解除项）。
+        TagNotRevoked,
         /// EN: Controller reached its inbox cap. CN: 控制账户已达信箱上限。
         TooManyInboxes,
     }
@@ -263,6 +291,103 @@ pub mod pallet {
             InboxCountByController::<T>::mutate(&who, |c| *c = c.saturating_sub(1));
 
             Self::deposit_event(Event::InboxDeregistered { inbox_id });
+            Ok(())
+        }
+
+        /// EN: Un-revoke a single contact `tag` for an inbox (mistaken-revocation
+        /// recovery): the relay accepts that contact's tokens again, without
+        /// rotating the epoch (which would invalidate *every* contact). CN: 解除
+        /// 信箱单个联系人 `tag` 的撤销（误撤恢复）：relay 重新接受该联系人的令牌，且
+        /// 无需轮换 epoch（轮换会作废*所有*联系人）。
+        #[pallet::call_index(4)]
+        #[pallet::weight(T::WeightInfo::unrevoke_tag())]
+        pub fn unrevoke_tag(origin: OriginFor<T>, inbox_id: InboxId, tag: ContactTag) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            Inboxes::<T>::try_mutate(inbox_id, |maybe| {
+                let record = maybe.as_mut().ok_or(Error::<T>::InboxNotFound)?;
+                ensure!(record.controller == who, Error::<T>::NotController);
+                let pos = record
+                    .revoked_tags
+                    .iter()
+                    .position(|t| t == &tag)
+                    .ok_or(Error::<T>::TagNotRevoked)?;
+                record.revoked_tags.remove(pos);
+                Ok::<(), DispatchError>(())
+            })?;
+            Self::deposit_event(Event::ContactTagUnrevoked { inbox_id, tag });
+            Ok(())
+        }
+
+        /// EN: Transfer control of an inbox to `new_controller`, moving the reserved
+        /// deposit with it (unreserve from caller, reserve from new). Enables planned
+        /// controller-key rotation (e.g. to a fresh throwaway key) without losing the
+        /// inbox's epoch/tag state. The new controller must be under its inbox cap and
+        /// able to cover the deposit. CN: 将信箱控制权转移给 `new_controller`，押金随之
+        /// 迁移（从调用者解押、向新 controller 预留）。支持计划内的 controller 密钥轮换
+        /// （如换到全新一次性密钥）而不丢失信箱的 epoch / 标签状态。新 controller 须未达
+        /// 信箱上限且余额足以覆盖押金。
+        #[pallet::call_index(5)]
+        #[pallet::weight(T::WeightInfo::transfer_controller())]
+        pub fn transfer_controller(
+            origin: OriginFor<T>,
+            inbox_id: InboxId,
+            new_controller: T::AccountId,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            let record = Inboxes::<T>::get(inbox_id).ok_or(Error::<T>::InboxNotFound)?;
+            ensure!(record.controller == who, Error::<T>::NotController);
+
+            // 转给自己为无操作，避免押金 / 计数的无谓搬动与上限边界。
+            // Transfer-to-self is a no-op (avoids needless deposit/count churn).
+            if new_controller == who {
+                return Ok(());
+            }
+
+            let new_count = InboxCountByController::<T>::get(&new_controller);
+            ensure!(new_count < T::MaxInboxesPerController::get(), Error::<T>::TooManyInboxes);
+
+            // 先向新 controller 预留（可能因余额不足失败 → 整体回滚），再解押旧 controller。
+            // Reserve from the new controller first (may fail on low balance → whole
+            // call rolls back), then unreserve the old one.
+            T::Currency::reserve(&new_controller, record.deposit)?;
+            T::Currency::unreserve(&who, record.deposit);
+
+            Inboxes::<T>::mutate(inbox_id, |maybe| {
+                if let Some(r) = maybe.as_mut() {
+                    r.controller = new_controller.clone();
+                }
+            });
+            InboxCountByController::<T>::mutate(&who, |c| *c = c.saturating_sub(1));
+            InboxCountByController::<T>::insert(&new_controller, new_count.saturating_add(1));
+
+            Self::deposit_event(Event::InboxControllerTransferred {
+                inbox_id,
+                old_controller: who,
+                new_controller,
+            });
+            Ok(())
+        }
+
+        /// EN: Force-deregister an inbox via the privileged [`Config::ForceOrigin`]
+        /// (governance recovery when the controller key is lost). Refunds the deposit
+        /// to the current controller and frees its slot; existing tokens become
+        /// undeliverable. CN: 经特权 [`Config::ForceOrigin`] 强制注销信箱（controller
+        /// 密钥丢失时的治理回收）。押金退还给当前 controller 并释放其槽位；现有令牌随之
+        /// 不可投递。
+        #[pallet::call_index(6)]
+        #[pallet::weight(T::WeightInfo::force_deregister_inbox())]
+        pub fn force_deregister_inbox(origin: OriginFor<T>, inbox_id: InboxId) -> DispatchResult {
+            T::ForceOrigin::ensure_origin(origin)?;
+            let record = Inboxes::<T>::get(inbox_id).ok_or(Error::<T>::InboxNotFound)?;
+
+            T::Currency::unreserve(&record.controller, record.deposit);
+            Inboxes::<T>::remove(inbox_id);
+            InboxCountByController::<T>::mutate(&record.controller, |c| *c = c.saturating_sub(1));
+
+            Self::deposit_event(Event::InboxForceDeregistered {
+                inbox_id,
+                controller: record.controller,
+            });
             Ok(())
         }
     }

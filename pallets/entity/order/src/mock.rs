@@ -1037,6 +1037,56 @@ parameter_types! {
     pub PlatformAccount: u64 = 100;
 }
 
+thread_local! {
+    /// 记录系统通知调用 (to, notice)。/ Records notify calls as (to, notice).
+    pub static NOTIFY_LOG: core::cell::RefCell<Vec<(u64, Vec<u8>)>> =
+        core::cell::RefCell::new(Vec::new());
+}
+
+/// 记录式订单通知 mock：把每次 notify 落入 `NOTIFY_LOG` 供断言。
+/// Recording order-notifier mock: appends each call to `NOTIFY_LOG`.
+pub struct RecordingNotifier;
+impl pallet_entity_order::OrderNotifier<u64> for RecordingNotifier {
+    fn notify(to: &u64, notice: Vec<u8>) {
+        NOTIFY_LOG.with(|l| l.borrow_mut().push((*to, notice)));
+    }
+}
+
+/// 读取通知日志（测试辅助）。/ Read the notify log (test helper).
+#[allow(dead_code)]
+pub fn notify_log() -> Vec<(u64, Vec<u8>)> {
+    NOTIFY_LOG.with(|l| l.borrow().clone())
+}
+
+thread_local! {
+    /// 记录订单聊天授权调用：(granted?, order_id, buyer, seller)。
+    /// Records order chat-auth calls as (granted?, order_id, buyer, seller).
+    pub static CHAT_LOG: core::cell::RefCell<Vec<(bool, u64, u64, u64)>> =
+        core::cell::RefCell::new(Vec::new());
+}
+
+/// 记录式订单聊天授权 mock：把 grant/revoke 落入 `CHAT_LOG` 供断言。
+/// Recording order chat-authorizer mock: appends grant/revoke to `CHAT_LOG`.
+pub struct RecordingChat;
+impl pallet_entity_order::OrderChatAuthorizer<u64> for RecordingChat {
+    fn grant(order_id: u64, buyer: &u64, seller: &u64) {
+        CHAT_LOG.with(|l| l.borrow_mut().push((true, order_id, *buyer, *seller)));
+    }
+    fn revoke(order_id: u64, buyer: &u64, seller: &u64) {
+        CHAT_LOG.with(|l| l.borrow_mut().push((false, order_id, *buyer, *seller)));
+    }
+}
+
+/// 取出并清空已记录的聊天授权事件（测试辅助）。/ Drain recorded chat-auth events.
+#[allow(dead_code)]
+pub fn drain_chat_log() -> Vec<(bool, u64, u64, u64)> {
+    CHAT_LOG.with(|l| {
+        let v = l.borrow().clone();
+        l.borrow_mut().clear();
+        v
+    })
+}
+
 impl pallet_entity_order::Config for Test {
     type Currency = Balances;
     type Escrow = MockEscrow;
@@ -1063,6 +1113,8 @@ impl pallet_entity_order::Config for Test {
     type MaxPayerOrders = ConstU32<1000>;
     type MaxShopOrders = ConstU32<10000>;
     type MaxExpiryQueueSize = ConstU32<500>;
+    type Notifier = RecordingNotifier;
+    type Chat = RecordingChat;
     type WeightInfo = ();
 }
 
@@ -1116,6 +1168,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
         TOKEN_FEE_RATES.with(|r| r.borrow_mut().clear());
         TOKEN_PRICE_NEX.with(|p| p.borrow_mut().clear());
         TOKEN_PRICE_RELIABLE.with(|r| r.borrow_mut().clear());
+        NOTIFY_LOG.with(|l| l.borrow_mut().clear());
     });
     ext
 }

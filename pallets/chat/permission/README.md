@@ -78,7 +78,6 @@ T::ChatPermission::grant_bidirectional_scene_authorization(
 ## 事件
 
 - `PrivacySettingsUpdated`
-- `UserBlocked` / `UserUnblocked`
 - `CapabilityEpochBumped`
 - `SceneAuthorizationGranted` / `SceneAuthorizationRevoked`
 - `AccountMuted` / `AccountUnmuted` / `ReportFiled` / `ReportResolved`

@@ -14,7 +14,10 @@ pub trait WeightInfo {
     fn register_inbox() -> Weight;
     fn bump_epoch() -> Weight;
     fn revoke_tag() -> Weight;
+    fn unrevoke_tag() -> Weight;
+    fn transfer_controller() -> Weight;
     fn deregister_inbox() -> Weight;
+    fn force_deregister_inbox() -> Weight;
 }
 
 /// Benchmarked weights. / 实测权重。
@@ -39,8 +42,28 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
+    /// Storage: Inboxes (r:1 w:1). Estimate (≈ `revoke_tag`); re-bench before mainnet.
+    fn unrevoke_tag() -> Weight {
+        Weight::from_parts(38_443_000, 11763)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+    /// Storage: Inboxes (r:1 w:1), InboxCountByController (r:1 w:2) + currency
+    /// reserve/unreserve. Estimate; re-bench before mainnet.
+    fn transfer_controller() -> Weight {
+        Weight::from_parts(85_000_000, 11763)
+            .saturating_add(T::DbWeight::get().reads(4))
+            .saturating_add(T::DbWeight::get().writes(5))
+    }
     /// Storage: Inboxes (r:1 w:1), InboxCountByController (r:1 w:1).
     fn deregister_inbox() -> Weight {
+        Weight::from_parts(79_362_000, 11763)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+    /// Storage: Inboxes (r:1 w:1), InboxCountByController (r:1 w:1) + currency
+    /// unreserve. Estimate (≈ `deregister_inbox`); re-bench before mainnet.
+    fn force_deregister_inbox() -> Weight {
         Weight::from_parts(79_362_000, 11763)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(2))
@@ -51,5 +74,8 @@ impl WeightInfo for () {
     fn register_inbox() -> Weight { Weight::from_parts(20_000_000, 0) }
     fn bump_epoch() -> Weight { Weight::from_parts(15_000_000, 0) }
     fn revoke_tag() -> Weight { Weight::from_parts(15_000_000, 0) }
+    fn unrevoke_tag() -> Weight { Weight::from_parts(15_000_000, 0) }
+    fn transfer_controller() -> Weight { Weight::from_parts(25_000_000, 0) }
     fn deregister_inbox() -> Weight { Weight::from_parts(20_000_000, 0) }
+    fn force_deregister_inbox() -> Weight { Weight::from_parts(20_000_000, 0) }
 }

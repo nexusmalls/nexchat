@@ -16,24 +16,32 @@
 
 ## 2. 消息发送（仅 System 上链）
 
-两个入口，均把消息类型固定为 `System` 落库：
+**唯一**入口，把消息类型固定为 `System` 落库：
 
 | call_index | extrinsic | 说明 |
 | --- | --- | --- |
-| 0 | `send_message(receiver, content_cid, msg_type_code, session_id)` | 通用入口，**已收窄**：仅接受 `msg_type_code == 4`（System），其余返回 `HumanMessagesOffChain` |
-| 16 | `send_system_message(receiver, content_cid, session_id)` | 推荐入口，强制 `System` 类型 |
+| 0 | `send_message(receiver, content_cid, msg_type_code, session_id)` | **唯一** System 入口，**已收窄**：仅接受 `msg_type_code == 4`（System），其余返回 `HumanMessagesOffChain` |
+
+> 旧的重复入口 `send_system_message`（原 call_index 16）已删除（审计 2.1）——它与
+> `send_message` 行为完全一致（同走 `SystemMessageOrigin` + `do_send(System)`）；索引 16
+> 留空不复用。程序化通知用 `SystemNotifier::notify`。
 
 ### 受信来源与权限模型（重要）
 
-两个入口都经 `SystemMessageOrigin: EnsureOrigin<_, Success = AccountId>` 鉴权：
+入口经 `SystemMessageOrigin: EnsureOrigin<_, Success = AccountId>` 鉴权：
 - 生产 runtime 配置为 `EnsureRootWithSuccess<AccountId, ChatSystemMessenger>`——
   **仅治理 / Root** 可发，`sender` 记为 PalletId 派生的系统账户（防止任意用户伪造系统通知，审计 B2）。
 - 单测 mock 用 `EnsureSigned` 以保留既有用例语义。
 
-System 消息是平台通知，必须无视接收方隐私级别送达，且受信来源不受反垃圾限频约束，
-因此 **System 消息绕过 `ChatPermission::can_send_message` 权限闸门与频率限制**——
-受信边界由 `SystemMessageOrigin` 在入口处强制。权限闸门与限频仅对（当前不存在的）
-非 System 路径生效，作为未来扩展的预留。
+System 消息是平台通知，必须无视接收方隐私级别送达，
+因此 **System 消息绕过 `ChatPermission::can_send_message` 权限闸门**——
+受信边界由 `SystemMessageOrigin` 在入口处强制。权限闸门仅对（当前不存在的）
+非 System 路径生效，作为共享内部入口 `do_send` 的纵深防御预留。
+
+> 链上频率限制已整体移除（审计：chat-core 历史层）：链下收敛后 `send_message`
+> 仅接受 `System`、人类消息全走链下，限频路径对外不可达，且 System 本就跳过限频，
+> 故 `MessageRateLimit` 存储、`check_rate_limit` 与配置 `RateLimitWindow` /
+> `MaxMessagesPerWindow` 一并删除，零链上行为变更。
 
 ### CID 校验
 
@@ -70,10 +78,12 @@ System 消息是平台通知，必须无视接收方隐私级别送达，且受�
 | 12 | `register_chat_user(nickname?)` |
 | 13 | `update_chat_profile(nickname?, avatar_cid?, signature?)` |
 | 14 | `set_user_status(status_code)` |
-| 15 | `update_privacy_settings(allow_stranger?, show_online?, show_last_active?)` |
+| 15 | `update_privacy_settings(show_online?, show_last_active?)` |
 
-> `PrivacySettings.allow_stranger_messages` 已弃用为纯展示标志；通信权限的唯一判定
-> 来源是 `pallet-chat-permission` 的 `permission_level`。
+> 资料展示设置结构原名 `PrivacySettings`，已重命名为 `ProfileDisplaySettings`（审计 2.8），
+> 以消除与 `pallet-chat-permission::PrivacySettings` 的同名混淆；其死字段
+> `allow_stranger_messages` 及对应入参一并删除。通信权限的唯一判定来源是
+> `pallet-chat-permission` 的 `permission_level`。
 
 ## 5. 运维：过期消息清理
 
@@ -88,7 +98,6 @@ System 消息是平台通知，必须无视接收方隐私级别送达，且受�
   `SessionMessages(session, msg_id) -> ()`
 - `UnreadCount((account, session)) -> u32`
 - `SessionMuted` / `SessionPinned`（每用户、每会话）
-- `MessageRateLimit`（非 System 路径限频状态）
 - `AccountToChatUserId` / `ChatUserIdToAccount` / `ChatUserProfiles` / `UsedChatUserIds` / `NextChatUserId`
 
 > 黑名单存储与 `block_user`/`unblock_user`（原 call_index 6/7）已移除，索引留空不复用；
@@ -97,12 +106,13 @@ System 消息是平台通知，必须无视接收方隐私级别送达，且受�
 
 ## 7. 配置（`Config`）
 
-`RuntimeEvent`、`WeightInfo`、`MaxCidLen`、`RateLimitWindow`、`MaxMessagesPerWindow`、
-`MessageExpirationTime`、`MessageRecallWindow`、`Randomness`、`UnixTime`、
-`MaxNicknameLength`、`MaxSignatureLength`、`ChatPermission`（权限端口）、
-`SystemMessageOrigin`（System 通道特权来源）。
+`RuntimeEvent`、`WeightInfo`、`MaxCidLen`、`MessageExpirationTime`、
+`MessageRecallWindow`、`Randomness`、`UnixTime`、`MaxNicknameLength`、
+`MaxSignatureLength`、`ChatPermission`（权限端口）、`SystemMessageOrigin`
+（System 通道特权来源）、`SystemAccount`（程序化通知发信账户）。
 
-> 历史死配置 `MaxSessionsPerUser` / `MaxMessagesPerSession` 已移除（审计 L）。
+> 历史死配置 `MaxSessionsPerUser` / `MaxMessagesPerSession`（审计 L）与
+> `RateLimitWindow` / `MaxMessagesPerWindow`（限频随死路径移除）已删除。
 
 ## 8. 查询 / Runtime API
 

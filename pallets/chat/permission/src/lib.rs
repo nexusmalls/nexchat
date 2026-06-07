@@ -859,7 +859,10 @@ pub mod pallet {
             Ok(())
         }
 
-        /// 检查是否有任何有效的场景授权
+        /// 检查是否有任何有效的场景授权（仅判过期；**不**套用 `rejected_scene_types` /
+        /// 禁言 / 隐私级别——非权限门控事实来源，门控请用 `check_permission`）。
+        /// Expiry-only check; does NOT apply `rejected_scene_types` / mute / privacy —
+        /// not the permission gate (use `check_permission`). See trait doc.
         fn has_any_valid_scene_authorization(from: &T::AccountId, to: &T::AccountId) -> bool {
             let current_block = frame_system::Pallet::<T>::block_number();
             let (user1, user2) = Self::sorted_pair(from, to);

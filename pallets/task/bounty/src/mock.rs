@@ -88,6 +88,9 @@ thread_local! {
     /// Records chat authorization calls as (is_grant, bounty_id, poster, solver). / 记录聊天授权调用。
     pub static CHAT_LOG: core::cell::RefCell<Vec<(bool, u64, AccountId, AccountId)>> =
         core::cell::RefCell::new(Vec::new());
+    /// 记录系统通知 (to, notice)。/ Records notify calls.
+    pub static NOTIFY_LOG: core::cell::RefCell<Vec<(AccountId, Vec<u8>)>> =
+        core::cell::RefCell::new(Vec::new());
 }
 
 /// Mock chat authorizer: records grant/revoke into `CHAT_LOG`. / 记录式聊天授权 mock。
@@ -104,6 +107,20 @@ impl pallet_task_bounty::ChatAuthorizer<AccountId> for RecordingChat {
 /// Test helper: drain and return the recorded chat actions. / 取出并清空已记录的聊天动作。
 pub fn chat_log_take() -> Vec<(bool, u64, AccountId, AccountId)> {
     CHAT_LOG.with(|l| core::mem::take(&mut *l.borrow_mut()))
+}
+
+/// 记录式悬赏通知 mock。/ Recording bounty-notifier mock.
+pub struct RecordingNotifier;
+impl pallet_task_bounty::BountyNotifier<AccountId> for RecordingNotifier {
+    fn notify(to: &AccountId, notice: Vec<u8>) {
+        NOTIFY_LOG.with(|l| l.borrow_mut().push((*to, notice)));
+    }
+}
+
+/// 读取通知日志。/ Read the notify log.
+#[allow(dead_code)]
+pub fn notify_log() -> Vec<(AccountId, Vec<u8>)> {
+    NOTIFY_LOG.with(|l| l.borrow().clone())
 }
 
 impl pallet_task_bounty::Config for Test {
@@ -125,6 +142,7 @@ impl pallet_task_bounty::Config for Test {
     type Evidence = MockEvidence;
     type GroundPromoCategory = GroundPromoCategory;
     type Chat = RecordingChat;
+    type Notifier = RecordingNotifier;
     type BountyReputation = TaskBounty;
     type MinSolverReputation = ConstU32<1000>;
     type MinPosterReputation = ConstU32<1000>;
@@ -151,7 +169,11 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     .unwrap();
 
     let mut ext = sp_io::TestExternalities::new(t);
-    ext.execute_with(|| System::set_block_number(1));
+    ext.execute_with(|| {
+        System::set_block_number(1);
+        NOTIFY_LOG.with(|l| l.borrow_mut().clear());
+        CHAT_LOG.with(|l| l.borrow_mut().clear());
+    });
     ext
 }
 
