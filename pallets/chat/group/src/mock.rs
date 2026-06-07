@@ -101,7 +101,6 @@ pub fn drain_hook_events() -> Vec<(bool, GroupId, u64, u64)> {
 }
 
 impl pallet_chat_group::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type GroupDeposit = ConstU128<100>;
     type KeyPackageDeposit = ConstU128<10>;

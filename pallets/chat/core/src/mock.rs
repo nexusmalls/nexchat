@@ -61,14 +61,13 @@ impl frame_system::Config for Test {
 parameter_types! {
 	/// IPFS CID最大长度：100字节（足够容纳加密后的CID）
 	pub const MaxCidLen: u32 = 100;
-	/// 频率限制：时间窗口（100个区块 ≈ 10分钟）
-	pub const RateLimitWindow: u64 = 100;
-	/// 频率限制：时间窗口内最大消息数（10条/10分钟）
-	pub const MaxMessagesPerWindow: u32 = 10;
 	/// 消息过期时间：1000个区块（测试用）
 	pub const MessageExpirationTime: u64 = 1000;
 	/// 撤回时间窗口：50个区块（测试用）
 	pub const MessageRecallWindow: u64 = 50;
+	/// 程序化系统通知的发信账户（测试用，区别于普通账户 1..=4）。
+	/// Platform system sender account for programmatic notifications (test).
+	pub const SystemChatAccount: u64 = 9_999;
 }
 
 thread_local! {
@@ -150,11 +149,8 @@ impl pallet_chat_permission::ChatPermissionChecker<u64> for MockPermission {
 }
 
 impl pallet_chat::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
 	type WeightInfo = pallet_chat::SubstrateWeight<Test>;
 	type MaxCidLen = MaxCidLen;
-	type RateLimitWindow = RateLimitWindow;
-	type MaxMessagesPerWindow = MaxMessagesPerWindow;
 	type MessageExpirationTime = MessageExpirationTime;
 	type MessageRecallWindow = MessageRecallWindow;
 	// ChatUserId相关配置
@@ -168,6 +164,7 @@ impl pallet_chat::Config for Test {
 	// Permissive in tests (signed origin → sender = signer) so existing cases
 	// stay valid; production gates this to governance / a system account.
 	type SystemMessageOrigin = frame_system::EnsureSigned<u64>;
+	type SystemAccount = SystemChatAccount;
 }
 
 /// 函数级详细中文注释：构建测试存储
