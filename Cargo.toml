@@ -41,7 +41,6 @@ members = [
     "pallets/entity/tokensale",
     "pallets/entity/loyalty",
 # Task pallets (任务悬赏)
-    "pallets/task/bounty",
 # Chat pallets (聊天系统)
     "pallets/chat/common",
     "pallets/chat/permission",
@@ -108,7 +107,6 @@ pallet-commission-pool-reward = { path = "./pallets/entity/commission/pool-rewar
 pallet-entity-commission = { path = "./pallets/entity/commission", default-features = false }
 pallet-entity-product = { path = "./pallets/entity/product", default-features = false }
 pallet-entity-order = { path = "./pallets/entity/order", default-features = false }
-pallet-task-bounty = { path = "./pallets/task/bounty", default-features = false }
 pallet-chat-common = { path = "./pallets/chat/common", default-features = false }
 pallet-chat-permission = { path = "./pallets/chat/permission", default-features = false }
 pallet-chat-core = { path = "./pallets/chat/core", default-features = false }

@@ -75,7 +75,6 @@ pallet-commission-pool-reward = { workspace = true }
 pallet-entity-commission = { workspace = true }
 pallet-entity-product = { workspace = true }
 pallet-entity-order = { workspace = true }
-pallet-task-bounty = { workspace = true }
 pallet-chat-common = { workspace = true }
 pallet-chat-permission = { workspace = true }
 pallet-chat-core = { workspace = true }
@@ -189,7 +188,6 @@ std = [
 	"pallet-entity-commission/std",
 	"pallet-entity-product/std",
 	"pallet-entity-order/std",
-	"pallet-task-bounty/std",
 	"pallet-chat-common/std",
 	"pallet-chat-permission/std",
 	"pallet-chat-core/std",
@@ -273,7 +271,6 @@ runtime-benchmarks = [
 	"pallet-entity-shop/runtime-benchmarks",
 	"pallet-entity-product/runtime-benchmarks",
 	"pallet-entity-order/runtime-benchmarks",
-	"pallet-task-bounty/runtime-benchmarks",
 	"pallet-chat-permission/runtime-benchmarks",
 	"pallet-chat-core/runtime-benchmarks",
 	"pallet-chat-group/runtime-benchmarks",
@@ -335,7 +332,6 @@ try-runtime = [
 	"sp-runtime/try-runtime",
 	# Commission pallets try-runtime
 	"pallet-commission-common/try-runtime",
-	"pallet-task-bounty/try-runtime",
 	"pallet-chat-permission/try-runtime",
 	"pallet-chat-core/try-runtime",
 	"pallet-chat-group/try-runtime",

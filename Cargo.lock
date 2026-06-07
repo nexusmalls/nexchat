@@ -6068,7 +6068,6 @@ dependencies = [
  "pallet-storage-lifecycle",
  "pallet-storage-service",
  "pallet-sudo",
- "pallet-task-bounty",
  "pallet-timestamp",
  "pallet-trading-common",
  "pallet-transaction-payment",
@@ -7614,22 +7613,6 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "parity-scale-codec",
- "scale-info",
- "sp-io 45.0.0",
- "sp-runtime 46.0.0",
-]
-
-[[package]]
-name = "pallet-task-bounty"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "pallet-balances",
- "pallet-dispute-escrow",
  "parity-scale-codec",
  "scale-info",
  "sp-io 45.0.0",
