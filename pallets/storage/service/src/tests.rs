@@ -119,7 +119,6 @@ impl frame_system::offchain::CreateBare<crate::Call<Test>> for Test {
 }
 
 impl crate::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type Balance = Balance;
     type FeeCollector = IpfsPoolAccount; // 简化测试
