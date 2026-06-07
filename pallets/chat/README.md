@@ -393,7 +393,7 @@ polkadot-js 客户端用 JSON 友好类型直接调用。所有方法只读且�
     禁言/隐私级别，非权限门控事实来源」（门控唯一事实来源为 `check_permission` / `can_send_message`）；
     `permission` README 事件列表删除已移除的 `UserBlocked`/`UserUnblocked`；RPC `permission_level_label`
     标注 `"whitelist"` 为 `"friendsOnly"` 的弃用别名（保留字符串兼容，前端不应再作独立选项）。
-  - **订单场景接线**（补齐 `SceneType::Order` 生产路径，对齐 `pallet-task-bounty::ChatAuthorizer`）：
+  - **订单场景接线**（补齐 `SceneType::Order` 生产路径）：
     `pallet-entity-order` 新增 `OrderChatAuthorizer` 端口与 `Config::Chat`；**非即时订单**创建时授予买卖
     双方双向场景授权（`source = *b"entorder"`，`scene_id = Numeric(order_id)`），完成 / 取消 / 退款 / 超时
     等**所有终态**经统一收口 `do_complete_order` / `do_cancel_or_refund` 撤销。数字（即时完成）订单不开聊。

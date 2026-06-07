@@ -34,7 +34,7 @@ pub use pallet_entity_common::OrderStatus;
 /// chat-core's System channel.
 ///
 /// # 解耦与尽力而为 / Decoupling & best-effort
-/// 与 `pallet-chat-core` 解耦（仿 `pallet-task-bounty::ChatAuthorizer`）：order 仅依赖
+/// 与 `pallet-chat-core` 解耦：order 仅依赖
 /// 本 trait，由 runtime 适配器调用 `ChatCore::notify`。调用为**尽力而为**：通知失败
 /// **绝不**回滚订单状态转移（适配器吞错）。`()` 提供 no-op 默认实现,便于 mock/可选接线。
 /// Decoupled from `pallet-chat-core`; the runtime adapter calls `ChatCore::notify`.
@@ -55,14 +55,13 @@ impl<AccountId> OrderNotifier<AccountId> for () {
 /// calls to chat-permission scene authorizations.
 ///
 /// # 解耦与尽力而为 / Decoupling & best-effort
-/// EN: Decoupled from `pallet-chat-permission` (mirrors
-/// `pallet-task-bounty::ChatAuthorizer`): the order pallet depends only on this
+/// EN: Decoupled from `pallet-chat-permission`: the order pallet depends only on this
 /// trait, and the runtime adapter grants/revokes a bidirectional buyer↔seller
 /// scene authorization (`source = *b"entorder"`, `SceneType::Order`,
 /// `scene_id = Numeric(order_id)`). Calls are **best-effort**: a failure (e.g.
 /// the pair's scene table is full) MUST NEVER abort an order state transition —
 /// the adapter swallows errors. `()` is a no-op default for mocks/optional wiring.
-/// CN: 与 `pallet-chat-permission` 解耦（仿 `pallet-task-bounty::ChatAuthorizer`）：
+/// CN: 与 `pallet-chat-permission` 解耦：
 /// 订单模块仅依赖本 trait，由 runtime 适配器授予/撤销买卖双方的双向场景授权
 /// （`source = *b"entorder"`，`SceneType::Order`，`scene_id = Numeric(order_id)`）。
 /// 调用为**尽力而为**：失败（如该用户对的场景表已满）**绝不**回滚订单状态转移——
