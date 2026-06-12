@@ -401,7 +401,7 @@ docker run -p 9944:9944 -p 30333:30333 nexus-node --dev --rpc-external
 | **终局共识** | GRANDPA |
 | **SS58 格式** | 42 |
 | **Runtime 名称** | nexus |
-| **Spec 版本** | 100 |
+| **Spec 版本** | 102 |
 
 ## 技术栈
 

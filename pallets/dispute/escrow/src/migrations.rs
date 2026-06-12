@@ -38,7 +38,7 @@ impl<T: crate::Config> OnRuntimeUpgrade for V2RemoveLockNonces<T> {
     #[cfg(feature = "try-runtime")]
     fn pre_upgrade() -> Result<Vec<u8>, TryRuntimeError> {
         let on_chain = StorageVersion::get::<crate::Pallet<T>>();
-        log::info!(target: "escrow::migration", "v2 pre_upgrade: on_chain_version={}", on_chain);
+        log::info!(target: "escrow::migration", "v2 pre_upgrade: on_chain_version={:?}", on_chain);
         Ok(Vec::new())
     }
 
