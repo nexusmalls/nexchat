@@ -237,7 +237,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 	/// 撤回消息权重（实测 / benchmarked）：Messages + UnreadCount（r:2 w:2）。
 	fn recall_message() -> Weight {
-		Weight::from_parts(50_857_000, 3710)
+		Weight::from_parts(49_236_000, 3710)
 			.saturating_add(T::DbWeight::get().reads(2))
 			.saturating_add(T::DbWeight::get().writes(2))
 	}
@@ -271,14 +271,14 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 	/// 设置会话免打扰权重（实测 / benchmarked）：Sessions(r:1) + SessionMuted(w:1)。
 	fn set_session_muted() -> Weight {
-		Weight::from_parts(40_832_000, 3627)
+		Weight::from_parts(42_445_000, 3627)
 			.saturating_add(T::DbWeight::get().reads(1))
 			.saturating_add(T::DbWeight::get().writes(1))
 	}
 
 	/// 设置会话置顶权重（实测 / benchmarked）：Sessions(r:1) + SessionPinned(w:1)。
 	fn set_session_pinned() -> Weight {
-		Weight::from_parts(42_137_000, 3627)
+		Weight::from_parts(45_174_000, 3627)
 			.saturating_add(T::DbWeight::get().reads(1))
 			.saturating_add(T::DbWeight::get().writes(1))
 	}

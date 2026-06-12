@@ -71,7 +71,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 101,
+    spec_version: 102,
     impl_version: 1,
     apis: apis::RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -337,6 +337,11 @@ mod runtime {
     // Off-chain delivery inbox registry (first free index after the 70-77 committees).
     #[runtime::pallet_index(78)]
     pub type ChatInbox = pallet_chat_inbox;
+
+    // 账户派生加密同步锚（EISA，CHAT_SYNC_ANCHOR_ADR §5）。
+    // Account-derived Encrypted Sync Anchor (EISA, CHAT_SYNC_ANCHOR_ADR §5).
+    #[runtime::pallet_index(79)]
+    pub type ChatSync = pallet_chat_sync;
 
     // ============================================================================
     // Smart Contracts

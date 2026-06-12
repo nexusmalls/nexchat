@@ -104,7 +104,21 @@ tiered Pin service (or off-chain hosting).
 
 ## 6. 持久化与计费
 
-IPFS 上传 ≠ 永久。大文件按重要性分级 Pin：
+**默认策略（2026-06，NexChat 已实现）**：
+
+| 层级 | 聊天媒体 | sync blob（index/contacts/archive） |
+|---|---|---|
+| 链上 / 运营全局 Pin | **默认关**（`VITE_IPFS_PIN_ENABLED=false`） | §5.8 三层 pin（热/持久/灾备） |
+| 发送方本机 kubo pin | **默认开** + TTL（`VITE_IPFS_MEDIA_LOCAL_PIN` / `…_TTL_MS`，默认 30 天）；1:1 接收方 `media_ack` 后收短为 1h 宽限 | 始终 `pin=true` |
+| 阅后即焚 | `pin=false`，不登记 retention | — |
+| 接收方 | 下载后本地 `MediaStore` 缓存；全量下载成功回发 `media_ack`（仅 1:1） | — |
+| 用户「保留附件 ☆」 | 标星豁免清理 + 发送方移出 retention；LIVE 模式链上 Pin（正文 Temporary / thumb Standard） | — |
+
+EN: Chat media is **not** globally pinned by default. Senders keep a **local kubo pin + TTL**
+(`nexchat/src/ipfs/senderMediaRetention.ts`); receivers cache locally. Optional chain Pin remains
+opt-in. Sync blobs stay on the §5.8 multi-layer pin path.
+
+IPFS 上传 ≠ 永久。**可选**链上分级 Pin（用户显式开启或标记「保留附件」时）：
 
 | 数据 | 建议 Tier | 副本 | 理由 |
 |---|---|---|---|
@@ -113,11 +127,12 @@ IPFS 上传 ≠ 永久。大文件按重要性分级 Pin：
 | 用户标记"重要" | Standard / Critical | 3 / 5 | 升级保留 |
 | 证据 / 合规文件 | Critical | 5 | 法律留痕（走 evidence 域） |
 
-落地（链上留痕场景）：发送方对各 CID 调 `request_pin_for_subject(subject_id, cid, size_bytes, tier)`；
+落地（**opt-in** 链上留痕）：发送方对各 CID 调 `request_pin_for_subject(subject_id, cid, size_bytes, tier)`；
 到期 `renew_pin` 续费，否则宽限后 unpin。
 
 省成本策略：
-- 大文件默认 **Temporary + 短周期**；缩略图常驻，正文可过期（过期后显示"文件已过期，请对方重发"）。
+- 默认依赖**发送方本机 TTL + 接收方本地缓存**；过期后显示「文件已过期，请对方重发」。
+- 大文件链上 Pin 默认 **关**；开启时用 **Temporary + 短周期**。
 - 阅后即焚文件：relay 设 TTL + **不 Pin**（对齐 P3 ephemeral）；到期 relay 不再投递、客户端本地销毁。
 
 ## 7. 与"隐藏通信关系 / 全链下"方案的衔接

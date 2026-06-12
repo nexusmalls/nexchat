@@ -1,5 +1,6 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
+use crate::chain_spec;
 use futures::FutureExt;
 use nexus_runtime::{self, apis::RuntimeApi, opaque::Block};
 use sc_client_api::{Backend, BlockBackend};
@@ -41,6 +42,8 @@ pub fn new_partial(
     >,
     ServiceError,
 > {
+    chain_spec::set_default_ss58_from_spec(&*config.chain_spec);
+
     let telemetry = config
         .telemetry_endpoints
         .clone()

@@ -1,4 +1,4 @@
-# pallet-entity-market v2.4.0
+# pallet-entity-market v2.5.0
 
 > 实体代币 P2P 交易市场 | Runtime Index: 126
 
@@ -47,7 +47,7 @@
 │  维护 (任何人)               │  on_idle 自动清理               │
 │  cleanup_expired_orders(29)  │  游标扫描 → 退资产 → 释名额    │
 ├──────────────────────────────┴────────────────────────────────┤
-│  TWAP 预言机: 异常价格过滤 → 累积器 → 1h/24h/7d 滚动快照     │
+│  TWAP 预言机: 异常价格过滤 → 累积器 → 1h/24h/7d 双 checkpoint │
 └──────────────────────────────────────────────────────────────┘
          │               │               │
     EntityProvider   TokenProvider   DisclosureProvider
@@ -128,9 +128,11 @@ on_trade_completed → TWAP 更新 → 日统计 → 熔断检查
   ├── update_twap_accumulator()
   │     ├── 异常价格过滤: 偏离上次价格 >100% → 限幅至 ±50%
   │     ├── 累积价格更新: cumulative += last_price × blocks_elapsed
-  │     ├── 1h 快照: 每 ~10 分钟滚动更新
-  │     ├── 24h 快照: 每 ~1 小时滚动更新
-  │     └── 7d 快照: 每 ~1 天滚动更新
+  │     ├── 记录 first_trade_block（首笔真实成交，历史覆盖起点）
+  │     └── 双 checkpoint 轮换: curr 距今 >= 1 个周期时 prev ← curr, curr ← 当前
+  │           ├── 1h:  prev/curr（活跃市场 prev 年龄 1~2 小时）
+  │           ├── 24h: prev/curr（活跃市场 prev 年龄 1~2 天）
+  │           └── 7d:  prev/curr（活跃市场 prev 年龄 1~2 周）
   │
   ├── update_last_trade_price()
   ├── emit TwapUpdated { twap_1h, twap_24h, twap_7d }
@@ -138,12 +140,17 @@ on_trade_completed → TWAP 更新 → 日统计 → 熔断检查
         └── 偏离 7d TWAP > threshold → 触发熔断
 ```
 
-**TWAP 计算**: `(current_cumulative - snapshot_cumulative) / block_diff`
+**TWAP 计算**: `(current_cumulative - checkpoint_cumulative) / block_diff`。
+选取"距今至少一个周期、且最接近一个周期"的 checkpoint（curr 满周期则用 curr，否则用 prev），保证测量窗口真实覆盖命名周期；市场早期两者都不足一个周期时退化为最旧 checkpoint（短窗口尽力估计）。
 
 **价格偏离检查优先级** (`check_price_deviation`):
-1. 成交量 >= `min_trades_for_twap` 且三周期快照充足 → 使用 1h TWAP
-2. 成交量不足但有 `initial_price` → 使用实体所有者设定的初始价格
+1. 成交量 >= `min_trades_for_twap` 且真实成交历史 >= 1 小时（`current_block - first_trade_block >= BlocksPerHour`）→ 使用 1h TWAP
+2. 不满足但有 `initial_price` → 使用实体所有者设定的初始价格
 3. 都没有 → 跳过检查
+
+> v2.5.0 修复: 历史覆盖时长从首笔真实成交（`first_trade_block`）起算，而非快照年龄。
+> 旧实现要求快照"距今 >= 周期"，但快照随成交滚动刷新、市场越活跃年龄越小，
+> 导致参考价永远停留在 `initial_price`、无法切换到 TWAP。
 
 **熔断机制**:
 - 触发: 成交价偏离 7d TWAP 超过 `circuit_breaker_threshold` → 暂停 `CircuitBreakerDuration` 个区块
@@ -320,7 +327,7 @@ pub struct DailyStats<Balance> {
 | `BestAsk` | `StorageMap<u64 → Balance>` | 最优卖价缓存 |
 | `BestBid` | `StorageMap<u64 → Balance>` | 最优买价缓存 |
 | `LastTradePrice` | `StorageMap<u64 → Balance>` | 最新成交价 |
-| `TwapAccumulators` | `StorageMap<u64 → TwapAccumulator>` | TWAP 累积器（含三周期快照） |
+| `TwapAccumulators` | `StorageMap<u64 → TwapAccumulator>` | TWAP 累积器（first_trade_block + 三周期双 checkpoint，v1 存储） |
 | `PriceProtection` | `StorageMap<u64 → PriceProtectionConfig>` | 价格保护配置 |
 
 ### 交易历史与统计
@@ -528,6 +535,7 @@ fn get_global_stats() -> MarketStats;
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v2.5.0 | 2026-06-12 | **TWAP 修复**: 参考价 initial_price → TWAP 切换不可达 bug；TWAP 数据充足性改为按 `first_trade_block` 历史覆盖判断；快照改为双 checkpoint 轮换使窗口真实覆盖命名周期；存储 v0→v1 迁移 |
 | v2.4.0 | 2026-03-06 | **审计 R11**: governance_configure_market 禁用一致性；熔断到期自动清理存储；market_buy/sell min_order_amount |
 | v2.3.0 | 2026-03-06 | **审计 R10**: IOC/FOK/PostOnly min_order_amount；configure_market 禁用取消订单；governance_configure_price_protection(41)；force_lift_circuit_breaker(42)；移除 MarketStatus::Paused；on_idle 事件；PostOnly 动态计算 |
 | v2.2.0 | 2026-03-05 | **审计 R9**: on_idle consumed_weight + proof_size；modify_order 市场状态检查；batch_cancel BoundedVec；移除手续费 |

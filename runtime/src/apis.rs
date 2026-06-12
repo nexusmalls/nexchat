@@ -44,7 +44,7 @@ use sp_version::RuntimeVersion;
 // Local module imports
 use super::{
     AccountId, Arbitration, Babe, Balance, Block, BlockNumber, ChatCore, ChatGroup, ChatInbox,
-    ChatPermission,
+    ChatPermission, ChatSync,
     CommissionPoolReward, EntityMarket, EntityRegistry, Evidence, Executive, Grandpa, Hash,
     Historical, InherentDataExt, NexMarket, Nonce, Runtime, RuntimeCall, RuntimeGenesisConfig,
     SessionKeys, StorageService, System, TransactionPayment, VERSION,
@@ -893,6 +893,15 @@ impl_runtime_apis! {
 
         fn inbox_exists(inbox_id: pallet_chat_inbox::InboxId) -> bool {
             ChatInbox::inbox_exists(inbox_id)
+        }
+    }
+
+    // 加密同步锚只读查询：新设备凭助记词重算 anchor_id 后一次取回密文清单。
+    // Encrypted sync anchor read query: a fresh device recomputes anchor_id from the
+    // mnemonic and fetches the ciphertext manifest in one call.
+    impl pallet_chat_sync::runtime_api::ChatSyncApi<Block> for Runtime {
+        fn sync_anchor(anchor_id: pallet_chat_sync::AnchorId) -> Option<(u64, Vec<u8>)> {
+            ChatSync::sync_anchor(anchor_id)
         }
     }
 

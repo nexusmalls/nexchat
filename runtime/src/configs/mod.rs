@@ -1304,6 +1304,32 @@ impl pallet_chat_inbox::Config for Runtime {
     type WeightInfo = pallet_chat_inbox::weights::SubstrateWeight<Runtime>;
 }
 
+parameter_types! {
+    /// 同步锚押金 / sync-anchor deposit（量级同 inbox 押金；终值待 benchmark + 经济评审，ADR §11.5）
+    pub const AnchorDeposit: Balance = UNIT / 2;
+}
+
+// 账户派生加密同步锚（EISA）：AnchorId 键控密文清单 + 锚密钥 Ed25519 授权。
+// Account-derived Encrypted Sync Anchor (EISA): AnchorId-keyed ciphertext manifest
+// with anchor-key Ed25519 authorization (payer ≠ authorizer).
+impl pallet_chat_sync::Config for Runtime {
+    type Currency = Balances;
+    // 密文清单上限：当前规范清单约 200B，留增长余量（ADR §5.4）。
+    // Ciphertext cap: canonical manifest ≈200B today, headroom per ADR §5.4.
+    type MaxAnchorLen = ConstU32<512>;
+    // 链上硬顶 ~10min @ 6s；客户端长 debounce 取更严（ADR §11.2）。
+    // On-chain hard cap ~10min @ 6s; client debounce is stricter (ADR §11.2).
+    type MinBlocksBetweenPublish = ConstU32<100>;
+    type AnchorDeposit = AnchorDeposit;
+    // updated_at 上界容差 1h（防自锁，ADR §5.5 规则 5）。
+    // 1h upper clock-skew tolerance (anti self-lock, ADR §5.5 rule 5).
+    type MaxClockSkew = ConstU64<3_600_000>;
+    // 治理逃生门（清理遗弃/滥用锚），与 inbox ForceOrigin 同口径。
+    // Governance escape hatch (abandoned/abusive anchors), same origin as inbox.
+    type ForceOrigin = RootOrTechnicalMajority;
+    type WeightInfo = pallet_chat_sync::weights::SubstrateWeight<Runtime>;
+}
+
 // ============================================================================
 // Governance: Collective (Committees) Configuration
 // ============================================================================

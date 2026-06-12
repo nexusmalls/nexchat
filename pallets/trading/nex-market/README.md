@@ -340,21 +340,24 @@ OCW 将验证结果写入 offchain local storage（PERSISTENT），外部 sideca
 
 1. **异常价格过滤**：偏离 > 100% 时钳制到 ±50%
 2. **累积价格推进**：`cumulative += last_price × blocks_elapsed`
-3. **快照推进**：按时间间隔更新 hour/day/week snapshot
+3. **记录 `first_trade_block`**：首笔真实成交区块（历史覆盖起点）
+4. **双 checkpoint 轮换**：`curr` 距今 >= 1 个周期时 `prev ← curr, curr ← 当前`
 
-### 快照推进间隔
+### checkpoint 轮换周期（成交 + on_idle 共同推进）
 
-| 快照 | 推进间隔 |
-|------|---------|
-| `hour_snapshot` | `BlocksPerHour / 6` (~10min) |
-| `day_snapshot` | `BlocksPerHour` (~1h) |
-| `week_snapshot` | `BlocksPerDay` (~24h) |
+| 周期 | 轮换间隔 | 活跃市场 prev 年龄 |
+|------|---------|------------------|
+| `hour_prev/curr` | `BlocksPerHour` (~1h) | 1~2 小时 |
+| `day_prev/curr` | `BlocksPerDay` (~24h) | 1~2 天 |
+| `week_prev/curr` | `BlocksPerWeek` (~7d) | 1~2 周 |
 
 ### TWAP 计算
 
 ```text
-twap = (current_cumulative - snapshot.cumulative_price) / (current_block - snapshot.block_number)
+twap = (current_cumulative - checkpoint.cumulative_price) / (current_block - checkpoint.block_number)
 ```
+
+选取"距今至少一个周期、且最接近一个周期"的 checkpoint（`curr` 满周期用 `curr`，否则用 `prev`），保证测量窗口真实覆盖命名周期；市场早期退化为最旧 checkpoint（短窗口尽力估计）。
 
 ### 对外接口
 
@@ -381,6 +384,12 @@ check_price_deviation(usdt_price):
   4. 计算偏离 bps = |price - ref_price| × 10000 / ref_price
   5. 偏离 > max_price_deviation → PriceDeviationTooHigh
 ```
+
+**TWAP 数据充足条件** (存储 v3)：`trade_count >= min_trades_for_twap` 且真实成交历史 >= 1 小时（`current_block - first_trade_block >= BlocksPerHour`）。
+
+> v3 修复: 历史覆盖时长从首笔真实成交（`first_trade_block`）起算，而非快照年龄。
+> 旧实现要求快照"距今 >= 周期"，但快照随成交和 on_idle 滚动刷新，
+> 导致参考价永远停留在 `initial_price`、无法切换到 TWAP。
 
 ### 熔断机制
 

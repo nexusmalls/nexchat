@@ -80,4 +80,5 @@ frame_benchmarking::define_benchmarks!(
     [pallet_chat_core, ChatCore]
     [pallet_chat_permission, ChatPermission]
     [pallet_chat_inbox, ChatInbox]
+    [pallet_chat_sync, ChatSync]
 );

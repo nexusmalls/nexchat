@@ -5959,6 +5959,7 @@ dependencies = [
  "pallet-chat-group",
  "pallet-chat-inbox",
  "pallet-chat-permission",
+ "pallet-chat-sync",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc",
  "sc-basic-authorship",
@@ -6020,6 +6021,7 @@ dependencies = [
  "pallet-chat-group",
  "pallet-chat-inbox",
  "pallet-chat-permission",
+ "pallet-chat-sync",
  "pallet-collective",
  "pallet-commission-common",
  "pallet-commission-core",
@@ -6675,6 +6677,26 @@ dependencies = [
  "sp-api 41.0.0",
  "sp-core 40.0.0",
  "sp-io 45.0.0",
+ "sp-runtime 46.0.0",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-chat-sync"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-balances",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api 41.0.0",
+ "sp-core 40.0.0",
+ "sp-io 45.0.0",
+ "sp-keystore 0.46.0",
  "sp-runtime 46.0.0",
  "sp-std",
 ]

@@ -1,0 +1,57 @@
+[package]
+name = "pallet-chat-sync"
+version = "0.1.0"
+authors = ["Stardust Team"]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/lao-sha/stardust"
+description = "账户派生加密同步锚（EISA）- AnchorId 键控密文 SyncManifest + 锚密钥 Ed25519 授权 / Account-derived Encrypted Sync Anchor (EISA): AnchorId-keyed ciphertext SyncManifest with anchor-key Ed25519 authorization"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+codec = { features = ["derive"], workspace = true }
+scale-info = { features = ["derive"], workspace = true }
+log = { workspace = true }
+
+# Substrate
+frame-benchmarking = { optional = true, workspace = true }
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+pallet-timestamp = { workspace = true }
+sp-runtime = { workspace = true }
+sp-std = { workspace = true }
+sp-core = { workspace = true }
+sp-io = { workspace = true }
+sp-api = { workspace = true }
+
+[dev-dependencies]
+pallet-balances = { workspace = true, features = ["std"] }
+# EN: keystore extension for the benchmark test suite (ed25519 host signing).
+# CN: 基准测试套件所需的 keystore 扩展（ed25519 宿主签名）。
+sp-keystore = { workspace = true, features = ["std"] }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"scale-info/std",
+	"log/std",
+	"frame-benchmarking?/std",
+	"frame-support/std",
+	"frame-system/std",
+	"pallet-timestamp/std",
+	"sp-runtime/std",
+	"sp-std/std",
+	"sp-core/std",
+	"sp-io/std",
+	"sp-api/std",
+]
+try-runtime = ["frame-support/try-runtime"]
+runtime-benchmarks = [
+	"frame-benchmarking/runtime-benchmarks",
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
+]

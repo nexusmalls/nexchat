@@ -85,3 +85,21 @@ pub fn mainnet_chain_spec() -> Result<ChainSpec, String> {
     // .with_boot_nodes(vec![...])
     .build())
 }
+
+/// EN: Read `ss58Format` from chain spec properties and set the process-wide default so
+/// JSON-RPC methods (e.g. `chat_*`) can decode SS58 `AccountId` parameters.
+/// CN: 从 chain spec 的 `ss58Format` 设置进程级默认 SS58 前缀，供 `chat_*` 等 JSON-RPC 解析地址。
+pub fn set_default_ss58_from_spec(chain_spec: &dyn sc_service::ChainSpec) {
+    use sp_core::crypto::{set_default_ss58_version, Ss58AddressFormat};
+
+    const NEXUS_SS58_PREFIX: u16 = 273;
+
+    let ss58_format = chain_spec
+        .properties()
+        .get("ss58Format")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u16)
+        .unwrap_or(NEXUS_SS58_PREFIX);
+
+    set_default_ss58_version(Ss58AddressFormat::custom(ss58_format));
+}

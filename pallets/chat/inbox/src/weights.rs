@@ -26,45 +26,43 @@ pub struct SubstrateWeight<T>(core::marker::PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     /// Storage: Inboxes (r:1 w:1), InboxCountByController (r:1 w:1).
     fn register_inbox() -> Weight {
-        Weight::from_parts(76_039_000, 11763)
+        Weight::from_parts(75_230_000, 11763)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(2))
     }
     /// Storage: Inboxes (r:1 w:1).
     fn bump_epoch() -> Weight {
-        Weight::from_parts(37_558_000, 11763)
+        Weight::from_parts(37_701_000, 11763)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: Inboxes (r:1 w:1).
     fn revoke_tag() -> Weight {
-        Weight::from_parts(38_443_000, 11763)
+        Weight::from_parts(39_918_000, 11763)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
-    /// Storage: Inboxes (r:1 w:1). Estimate (≈ `revoke_tag`); re-bench before mainnet.
+    /// Storage: Inboxes (r:1 w:1).
     fn unrevoke_tag() -> Weight {
-        Weight::from_parts(38_443_000, 11763)
+        Weight::from_parts(37_968_000, 11763)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
-    /// Storage: Inboxes (r:1 w:1), InboxCountByController (r:1 w:2) + currency
-    /// reserve/unreserve. Estimate; re-bench before mainnet.
+    /// Storage: Inboxes (r:1 w:1), InboxCountByController (r:2 w:2), System::Account (r:1 w:1).
     fn transfer_controller() -> Weight {
-        Weight::from_parts(85_000_000, 11763)
+        Weight::from_parts(125_793_000, 11763)
             .saturating_add(T::DbWeight::get().reads(4))
-            .saturating_add(T::DbWeight::get().writes(5))
+            .saturating_add(T::DbWeight::get().writes(4))
     }
     /// Storage: Inboxes (r:1 w:1), InboxCountByController (r:1 w:1).
     fn deregister_inbox() -> Weight {
-        Weight::from_parts(79_362_000, 11763)
+        Weight::from_parts(87_976_000, 11763)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(2))
     }
-    /// Storage: Inboxes (r:1 w:1), InboxCountByController (r:1 w:1) + currency
-    /// unreserve. Estimate (≈ `deregister_inbox`); re-bench before mainnet.
+    /// Storage: Inboxes (r:1 w:1), InboxCountByController (r:1 w:1).
     fn force_deregister_inbox() -> Weight {
-        Weight::from_parts(79_362_000, 11763)
+        Weight::from_parts(79_892_000, 11763)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(2))
     }

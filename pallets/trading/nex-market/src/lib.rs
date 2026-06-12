@@ -29,6 +29,7 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+pub mod migrations;
 pub mod runtime_api;
 pub mod weights;
 
@@ -327,7 +328,20 @@ pub mod pallet {
         pub block_number: u32,
     }
 
-    /// TWAP 累积器
+    /// TWAP accumulator with three periods (1h / 24h / 7d).
+    ///
+    /// Each period keeps a dual checkpoint (`prev` / `curr`). `curr` is rotated
+    /// into `prev` once it is at least one full period old, so `prev` stays
+    /// between 1x and 2x the period old (advanced on trades and in `on_idle`).
+    /// TWAP is computed against the checkpoint closest to (but at least) one
+    /// period old, which guarantees the measured window matches the period name.
+    ///
+    /// TWAP 累积器（三周期：1小时 / 24小时 / 7天）。
+    ///
+    /// 每个周期维护双 checkpoint（`prev` / `curr`）。当 `curr` 距今超过一个完整
+    /// 周期时轮换为 `prev`，因此 `prev` 的年龄始终介于 1~2 个周期之间（成交与
+    /// `on_idle` 都会推进）。计算 TWAP 时选取"距今至少一个周期、且最接近一个
+    /// 周期"的 checkpoint，保证实际测量窗口与周期命名一致。
     #[derive(
         Encode,
         Decode,
@@ -346,12 +360,47 @@ pub mod pallet {
         /// 最新成交价 (USDT per NEX, 精度 10^6)
         pub last_price: u64,
         pub trade_count: u64,
-        pub hour_snapshot: PriceSnapshot,
-        pub day_snapshot: PriceSnapshot,
-        pub week_snapshot: PriceSnapshot,
-        pub last_hour_update: u32,
-        pub last_day_update: u32,
-        pub last_week_update: u32,
+        /// Block of the first real trade (0 = no real trade yet). Used to
+        /// measure how much price history the market has accumulated.
+        /// 首笔真实成交的区块号（0 = 尚无真实成交），用于度量市场已积累的
+        /// 价格历史长度。
+        pub first_trade_block: u32,
+        /// 1h checkpoints: previous (older) / current. 1小时双 checkpoint：旧 / 新。
+        pub hour_prev: PriceSnapshot,
+        /// 1h current checkpoint. 1小时当前 checkpoint。
+        pub hour_curr: PriceSnapshot,
+        /// 24h previous checkpoint. 24小时旧 checkpoint。
+        pub day_prev: PriceSnapshot,
+        /// 24h current checkpoint. 24小时当前 checkpoint。
+        pub day_curr: PriceSnapshot,
+        /// 7d previous checkpoint. 7天旧 checkpoint。
+        pub week_prev: PriceSnapshot,
+        /// 7d current checkpoint. 7天当前 checkpoint。
+        pub week_curr: PriceSnapshot,
+    }
+
+    impl TwapAccumulator {
+        /// Create a fresh accumulator with all checkpoints anchored at `block`.
+        /// 创建全部 checkpoint 锚定在 `block` 的新累积器。
+        pub fn new_at(block: u32, last_price: u64, trade_count: u64) -> Self {
+            let snapshot = PriceSnapshot {
+                cumulative_price: 0,
+                block_number: block,
+            };
+            Self {
+                current_cumulative: 0,
+                current_block: block,
+                last_price,
+                trade_count,
+                first_trade_block: 0,
+                hour_prev: snapshot.clone(),
+                hour_curr: snapshot.clone(),
+                day_prev: snapshot.clone(),
+                day_curr: snapshot.clone(),
+                week_prev: snapshot.clone(),
+                week_curr: snapshot,
+            }
+        }
     }
 
     /// TWAP 周期
@@ -699,8 +748,9 @@ pub mod pallet {
     }
 
     /// 当前存储版本
+    /// v3: TwapAccumulator 双 checkpoint + first_trade_block
     const STORAGE_VERSION: frame_support::traits::StorageVersion =
-        frame_support::traits::StorageVersion::new(2);
+        frame_support::traits::StorageVersion::new(3);
 
     #[pallet::pallet]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -728,27 +778,8 @@ pub mod pallet {
                         config.initial_price = Some(price);
                     });
 
-                    TwapAccumulatorStore::<T>::put(TwapAccumulator {
-                        last_price: price,
-                        current_block: 0,
-                        trade_count: 1, // on_idle 需要 trade_count > 0 才刷新 current_block
-                        hour_snapshot: PriceSnapshot {
-                            cumulative_price: 0,
-                            block_number: 0,
-                        },
-                        day_snapshot: PriceSnapshot {
-                            cumulative_price: 0,
-                            block_number: 0,
-                        },
-                        week_snapshot: PriceSnapshot {
-                            cumulative_price: 0,
-                            block_number: 0,
-                        },
-                        last_hour_update: 0,
-                        last_day_update: 0,
-                        last_week_update: 0,
-                        ..Default::default()
-                    });
+                    // on_idle 需要 trade_count > 0 才刷新 current_block
+                    TwapAccumulatorStore::<T>::put(TwapAccumulator::new_at(0, price, 1));
 
                     LastTradePrice::<T>::put(price);
                 }
@@ -760,6 +791,34 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        /// 存储迁移 — 检查版本并执行必要的迁移
+        ///
+        /// 当前版本: v3 (TwapAccumulator 双 checkpoint + first_trade_block)
+        fn on_runtime_upgrade() -> Weight {
+            let on_chain = Pallet::<T>::on_chain_storage_version();
+            let current = Pallet::<T>::in_code_storage_version();
+
+            if on_chain == current {
+                return Weight::zero();
+            }
+
+            log::info!(
+                target: "pallet-nex-market",
+                "Running storage migration from {:?} to {:?}",
+                on_chain,
+                current,
+            );
+
+            let mut weight = T::DbWeight::get().reads(1);
+
+            if on_chain < 3 {
+                weight = weight.saturating_add(crate::migrations::v3::migrate::<T>());
+            }
+
+            current.put::<Pallet<T>>();
+            weight.saturating_add(T::DbWeight::get().writes(1))
+        }
+
         fn on_idle(_n: BlockNumberFor<T>, remaining_weight: Weight) -> Weight {
             let db_weight = T::DbWeight::get();
             let base_weight = db_weight.reads_writes(1, 1);
@@ -2786,27 +2845,8 @@ pub mod pallet {
             });
 
             let current_block: u32 = <frame_system::Pallet<T>>::block_number().saturated_into();
-            TwapAccumulatorStore::<T>::put(TwapAccumulator {
-                last_price: initial_price,
-                current_block,
-                trade_count: 1, // on_idle 需要 trade_count > 0 才刷新 current_block
-                hour_snapshot: PriceSnapshot {
-                    cumulative_price: 0,
-                    block_number: current_block,
-                },
-                day_snapshot: PriceSnapshot {
-                    cumulative_price: 0,
-                    block_number: current_block,
-                },
-                week_snapshot: PriceSnapshot {
-                    cumulative_price: 0,
-                    block_number: current_block,
-                },
-                last_hour_update: current_block,
-                last_day_update: current_block,
-                last_week_update: current_block,
-                ..Default::default()
-            });
+            // on_idle 需要 trade_count > 0 才刷新 current_block
+            TwapAccumulatorStore::<T>::put(TwapAccumulator::new_at(current_block, initial_price, 1));
 
             LastTradePrice::<T>::put(initial_price);
 
@@ -5327,26 +5367,8 @@ pub mod pallet {
             let current_block: u32 = <frame_system::Pallet<T>>::block_number().saturated_into();
 
             TwapAccumulatorStore::<T>::mutate(|maybe_acc| {
-                let acc = maybe_acc.get_or_insert_with(|| TwapAccumulator {
-                    last_price: trade_price,
-                    current_block,
-                    hour_snapshot: PriceSnapshot {
-                        cumulative_price: 0,
-                        block_number: current_block,
-                    },
-                    day_snapshot: PriceSnapshot {
-                        cumulative_price: 0,
-                        block_number: current_block,
-                    },
-                    week_snapshot: PriceSnapshot {
-                        cumulative_price: 0,
-                        block_number: current_block,
-                    },
-                    last_hour_update: current_block,
-                    last_day_update: current_block,
-                    last_week_update: current_block,
-                    ..Default::default()
-                });
+                let acc = maybe_acc
+                    .get_or_insert_with(|| TwapAccumulator::new_at(current_block, trade_price, 0));
 
                 // 异常价格过滤
                 let filtered_price = if acc.trade_count > 0 && acc.last_price > 0 {
@@ -5379,50 +5401,78 @@ pub mod pallet {
                 acc.last_price = filtered_price;
                 acc.trade_count = acc.trade_count.saturating_add(1);
 
+                // Record the block of the first real trade (history coverage
+                // anchor). `max(1)` keeps the "0 = no trades yet" sentinel
+                // meaningful even for block-0 trades (test environments).
+                // 记录首笔真实成交的区块（价格历史覆盖时长的起点）。`max(1)`
+                // 保证区块 0 的成交（测试环境）不与"0 = 尚无成交"哨兵值冲突。
+                if acc.first_trade_block == 0 {
+                    acc.first_trade_block = current_block.max(1);
+                }
+
                 Self::advance_snapshots(acc, current_block);
 
                 filtered_price
             })
         }
 
-        /// 按时间间隔推进 TWAP snapshots（交易时 + on_idle 共用）
+        /// Rotate per-period checkpoints (shared by trades and `on_idle`): once
+        /// `curr` is at least one full period old, it becomes `prev` and a fresh
+        /// `curr` is taken. This keeps `prev` between 1x and 2x the period old,
+        /// so each TWAP window actually covers its named period.
+        ///
+        /// 轮换各周期 checkpoint（成交与 `on_idle` 共用）：当 `curr` 距今超过
+        /// 一个完整周期时转为 `prev` 并取新的 `curr`。`prev` 的年龄始终保持在
+        /// 1~2 个周期之间，确保 TWAP 窗口真实覆盖其命名周期。
         fn advance_snapshots(acc: &mut TwapAccumulator, current_block: u32) {
-            let bph = T::BlocksPerHour::get();
-            let bpd = T::BlocksPerDay::get();
-
-            let hour_interval = bph / 6;
-            if current_block.saturating_sub(acc.last_hour_update) >= hour_interval {
-                acc.hour_snapshot = PriceSnapshot {
-                    cumulative_price: acc.current_cumulative,
-                    block_number: current_block,
-                };
-                acc.last_hour_update = current_block;
-            }
-            if current_block.saturating_sub(acc.last_day_update) >= bph {
-                acc.day_snapshot = PriceSnapshot {
-                    cumulative_price: acc.current_cumulative,
-                    block_number: current_block,
-                };
-                acc.last_day_update = current_block;
-            }
-            if current_block.saturating_sub(acc.last_week_update) >= bpd {
-                acc.week_snapshot = PriceSnapshot {
-                    cumulative_price: acc.current_cumulative,
-                    block_number: current_block,
-                };
-                acc.last_week_update = current_block;
+            let new_snapshot = PriceSnapshot {
+                cumulative_price: acc.current_cumulative,
+                block_number: current_block,
+            };
+            let rotations: [(&mut PriceSnapshot, &mut PriceSnapshot, u32); 3] = [
+                (
+                    &mut acc.hour_prev,
+                    &mut acc.hour_curr,
+                    T::BlocksPerHour::get(),
+                ),
+                (&mut acc.day_prev, &mut acc.day_curr, T::BlocksPerDay::get()),
+                (
+                    &mut acc.week_prev,
+                    &mut acc.week_curr,
+                    T::BlocksPerWeek::get(),
+                ),
+            ];
+            for (prev, curr, period) in rotations {
+                if current_block.saturating_sub(curr.block_number) >= period {
+                    *prev = curr.clone();
+                    *curr = new_snapshot.clone();
+                }
             }
         }
 
-        /// 计算 TWAP
+        /// Calculate the TWAP for the given period. Picks the checkpoint closest
+        /// to (but at least) one period old when one exists; otherwise falls back
+        /// to the oldest available checkpoint (early market life, shorter window).
+        ///
+        /// 计算指定周期的 TWAP。优先选取"距今至少一个周期、且最接近一个周期"
+        /// 的 checkpoint；市场早期两者都不足一个周期时退化为最旧 checkpoint
+        /// （窗口较短的尽力估计）。
         pub fn calculate_twap(period: TwapPeriod) -> Option<u64> {
             let acc = TwapAccumulatorStore::<T>::get()?;
             let current_block: u32 = <frame_system::Pallet<T>>::block_number().saturated_into();
 
-            let snapshot = match period {
-                TwapPeriod::OneHour => &acc.hour_snapshot,
-                TwapPeriod::OneDay => &acc.day_snapshot,
-                TwapPeriod::OneWeek => &acc.week_snapshot,
+            let (prev, curr, period_blocks) = match period {
+                TwapPeriod::OneHour => (&acc.hour_prev, &acc.hour_curr, T::BlocksPerHour::get()),
+                TwapPeriod::OneDay => (&acc.day_prev, &acc.day_curr, T::BlocksPerDay::get()),
+                TwapPeriod::OneWeek => (&acc.week_prev, &acc.week_curr, T::BlocksPerWeek::get()),
+            };
+
+            // `curr` 始终不早于 `prev`。若 `curr` 已满一个周期，它的窗口最接近
+            // 命名周期；否则使用 `prev`（活跃市场中为 1~2 个周期）。
+            let snapshot = if current_block.saturating_sub(curr.block_number) >= period_blocks {
+                curr
+            } else {
+                prev
             };
 
             let blocks_since = current_block.saturating_sub(acc.current_block);
@@ -5439,6 +5489,16 @@ pub mod pallet {
             u64::try_from(cumulative_diff / (block_diff as u128)).ok()
         }
 
+        /// Check whether TWAP data is sufficient to serve as the reference price:
+        /// enough trades AND at least one hour of real trading history (measured
+        /// from `first_trade_block`, NOT from checkpoint age — checkpoints rotate
+        /// over time, so their age would never satisfy a "stale enough" check and
+        /// the reference price could never switch away from `initial_price`).
+        ///
+        /// 检查 TWAP 数据是否充足，可作为参考价格使用：成交数达标且已积累至少
+        /// 1 小时的真实成交历史（从 `first_trade_block` 起算，而非 checkpoint
+        /// 年龄——checkpoint 随时间轮换刷新，按其年龄判断会导致参考价永远无法
+        /// 从 `initial_price` 切换到 TWAP）。
         fn is_twap_data_sufficient(
             acc: &TwapAccumulator,
             current_block: u32,
@@ -5447,12 +5507,11 @@ pub mod pallet {
             if acc.trade_count < config.min_trades_for_twap {
                 return false;
             }
-            let bph = T::BlocksPerHour::get();
-            let bpd = T::BlocksPerDay::get();
-            let bpw = T::BlocksPerWeek::get();
-            current_block.saturating_sub(acc.hour_snapshot.block_number) >= bph
-                && current_block.saturating_sub(acc.day_snapshot.block_number) >= bpd
-                && current_block.saturating_sub(acc.week_snapshot.block_number) >= bpw
+            // first_trade_block == 0 表示尚无真实成交
+            if acc.first_trade_block == 0 {
+                return false;
+            }
+            current_block.saturating_sub(acc.first_trade_block) >= T::BlocksPerHour::get()
         }
 
         fn check_circuit_breaker(current_price: u64) {

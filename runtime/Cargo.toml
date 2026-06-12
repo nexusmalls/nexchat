@@ -80,6 +80,7 @@ pallet-chat-permission = { workspace = true }
 pallet-chat-core = { workspace = true }
 pallet-chat-group = { workspace = true }
 pallet-chat-inbox = { workspace = true }
+pallet-chat-sync = { workspace = true }
 pallet-entity-market = { workspace = true }
 pallet-entity-review = { workspace = true }
 pallet-entity-disclosure = { workspace = true }
@@ -193,6 +194,7 @@ std = [
 	"pallet-chat-core/std",
 	"pallet-chat-group/std",
 	"pallet-chat-inbox/std",
+	"pallet-chat-sync/std",
 	"pallet-entity-market/std",
 	"pallet-entity-review/std",
 	"pallet-entity-disclosure/std",
@@ -275,6 +277,7 @@ runtime-benchmarks = [
 	"pallet-chat-core/runtime-benchmarks",
 	"pallet-chat-group/runtime-benchmarks",
 	"pallet-chat-inbox/runtime-benchmarks",
+	"pallet-chat-sync/runtime-benchmarks",
 	"pallet-entity-review/runtime-benchmarks",
 	"pallet-entity-token/runtime-benchmarks",
 	"pallet-entity-governance/runtime-benchmarks",
@@ -336,6 +339,7 @@ try-runtime = [
 	"pallet-chat-core/try-runtime",
 	"pallet-chat-group/try-runtime",
 	"pallet-chat-inbox/try-runtime",
+	"pallet-chat-sync/try-runtime",
 ]
 
 # Enable the metadata hash generation.

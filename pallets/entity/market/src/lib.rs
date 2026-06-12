@@ -28,6 +28,7 @@ extern crate alloc;
 pub use pallet::*;
 
 mod api_bridge;
+pub mod migrations;
 pub mod runtime_api;
 
 pub mod weights;
@@ -334,7 +335,20 @@ pub mod pallet {
         pub block_number: u32,
     }
 
-    /// TWAP 累积器（三周期：1小时、24小时、7天）
+    /// TWAP accumulator with three periods (1h / 24h / 7d).
+    ///
+    /// Each period keeps a dual checkpoint (`prev` / `curr`). `curr` is rotated
+    /// into `prev` once it is at least one full period old, so in an actively
+    /// trading market `prev` is always between 1x and 2x the period old. TWAP
+    /// is computed against the checkpoint closest to (but at least) one period
+    /// old, which guarantees the measured window matches the period's name.
+    ///
+    /// TWAP 累积器（三周期：1小时 / 24小时 / 7天）。
+    ///
+    /// 每个周期维护双 checkpoint（`prev` / `curr`）。当 `curr` 距今超过一个完整
+    /// 周期时轮换为 `prev`，因此活跃市场中 `prev` 的年龄始终介于 1~2 个周期之间。
+    /// 计算 TWAP 时选取"距今至少一个周期、且最接近一个周期"的 checkpoint，
+    /// 保证实际测量窗口与周期命名一致。
     #[derive(
         Encode,
         Decode,
@@ -356,20 +370,24 @@ pub mod pallet {
         pub last_price: Balance,
         /// 总成交次数（用于判断市场活跃度）
         pub trade_count: u64,
+        /// Block of the first real trade (0 = no real trade yet). Used to
+        /// measure how much price history the market has accumulated.
+        /// 首笔真实成交的区块号（0 = 尚无真实成交），用于度量市场已积累的
+        /// 价格历史长度。
+        pub first_trade_block: u32,
 
-        /// 1小时前快照（用于 1小时 TWAP）
-        pub hour_snapshot: PriceSnapshot,
-        /// 24小时前快照（用于 24小时 TWAP）
-        pub day_snapshot: PriceSnapshot,
-        /// 7天前快照（用于 7天 TWAP）
-        pub week_snapshot: PriceSnapshot,
-
-        /// 上次更新 1小时快照的区块
-        pub last_hour_update: u32,
-        /// 上次更新 24小时快照的区块
-        pub last_day_update: u32,
-        /// 上次更新 7天快照的区块
-        pub last_week_update: u32,
+        /// 1h checkpoints: previous (older) / current. 1小时双 checkpoint：旧 / 新。
+        pub hour_prev: PriceSnapshot,
+        /// 1h current checkpoint. 1小时当前 checkpoint。
+        pub hour_curr: PriceSnapshot,
+        /// 24h checkpoints: previous (older). 24小时旧 checkpoint。
+        pub day_prev: PriceSnapshot,
+        /// 24h current checkpoint. 24小时当前 checkpoint。
+        pub day_curr: PriceSnapshot,
+        /// 7d checkpoints: previous (older). 7天旧 checkpoint。
+        pub week_prev: PriceSnapshot,
+        /// 7d current checkpoint. 7天当前 checkpoint。
+        pub week_curr: PriceSnapshot,
     }
 
     /// TWAP 周期类型
@@ -616,7 +634,7 @@ pub mod pallet {
         type WeightInfo: crate::weights::WeightInfo;
     }
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
     #[pallet::pallet]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -729,8 +747,8 @@ pub mod pallet {
 
         /// 存储迁移框架 — 检查版本并执行必要的迁移
         ///
-        /// 当前版本: v0 (初始版本)
-        /// 未来升级时在此添加 v0→v1, v1→v2 等迁移逻辑
+        /// 当前版本: v1 (TwapAccumulator 双 checkpoint + first_trade_block)
+        /// 未来升级时在此添加 v1→v2 等迁移逻辑
         fn on_runtime_upgrade() -> Weight {
             let on_chain = Pallet::<T>::on_chain_storage_version();
             let current = Pallet::<T>::in_code_storage_version();
@@ -749,10 +767,9 @@ pub mod pallet {
 
             let mut weight = T::DbWeight::get().reads(1); // on_chain_storage_version read
 
-            // === 未来迁移占位 ===
-            // if on_chain < 1 {
-            //     weight = weight.saturating_add(migrations::v1::migrate::<T>());
-            // }
+            if on_chain < 1 {
+                weight = weight.saturating_add(crate::migrations::v1::migrate::<T>());
+            }
 
             // 更新链上版本号
             current.put::<Pallet<T>>();
@@ -1802,26 +1819,22 @@ pub mod pallet {
             let current_block: u32 = <frame_system::Pallet<T>>::block_number().saturated_into();
             TwapAccumulators::<T>::mutate(entity_id, |maybe_acc| {
                 if maybe_acc.is_none() {
+                    let genesis_snapshot = PriceSnapshot {
+                        cumulative_price: 0,
+                        block_number: current_block,
+                    };
                     *maybe_acc = Some(TwapAccumulator {
                         current_cumulative: 0,
                         current_block,
                         last_price: initial_price,
                         trade_count: 0,
-                        hour_snapshot: PriceSnapshot {
-                            cumulative_price: 0,
-                            block_number: current_block,
-                        },
-                        day_snapshot: PriceSnapshot {
-                            cumulative_price: 0,
-                            block_number: current_block,
-                        },
-                        week_snapshot: PriceSnapshot {
-                            cumulative_price: 0,
-                            block_number: current_block,
-                        },
-                        last_hour_update: current_block,
-                        last_day_update: current_block,
-                        last_week_update: current_block,
+                        first_trade_block: 0,
+                        hour_prev: genesis_snapshot.clone(),
+                        hour_curr: genesis_snapshot.clone(),
+                        day_prev: genesis_snapshot.clone(),
+                        day_curr: genesis_snapshot.clone(),
+                        week_prev: genesis_snapshot.clone(),
+                        week_curr: genesis_snapshot,
                     });
                 } else if let Some(acc) = maybe_acc.as_mut() {
                     // 无真实成交时允许更新 last_price

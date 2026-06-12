@@ -1897,17 +1897,132 @@ fn on_idle_advances_twap_snapshots() {
         assert_eq!(acc_after.current_block, new_block as u32);
         assert!(acc_after.current_cumulative > cum_before);
 
-        // hour_snapshot 应已更新（700 > hour_interval=100）
-        assert!(acc_after.hour_snapshot.block_number > acc_before.hour_snapshot.block_number);
+        // 1h checkpoint 应已轮换（700 >= bph=600）: 旧 curr → prev, 新 curr 在当前块
+        assert_eq!(acc_after.hour_prev, acc_before.hour_curr);
+        assert_eq!(acc_after.hour_curr.block_number, new_block as u32);
 
-        // day_snapshot 应已更新（700 > bph=600）
-        assert!(acc_after.day_snapshot.block_number > acc_before.day_snapshot.block_number);
+        // 24h checkpoint 不应轮换（700 < bpd=14400）
+        assert_eq!(acc_after.day_curr, acc_before.day_curr);
 
         // 再次 on_idle（同一区块）→ 累积器 current_block 不变
         let cum_mid = acc_after.current_cumulative;
         NexMarket::on_idle(new_block, Weight::from_parts(1_000_000_000, 1_000_000));
         let acc_same = NexMarket::twap_accumulator().unwrap();
         assert_eq!(acc_same.current_cumulative, cum_mid); // 没有变化
+    });
+}
+
+// ==================== v3: 参考价 initial_price → TWAP 切换修复 ====================
+
+/// 回归测试: 成交量与历史覆盖达标后，价格偏离检查的参考价应从
+/// initial_price 切换到 1h TWAP（修复前该切换不可达）
+#[test]
+fn reference_price_switches_from_initial_price_to_twap() {
+    new_test_ext().execute_with(|| {
+        // min_trades_for_twap = 1, max_deviation = 20%
+        assert_ok!(NexMarket::configure_price_protection(
+            RuntimeOrigin::root(),
+            true,
+            2000,
+            5000,
+            1
+        ));
+        assert_ok!(NexMarket::set_initial_price(RuntimeOrigin::root(), 500_000));
+
+        // 一笔真实成交 @550_000（偏离 initial 500_000 仅 10%，通过）
+        assert_ok!(NexMarket::place_sell_order(
+            RuntimeOrigin::signed(ALICE),
+            100_000_000_000_000,
+            550_000,
+            tron_address(),
+            None,
+        ));
+        assert_ok!(NexMarket::reserve_sell_order(
+            RuntimeOrigin::signed(BOB),
+            0,
+            None,
+            buyer_tron(),
+        ));
+        assert_ok!(NexMarket::confirm_payment(RuntimeOrigin::signed(BOB), 0,));
+        let trade = NexMarket::usdt_trades(0).unwrap();
+        assert_ok!(call_submit_ocw_result(
+            0,
+            trade.usdt_amount,
+            make_tx_hashes(b"tx_twap_switch")
+        ));
+
+        let acc = NexMarket::twap_accumulator().unwrap();
+        assert_eq!(acc.last_price, 550_000);
+        let first_trade_block = acc.first_trade_block;
+        assert!(first_trade_block > 0);
+
+        // 历史覆盖不足 1h → 参考价仍为 initial_price(500_000)
+        // 630_000 偏离 26% > 20% → 拒绝
+        assert!(matches!(
+            NexMarket::check_price_deviation(630_000),
+            Err(Error::<Test>::PriceDeviationTooHigh)
+        ));
+
+        // 覆盖 >= BlocksPerHour(600) → 参考价切换为 1h TWAP(≈550_000)
+        // 630_000 偏离 TWAP 仅 ~14.5% < 20% → 通过（修复前会一直按 500_000 拒绝）
+        System::set_block_number(first_trade_block as u64 + 601);
+        assert!(NexMarket::check_price_deviation(630_000).is_ok());
+
+        // 偏离 TWAP 超限仍应拒绝: 680_000 偏离 550_000 约 23.6% > 20%
+        assert!(matches!(
+            NexMarket::check_price_deviation(680_000),
+            Err(Error::<Test>::PriceDeviationTooHigh)
+        ));
+    });
+}
+
+/// v3 迁移: 旧版 TwapAccumulator 应正确转换为双 checkpoint 结构
+#[test]
+fn v3_migration_translates_old_accumulator() {
+    use crate::migrations::v3::{migrate, OldTwapAccumulator};
+    use codec::Encode;
+
+    new_test_ext().execute_with(|| {
+        let old = OldTwapAccumulator {
+            current_cumulative: 5000,
+            current_block: 900,
+            last_price: 120,
+            trade_count: 7,
+            hour_snapshot: PriceSnapshot {
+                cumulative_price: 4000,
+                block_number: 850,
+            },
+            day_snapshot: PriceSnapshot {
+                cumulative_price: 3000,
+                block_number: 800,
+            },
+            week_snapshot: PriceSnapshot {
+                cumulative_price: 1000,
+                block_number: 100,
+            },
+            last_hour_update: 850,
+            last_day_update: 800,
+            last_week_update: 100,
+        };
+        frame_support::storage::unhashed::put_raw(
+            &TwapAccumulatorStore::<Test>::hashed_key(),
+            &old.encode(),
+        );
+
+        migrate::<Test>();
+
+        let acc = NexMarket::twap_accumulator().unwrap();
+        assert_eq!(acc.current_cumulative, 5000);
+        assert_eq!(acc.current_block, 900);
+        assert_eq!(acc.last_price, 120);
+        assert_eq!(acc.trade_count, 7);
+        // first_trade_block = 各已知区块号的最小值 = week_snapshot(100)
+        assert_eq!(acc.first_trade_block, 100);
+        // 旧快照同时作为 prev 与 curr
+        assert_eq!(acc.hour_prev.block_number, 850);
+        assert_eq!(acc.hour_curr.cumulative_price, 4000);
+        assert_eq!(acc.day_curr.block_number, 800);
+        assert_eq!(acc.week_curr.block_number, 100);
     });
 }
 

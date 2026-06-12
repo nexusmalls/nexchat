@@ -26,41 +26,41 @@ pub struct SubstrateWeight<T>(core::marker::PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     /// Storage: PrivacySettingsOf (r:1 w:1).
     fn set_permission_level() -> Weight {
-        Weight::from_parts(36_677_000, 3859)
+        Weight::from_parts(32_358_000, 3859)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: PrivacySettingsOf (r:1 w:1).
     fn set_rejected_scene_types() -> Weight {
-        Weight::from_parts(40_128_000, 3859)
+        Weight::from_parts(37_582_000, 3859)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: CapabilityEpoch (r:1 w:1).
     fn bump_capability_epoch() -> Weight {
-        Weight::from_parts(30_153_000, 3517)
+        Weight::from_parts(34_992_000, 3517)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: MutedAccounts (r:0 w:1).
     fn force_mute_account() -> Weight {
-        Weight::from_parts(24_193_000, 0)
+        Weight::from_parts(26_785_000, 0)
             .saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: MutedAccounts (r:0 w:1).
     fn force_unmute_account() -> Weight {
-        Weight::from_parts(23_342_000, 0)
+        Weight::from_parts(25_974_000, 0)
             .saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: LastReportAt, OpenReportCount, NextReportId (r:3 w:4 incl. Reports).
     fn report() -> Weight {
-        Weight::from_parts(46_180_000, 3517)
+        Weight::from_parts(47_963_000, 3517)
             .saturating_add(T::DbWeight::get().reads(3))
             .saturating_add(T::DbWeight::get().writes(4))
     }
     /// Storage: Reports, OpenReportCount (r:2 w:2).
     fn resolve_report() -> Weight {
-        Weight::from_parts(42_812_000, 3680)
+        Weight::from_parts(45_207_000, 3680)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(2))
     }

@@ -47,6 +47,7 @@ members = [
     "pallets/chat/core",
     "pallets/chat/group",
     "pallets/chat/inbox",
+    "pallets/chat/sync",
 # Common libraries (共享工具库，非 pallet)
     "common/crypto",
     "common/media",
@@ -112,6 +113,7 @@ pallet-chat-permission = { path = "./pallets/chat/permission", default-features 
 pallet-chat-core = { path = "./pallets/chat/core", default-features = false }
 pallet-chat-group = { path = "./pallets/chat/group", default-features = false }
 pallet-chat-inbox = { path = "./pallets/chat/inbox", default-features = false }
+pallet-chat-sync = { path = "./pallets/chat/sync", default-features = false }
 pallet-entity-market = { path = "./pallets/entity/market", default-features = false }
 pallet-entity-review = { path = "./pallets/entity/review", default-features = false }
 pallet-entity-disclosure = { path = "./pallets/entity/disclosure", default-features = false }
@@ -172,6 +174,7 @@ sp-genesis-builder = { version = "0.22.0", default-features = false }
 sp-inherents = { version = "41.0.0", default-features = false }
 sp-io = { version = "45.0.0", default-features = false }
 sp-keyring = { version = "46.0.0", default-features = false }
+sp-keystore = { version = "0.46.0", default-features = false }
 sp-runtime = { version = "46.0.0", default-features = false }
 sp-arithmetic = { version = "28.0.0", default-features = false }
 sp-timestamp = { version = "41.0.0", default-features = false }

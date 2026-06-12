@@ -1,0 +1,9 @@
+# Nexus 主网 Fork 演练配置
+# 用法: npx @acala-network/chopsticks@latest -c chopsticks-fork.yml
+
+endpoint: wss://rpc.nexusmall.net
+mock-signature-host: true
+build-block-mode: Instant
+port: 8000
+rpc-timeout: 120000
+db: ./db-nexus-fork.sqlite

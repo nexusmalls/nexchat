@@ -12,6 +12,7 @@ use frame_benchmarking::v2::*;
 use frame_support::traits::{Currency, EnsureOrigin, Get};
 use frame_system::RawOrigin;
 use sp_runtime::traits::Saturating;
+use sp_std::vec;
 use sp_std::vec::Vec;
 
 /// Fund an account well above all deposits. / 给账户充值远超各项押金。
@@ -246,7 +247,7 @@ mod benchmarks {
             b"cid2".to_vec(),
             vec![
                 (member.clone(), [1u8; 8].to_vec()),
-                (member2, [2u8; 8].to_vec()),
+                (member2.clone(), [2u8; 8].to_vec()),
             ],
             MemberDelta::<T> {
                 added: [member.clone(), member2]
@@ -318,19 +319,7 @@ mod benchmarks {
         let owner: T::AccountId = whitelisted_caller();
         let gid = new_group::<T>(&owner, true);
         let member: T::AccountId = account("member", 0, 0);
-        make_joinable::<T>(&member);
-        ChatGroup::<T>::commit(
-            RawOrigin::Signed(owner.clone()).into(),
-            gid,
-            0,
-            [1u8; 16].to_vec(),
-            [1u8; 32],
-            [2u8; 32],
-            b"cid2".to_vec(),
-            welcomes_for::<T>(&member),
-            add_delta::<T>(&member),
-        )
-        .expect("commit add");
+        add_member::<T>(&owner, gid, &member);
         #[extrinsic_call]
         transfer_ownership(RawOrigin::Signed(owner), gid, member.clone());
         assert_eq!(GroupMls::<T>::get(gid).unwrap().admin, member);
@@ -341,19 +330,7 @@ mod benchmarks {
         let owner: T::AccountId = whitelisted_caller();
         let gid = new_group::<T>(&owner, true);
         let member: T::AccountId = account("member", 0, 0);
-        make_joinable::<T>(&member);
-        ChatGroup::<T>::commit(
-            RawOrigin::Signed(owner.clone()).into(),
-            gid,
-            0,
-            [1u8; 16].to_vec(),
-            [1u8; 32],
-            [2u8; 32],
-            b"cid2".to_vec(),
-            welcomes_for::<T>(&member),
-            add_delta::<T>(&member),
-        )
-        .expect("commit add");
+        add_member::<T>(&owner, gid, &member);
         #[extrinsic_call]
         set_admin(RawOrigin::Signed(owner), gid, member.clone(), true);
         assert_eq!(GroupMembers::<T>::get(gid, &member).unwrap().role, MemberRole::Admin);

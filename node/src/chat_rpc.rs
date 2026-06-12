@@ -36,6 +36,7 @@
 //! - `chat_inboxEpoch(inboxId, at?)` — 链下投递信箱的撤销纪元（未注册返回 null）
 //! - `chat_isTagRevoked(inboxId, tag, at?)` — 联系人标签是否被定向撤销
 //! - `chat_inboxExists(inboxId, at?)` — 信箱是否已注册
+//! - `chat_syncAnchor(anchorId, at?)` — 加密同步锚密文清单（EISA，未发布返回 null）
 //! - `chat_pendingWelcome(groupId, who, at?)` — 待领取 Welcome 字节（只读，不消费）
 //! - `chat_handshakeAtEpoch(groupId, epoch, at?)` — 指定 epoch 的 Commit 字节
 //! - `chat_groupMlsSnapshot(groupId, at?)` — 群 MLS 锚点快照
@@ -62,6 +63,7 @@ use pallet_chat_group::runtime_api::{
     ChatGroupApi as ChatGroupRuntimeApi, GroupMlsSnapshot,
 };
 use pallet_chat_inbox::runtime_api::ChatInboxApi as ChatInboxRuntimeApi;
+use pallet_chat_sync::runtime_api::ChatSyncApi as ChatSyncRuntimeApi;
 use pallet_chat_permission::runtime_api::ChatPermissionApi as ChatPermissionRuntimeApi;
 use pallet_chat_permission::{
     ChatPermissionLevel, PermissionResult, PrivacySettingsSummary, SceneAuthorizationInfo, SceneId,
@@ -291,6 +293,17 @@ fn alloc_format(args: core::fmt::Arguments<'_>) -> String {
     s
 }
 
+/// EN: Encrypted sync anchor row (EISA): manifest timestamp + opaque ciphertext.
+/// CN: 加密同步锚行（EISA）：清单时间戳 + 不透明密文。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcSyncAnchor {
+    /// EN: SyncManifest `updated_at` (ms, LWW key). CN: SyncManifest `updated_at`（毫秒，LWW 键）。
+    pub updated_at: u64,
+    /// EN: AES-256-GCM sealed manifest, `0x` hex. CN: AES-256-GCM 封装清单，`0x` hex。
+    pub ciphertext: String,
+}
+
 /// EN: Encode opaque bytes as `0x`-prefixed hex for JSON-RPC. CN: 将 opaque 字节编码为
 /// JSON-RPC 用的 `0x` 前缀 hex。
 fn bytes_to_hex(bytes: &[u8]) -> String {
@@ -371,6 +384,15 @@ pub trait ChatApi<BlockHash> {
     #[method(name = "chat_inboxExists")]
     fn inbox_exists(&self, inbox_id: Hash, at: Option<BlockHash>) -> RpcResult<bool>;
 
+    /// EN: Encrypted sync anchor at `anchor_id` (EISA, CHAT_SYNC_ANCHOR_ADR §5.6):
+    /// `{ updatedAt, ciphertext(hex) }`, or `null` if absent. The ciphertext is
+    /// opaque — only the client that derives the anchor can decrypt it.
+    /// CN: `anchor_id` 处的加密同步锚（EISA，CHAT_SYNC_ANCHOR_ADR §5.6）：
+    /// `{ updatedAt, ciphertext(hex) }`；未发布返回 `null`。密文不透明——仅派生该锚的
+    /// 客户端可解密。
+    #[method(name = "chat_syncAnchor")]
+    fn sync_anchor(&self, anchor_id: Hash, at: Option<BlockHash>) -> RpcResult<Option<RpcSyncAnchor>>;
+
     /// EN: Pending Welcome bytes (hex) for `who` in `group_id`; `null` if none.
     /// Read-only — call before `claim_welcome`. CN: `who` 在群内的待领 Welcome
     /// （hex）；无则为 `null`。只读——在 `claim_welcome` 之前调用。
@@ -429,6 +451,7 @@ where
     C::Api: ChatViewRuntimeApi<Block, AccountId, Hash, BlockNumber>,
     C::Api: ChatPermissionRuntimeApi<Block, AccountId>,
     C::Api: ChatInboxRuntimeApi<Block>,
+    C::Api: ChatSyncRuntimeApi<Block>,
     C::Api: ChatGroupRuntimeApi<Block, AccountId>,
 {
     fn list_conversations(
@@ -536,6 +559,20 @@ where
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
         api.inbox_exists(at, inbox_id.0).map_err(runtime_err)
+    }
+
+    fn sync_anchor(
+        &self,
+        anchor_id: Hash,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<Option<RpcSyncAnchor>> {
+        let api = self.client.runtime_api();
+        let at = at.unwrap_or_else(|| self.client.info().best_hash);
+        let row = api.sync_anchor(at, anchor_id.0).map_err(runtime_err)?;
+        Ok(row.map(|(updated_at, ciphertext)| RpcSyncAnchor {
+            updated_at,
+            ciphertext: bytes_to_hex(&ciphertext),
+        }))
     }
 
     fn pending_welcome(

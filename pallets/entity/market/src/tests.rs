@@ -4134,3 +4134,209 @@ fn s3_r11_market_sell_rejects_below_min_amount() {
         ));
     });
 }
+
+// ==================== v2.5.0: 参考价 initial_price → TWAP 切换修复 ====================
+
+/// 回归测试: 成交量与历史覆盖达标后，价格偏离检查的参考价应从
+/// initial_price 切换到 1h TWAP（修复前该切换不可达）
+#[test]
+fn reference_price_switches_from_initial_price_to_twap() {
+    ExtBuilder::build().execute_with(|| {
+        configure_market_enabled(ENTITY_ID); // initial_price = 100
+        assert_ok!(EntityMarket::configure_price_protection(
+            RuntimeOrigin::signed(ENTITY_OWNER),
+            ENTITY_ID,
+            true, // enabled
+            2000, // max_deviation = 20%
+            500,
+            5000,
+            1, // min_trades_for_twap = 1
+        ));
+
+        // 区块 1: 一笔真实成交 @110（偏离 initial 100 仅 10%，通过）
+        assert_ok!(EntityMarket::place_sell_order(
+            RuntimeOrigin::signed(ALICE),
+            ENTITY_ID,
+            1000,
+            110
+        ));
+        assert_ok!(EntityMarket::take_order(
+            RuntimeOrigin::signed(BOB),
+            0,
+            None
+        ));
+        let acc = TwapAccumulators::<Test>::get(ENTITY_ID).unwrap();
+        assert_eq!(acc.trade_count, 1);
+        assert_eq!(acc.first_trade_block, 1);
+
+        // 区块 2: 历史覆盖不足 1h → 参考价仍为 initial_price(100)
+        // 挂单 @125 偏离 25% > 20% → 拒绝
+        System::set_block_number(2);
+        assert_noop!(
+            EntityMarket::place_sell_order(RuntimeOrigin::signed(ALICE), ENTITY_ID, 1000, 125),
+            Error::<Test>::PriceDeviationTooHigh
+        );
+
+        // 区块 602: 覆盖 601 区块 >= BlocksPerHour(600) 且成交数达标
+        // → 参考价切换为 1h TWAP(≈110)
+        // 挂单 @125 偏离 TWAP 仅 ~13.6% < 20% → 通过（修复前会一直按 100 拒绝）
+        System::set_block_number(602);
+        assert_ok!(EntityMarket::place_sell_order(
+            RuntimeOrigin::signed(ALICE),
+            ENTITY_ID,
+            1000,
+            125
+        ));
+
+        // 偏离 TWAP 超限仍应拒绝: @135 偏离 110 约 22.7% > 20%
+        assert_noop!(
+            EntityMarket::place_sell_order(RuntimeOrigin::signed(ALICE), ENTITY_ID, 1000, 135),
+            Error::<Test>::PriceDeviationTooHigh
+        );
+    });
+}
+
+/// v2.5.0: 1h TWAP 应基于约一个周期前的 checkpoint 计算，
+/// 近期价格跳变不应立刻主导 TWAP（双 checkpoint 轮换）
+#[test]
+fn twap_uses_period_old_checkpoint() {
+    ExtBuilder::build().execute_with(|| {
+        configure_market_enabled(ENTITY_ID); // 价格保护已禁用，价格不受限
+
+        // 区块 1: 成交 @100
+        assert_ok!(EntityMarket::place_sell_order(
+            RuntimeOrigin::signed(ALICE),
+            ENTITY_ID,
+            1000,
+            100
+        ));
+        assert_ok!(EntityMarket::take_order(
+            RuntimeOrigin::signed(BOB),
+            0,
+            None
+        ));
+
+        // 区块 700: 成交 @100 → 触发 1h checkpoint 轮换
+        // (hour_curr 距今 699 >= 600)
+        System::set_block_number(700);
+        assert_ok!(EntityMarket::place_sell_order(
+            RuntimeOrigin::signed(ALICE),
+            ENTITY_ID,
+            1000,
+            100
+        ));
+        assert_ok!(EntityMarket::take_order(
+            RuntimeOrigin::signed(BOB),
+            1,
+            None
+        ));
+        let acc = TwapAccumulators::<Test>::get(ENTITY_ID).unwrap();
+        assert_eq!(acc.hour_prev.block_number, 1);
+        assert_eq!(acc.hour_curr.block_number, 700);
+
+        // 区块 750: 价格跳变到 200 成交
+        System::set_block_number(750);
+        assert_ok!(EntityMarket::place_sell_order(
+            RuntimeOrigin::signed(ALICE),
+            ENTITY_ID,
+            1000,
+            200
+        ));
+        assert_ok!(EntityMarket::take_order(
+            RuntimeOrigin::signed(BOB),
+            2,
+            None
+        ));
+
+        // 区块 760: 1h TWAP 使用 hour_prev(区块 1) 作为基准
+        // 累积 = 100×699 + 100×50 + 200×10 = 76900, 窗口 = 759
+        // TWAP = 76900 / 759 = 101 — 反映过去 1 小时的 ~100，而非跳变后的 200
+        System::set_block_number(760);
+        assert_eq!(
+            EntityMarket::calculate_twap(ENTITY_ID, TwapPeriod::OneHour),
+            Some(101u128)
+        );
+    });
+}
+
+/// v1 迁移: 旧版 TwapAccumulator 应正确转换为双 checkpoint 结构
+#[test]
+fn v1_migration_translates_old_accumulator() {
+    use codec::Encode;
+    use crate::migrations::v1::{migrate, OldTwapAccumulator};
+
+    ExtBuilder::build().execute_with(|| {
+        // 有成交的旧累积器
+        let old_traded = OldTwapAccumulator::<u128> {
+            current_cumulative: 5000,
+            current_block: 900,
+            last_price: 120,
+            trade_count: 7,
+            hour_snapshot: PriceSnapshot {
+                cumulative_price: 4000,
+                block_number: 850,
+            },
+            day_snapshot: PriceSnapshot {
+                cumulative_price: 3000,
+                block_number: 800,
+            },
+            week_snapshot: PriceSnapshot {
+                cumulative_price: 1000,
+                block_number: 100,
+            },
+            last_hour_update: 850,
+            last_day_update: 800,
+            last_week_update: 100,
+        };
+        // 仅 set_initial_price、无成交的旧累积器
+        let old_untraded = OldTwapAccumulator::<u128> {
+            current_cumulative: 0,
+            current_block: 5,
+            last_price: 100,
+            trade_count: 0,
+            hour_snapshot: PriceSnapshot {
+                cumulative_price: 0,
+                block_number: 5,
+            },
+            day_snapshot: PriceSnapshot {
+                cumulative_price: 0,
+                block_number: 5,
+            },
+            week_snapshot: PriceSnapshot {
+                cumulative_price: 0,
+                block_number: 5,
+            },
+            last_hour_update: 5,
+            last_day_update: 5,
+            last_week_update: 5,
+        };
+        frame_support::storage::unhashed::put_raw(
+            &TwapAccumulators::<Test>::hashed_key_for(ENTITY_ID),
+            &old_traded.encode(),
+        );
+        frame_support::storage::unhashed::put_raw(
+            &TwapAccumulators::<Test>::hashed_key_for(ENTITY_ID_2),
+            &old_untraded.encode(),
+        );
+
+        migrate::<Test>();
+
+        let acc = TwapAccumulators::<Test>::get(ENTITY_ID).unwrap();
+        assert_eq!(acc.current_cumulative, 5000);
+        assert_eq!(acc.current_block, 900);
+        assert_eq!(acc.last_price, 120);
+        assert_eq!(acc.trade_count, 7);
+        // first_trade_block = 各已知区块号的最小值 = week_snapshot(100)
+        assert_eq!(acc.first_trade_block, 100);
+        // 旧快照同时作为 prev 与 curr
+        assert_eq!(acc.hour_prev.block_number, 850);
+        assert_eq!(acc.hour_curr.cumulative_price, 4000);
+        assert_eq!(acc.day_curr.block_number, 800);
+        assert_eq!(acc.week_curr.block_number, 100);
+
+        // 无成交 → first_trade_block 保持 0 哨兵值
+        let acc2 = TwapAccumulators::<Test>::get(ENTITY_ID_2).unwrap();
+        assert_eq!(acc2.first_trade_block, 0);
+        assert_eq!(acc2.trade_count, 0);
+    });
+}
