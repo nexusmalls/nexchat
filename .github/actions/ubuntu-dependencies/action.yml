@@ -8,8 +8,14 @@ runs:
       if: contains(matrix.os, 'ubuntu')
       run: |
         sudo apt update
+        # clang/libclang-dev: required by bindgen (librocksdb-sys); no longer
+        # preinstalled on current GitHub runner images.
+        # clang/libclang-dev：bindgen（librocksdb-sys）编译所需；新版 GitHub
+        # runner 镜像不再预装。
         sudo apt install -y \
-          protobuf-compiler
+          protobuf-compiler \
+          clang \
+          libclang-dev
         rustup target add wasm32-unknown-unknown
         rustup component add rustfmt clippy rust-src
       shell: bash
