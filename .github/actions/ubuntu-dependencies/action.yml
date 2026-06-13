@@ -5,16 +5,16 @@ runs:
   using: "composite"
   steps:
     - name: Rust compilation prerequisites (Ubuntu)
-      if: contains(matrix.os, 'ubuntu')
       run: |
         sudo apt update
-        # clang/libclang-dev: required by bindgen (librocksdb-sys); no longer
-        # preinstalled on current GitHub runner images.
-        # clang/libclang-dev：bindgen（librocksdb-sys）编译所需；新版 GitHub
-        # runner 镜像不再预装。
+        # clang/llvm/libclang-dev: bindgen (librocksdb-sys) needs libclang + llvm-config.
+        # Do NOT gate on matrix.os here — e2e/benchmarks/try-runtime jobs have no matrix.
+        # clang/llvm/libclang-dev：bindgen（librocksdb-sys）需要 libclang 与 llvm-config。
+        # 此处不要依赖 matrix.os——e2e/benchmarks/try-runtime 等 job 没有 matrix。
         sudo apt install -y \
           protobuf-compiler \
           clang \
+          llvm \
           libclang-dev
         rustup target add wasm32-unknown-unknown
         rustup component add rustfmt clippy rust-src
