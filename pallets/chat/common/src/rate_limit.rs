@@ -62,8 +62,8 @@ where
 {
     let elapsed = current_block.saturating_sub(state.last_time);
 
-    if elapsed > window {
-        // 超出窗口，重置计数
+    if elapsed >= window {
+        // 超出窗口（含边界），重置计数 / window elapsed (inclusive bound), reset
         state.last_time = current_block;
         state.count = 1;
         RateLimitResult::Allowed
@@ -100,8 +100,8 @@ where
 {
     let elapsed = current_block.saturating_sub(state.last_time);
 
-    if elapsed > window {
-        // 超出窗口，允许
+    if elapsed >= window {
+        // 超出窗口（含边界），允许
         true
     } else {
         // 在窗口内，检查计数
@@ -138,8 +138,8 @@ where
 {
     let elapsed = current_block.saturating_sub(state.last_time);
 
-    if elapsed > window {
-        // 超出窗口，完全重置
+    if elapsed >= window {
+        // 超出窗口（含边界），完全重置
         max_count
     } else {
         // 在窗口内
@@ -147,9 +147,32 @@ where
     }
 }
 
+/// EN: Returns true when at least `min_interval` blocks have elapsed since `last`.
+/// Used by group creation cooldown, report cooldown, and sync publish spacing.
+/// CN: 当自 `last` 起至少经过 `min_interval` 个块高时返回 true。
+/// 用于建群冷却、举报冷却与 sync 发布间隔。
+pub fn min_blocks_elapsed<BlockNumber>(
+    last: BlockNumber,
+    now: BlockNumber,
+    min_interval: BlockNumber,
+) -> bool
+where
+    BlockNumber: Copy + Saturating + PartialOrd,
+{
+    now.saturating_sub(last) >= min_interval
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_min_blocks_elapsed() {
+        assert!(min_blocks_elapsed(10, 15, 5));
+        assert!(min_blocks_elapsed(10, 15, 4));
+        assert!(!min_blocks_elapsed(10, 14, 5));
+        assert!(min_blocks_elapsed(0, 100, 1));
+    }
 
     #[test]
     fn test_check_and_update_rate_limit() {
@@ -185,12 +208,19 @@ mod tests {
         );
         assert_eq!(state.count, 3); // 计数不变
 
-        // 窗口过期后
+        // 窗口过期后（elapsed == window 亦重置）
+        assert_eq!(
+            check_and_update_rate_limit(&mut state, 110, window, max_count),
+            RateLimitResult::Allowed
+        );
+        assert_eq!(state.count, 1);
+
+        // Still inside the window opened at 110 (elapsed 40 < 100).
         assert_eq!(
             check_and_update_rate_limit(&mut state, 150, window, max_count),
             RateLimitResult::Allowed
         );
-        assert_eq!(state.count, 1); // 重置
+        assert_eq!(state.count, 2);
     }
 
     #[test]

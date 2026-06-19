@@ -10,17 +10,40 @@ pallets/chat/
 ├── permission/   # 权限系统（场景授权 + 隐私级别 + 平台禁言 + 能力 epoch）[已接入 runtime]
 ├── core/         # 核心私聊模块（链上仅 System 通知 + 会话/未读/资料）[已接入 runtime]
 ├── group/        # MLS 群聊模块（RFC 9420 锚定）[已接入 runtime]
-└── inbox/        # 链下投递信箱注册表（inbox 维度 epoch + 定向标签撤销）[已接入 runtime, index 78]
+├── inbox/        # 链下投递信箱注册表（inbox 维度 epoch + 定向标签撤销）[已接入 runtime, index 78]
+├── msg-identity/ # 消息身份预密钥锚（X3DH IK/SPK/OPK 根 + 1:1 栈能力位）[已接入 runtime]
+└── sync/         # 账户派生加密同步锚 EISA（AnchorId 键控密文 + Ed25519 授权）[已接入 runtime]
 ```
 
 > **模块状态说明**
-> - `common` / `permission` / `core` / `group` / `inbox` 五个 crate 均在根
->   `Cargo.toml` 的 workspace members 中，并在 `runtime` 注册
->   （`ChatPermission` / `ChatCore` / `ChatGroup` / `ChatInbox`；`common` 仅提供
->   `rate_limit` 与 `ChatViewApi` 定义，无独立 pallet 实例）。
+> - `common` / `permission` / `core` / `group` / `inbox` / `msg-identity` / `sync`
+>   七个 crate 均在根 `Cargo.toml` 的 workspace members 中，并在 `runtime` 注册
+>   （`ChatPermission` / `ChatCore` / `ChatGroup` / `ChatInbox` / `MsgIdentity` /
+>   `ChatSync`；`common` 仅提供 `rate_limit` 与 `ChatViewApi` 定义，无独立 pallet 实例）。
 > - 合并前的旧版顶层 `pallet-chat`（`pallets/chat/src/`）与未接入 runtime 的 AI 对话
 >   子模块（原 `pallets/chat/ai`）已随收口删除；私聊功能统一由 `core/` 提供，
 >   AI 对话能力如需重建可基于 `pallet-deceased` / `pallet-deceased-ai` 另行规划。
+
+## 上线就绪与验证 / Launch readiness
+
+**链上（2026-06-19 审计收口）**：P0–P3 逻辑项已落地；7 个 chat pallet 均有
+`benchmarking.rs` + dev 链实测权重（见下节）。各 crate `README.md` §「上线审计摘要」有细节。
+
+**链上单元测试（推荐发版前跑一遍）**：
+
+```bash
+cargo test -p pallet-chat-common -p pallet-chat-permission -p pallet-chat-core \
+  -p pallet-chat-group -p pallet-chat-inbox -p pallet-msg-identity -p pallet-chat-sync
+cargo check -p nexus-runtime
+```
+
+**链下 E2E（nexchat + relay-rs，不覆盖 pallet extrinsic 本身）**：见
+[`scripts/docs/NEXUS_TEST_PLAN.md`](../../scripts/docs/NEXUS_TEST_PLAN.md) NexChat 小节；常用：
+
+```bash
+cd scripts && npm run test:nexchat:relay-wire    # Wire 能力矩阵（本地 relay）
+cd scripts && npm run test:nexchat:two-account-chat # 双账户 relay 对话
+```
 
 ## 模块依赖关系
 
@@ -39,7 +62,7 @@ pallets/chat/
 
 > `inbox` 独立于其余四个：它锚定链下投递令牌（inbox 维度 epoch + 定向标签），其 epoch
 > **刻意不复用** `permission` 的账户级 `CapabilityEpoch`（避免 relay 把 inbox 链回账户），
-> 两者正交。详见 `inbox/` 与 `CHAT_OFFCHAIN_DELIVERY_DESIGN.md`。
+> 两者正交。详见 `inbox/` 模块头与 README。
 
 > 注：`core` / `permission` 已移除对 `common` 的依赖（原为声明但零 import 的 dead dep）。
 > `common::runtime_api` 由 `runtime/src/apis.rs` 聚合实现、`node/src/chat_rpc.rs` 封装。
@@ -64,19 +87,24 @@ pallets/chat/
 
 场景化权限控制：
 
-- **SceneType**: 支持多种场景（私聊/群聊/AI对话/逝者纪念等）
-- **PermissionLevel**: 权限级别（Block/ReadOnly/Normal/Premium/Admin）
-- **白名单/黑名单**: 灵活的访问控制
-- **临时授权**: 带过期时间的访问令牌
+- **SceneType**: 支持多种场景（订单 / 争议 / 做市等业务上下文；`Direct` 为 legacy/test-only，1:1 走链下能力令牌）
+- **ChatPermissionLevel**: 隐私级别（`Open` / `FriendsOnly` / `Whitelist`（= `FriendsOnly` 弃用别名）/ `Closed`）
+- **场景授权**: 业务 pallet 经 `SceneAuthorizationManager` 授予 / 撤销的带过期时间授权
+- **平台合规**: 治理平台级禁言（`force_mute_account`）+ 举报存证（`report` / `resolve_report`）
+- **能力撤销 epoch**: `CapabilityEpoch` + `bump_capability_epoch`（链下拉黑 / 放行的新鲜度锚）
+
+> 注：链上黑名单 / 白名单明文存储已删除（隐私），拉黑 / 放行统一走链下能力令牌
+> （`bump_capability_epoch`）+ 信箱标签撤销（`pallet-chat-inbox::revoke_tag`）。
 
 ### core - 核心私聊
 
-基础的一对一聊天功能：
+链上仅承载 **System 通知 + 会话元数据**（人类消息全链下，见下方边界）：
 
-- **ChatUserId分配**: 唯一11位数字ID
-- **消息发送**: 支持多种消息类型
-- **消息状态**: 已发送/已送达/已读/已撤回
-- **权限集成**: 基于permission模块的访问控制
+- **ChatUserId 分配**: 唯一数字 ID（`u64`）
+- **System 通知**: 仅 `MessageType::System`（订单 / 争议 / 治理）经 `send_message`；人类消息类型
+  （Text/Image/File/Voice）一律链下，链上调用返回 `HumanMessagesOffChain`
+- **会话元数据**: 未读计数、撤回（限时双向隐藏）、会话级免打扰 DND + 置顶 + 归档
+- **权限集成**: 经 `pallet-chat-permission::ChatPermissionChecker` 单点门控
 
 ### group - MLS（RFC 9420）群聊
 
@@ -132,9 +160,9 @@ pallet-chat-inbox = { path = "../pallets/chat/inbox", default-features = false }
   "置顶优先 + 最后活跃倒序"排序），群聊在后并按 `group_id` **升序**（确定、可分页基线；真实
   活跃度在链下）。**不是**完整消息列表，见下方边界与 Merge Spec。
 
-> 链下私聊为何不在列表、以及换设备如何恢复会话列表：见
-> [`CHAT_P2_SESSION_ANCHOR_DESIGN.md`](./CHAT_P2_SESSION_ANCHOR_DESIGN.md)——结论是
-> **否决链上会话锚点**（会泄漏通信关系），改用链下加密会话索引 blob + inbox 推导。
+> 链下私聊为何不在列表、以及换设备如何恢复会话列表：结论是
+> **否决链上会话锚点**（会泄漏通信关系），改用链下加密会话索引 blob（首选）+ inbox 投递推导
+> （兜底）+ 本地 MLS 会话库恢复。
 - `total_direct_unread(who) -> u32`：链上 **System 通知**通道的未读总数，**不是** App 全局未读。
 
 > **⚠️ 链上 / 链下边界（重要 — 客户端必读）**
@@ -175,8 +203,7 @@ pallet-chat-inbox = { path = "../pallets/chat/inbox", default-features = false }
 
 **2. 会话集合（presence）= 链上 ∪ 链下**
 - 起始集合 = 本地会话来源 ∪ 链上返回的行。本地会话来源 = **加密会话索引 blob**（首选）∪
-  **inbox 投递推导**（兜底）∪ 本地 MLS 会话库——详见
-  [`CHAT_P2_SESSION_ANCHOR_DESIGN.md`](./CHAT_P2_SESSION_ANCHOR_DESIGN.md)。
+  **inbox 投递推导**（兜底）∪ 本地 MLS 会话库。
 - 仅链下存在的私聊（无 System 消息）：链上无行（**有意为之**，链上私聊锚点已否决以隐藏通信
   关系），**以链下为准**补入。
 - 仅链上存在的私聊（只有 System 通知）：作为「平台通知」卡片保留。
@@ -236,7 +263,87 @@ polkadot-js 客户端用 JSON 友好类型直接调用。所有方法只读且�
 3. **权限集中**: 统一的权限检查通过 `permission`（`ChatPermissionChecker`）。
 4. **可扩展**: 新增聊天场景只需扩展 `SceneType` 枚举。
 
+## 1:1 密码学路线状态 / 1:1 crypto route status
+
+| 栈 | 状态 | 文档 / 代码 |
+|---|---|---|
+| **pairwise MLS Wire**（多 leaf / relay commit-slot CAS） | **现行 / of record** | [`CHAT_1TO1_WIRE_COMMIT_SERIALIZATION_SPEC.md`](./CHAT_1TO1_WIRE_COMMIT_SERIALIZATION_SPEC.md) · `nexchat/src/mls/directWire*` |
+| **X3DH + Double Ratchet**（Signal 风格，与 MLS 严格解耦） | **并行实现中 / coexisting** | [`CHAT_1TO1_X3DH_DOUBLE_RATCHET_DESIGN.md`](./CHAT_1TO1_X3DH_DOUBLE_RATCHET_DESIGN.md) · `nexchat/src/crypto-dr/` · 链上 `pallet-msg-identity` |
+| 栈协商 | 双方支持 DR 则 DR 优先，否则回退 Wire | X3DH 设计 §20 `chooseStack` · `VITE_DR_ENABLED` |
+| 群聊（≥3 人） | **仅 OpenMLS**（Wire 化） | [`CHAT_GROUP_WIREIFY_DESIGN.md`](./CHAT_GROUP_WIREIFY_DESIGN.md) · `pallet-chat-group` |
+
+> DR 与 MLS-Wire **不共享会话状态**；2↔3 人切换由客户端 `ChatOrchestrator` 负责 archive + freeze/retire（见 X3DH 设计 §M5）。
+
+## 设计文档（多设备 / 群 Wire）
+
+| 文档 | 用途 |
+|---|---|
+| [`CHAT_MULTIDEVICE_MLS_SYNC_DESIGN.md`](./CHAT_MULTIDEVICE_MLS_SYNC_DESIGN.md) | 多设备总纲 v4（废止群轨 A；Wire 现行 + 路线 B 终态） |
+| [`CHAT_GROUP_WIREIFY_DESIGN.md`](./CHAT_GROUP_WIREIFY_DESIGN.md) | **群 Wire 化落地**（design of record） |
+| [`CHAT_1TO1_WIRE_COMMIT_SERIALIZATION_SPEC.md`](./CHAT_1TO1_WIRE_COMMIT_SERIALIZATION_SPEC.md) | 1:1 Wire 串行化 / 设备加入 / E2EI |
+| [`CHAT_1TO1_X3DH_DOUBLE_RATCHET_DESIGN.md`](./CHAT_1TO1_X3DH_DOUBLE_RATCHET_DESIGN.md) | 1:1 X3DH + Double Ratchet（与 MLS 解耦的替代栈） |
+| [`CHAT_LARGE_FILE_SPEC.md`](./CHAT_LARGE_FILE_SPEC.md) | 大文件信封 / 分块 manifest / 计费分级 |
+
+## 基准测试与权重 / Benchmarks & weights
+
+Runtime 基准清单：`runtime/src/benchmarks.rs`（6 个 chat pallet + `MsgIdentity`）。
+
+### 构建 benchmark 节点
+
+```bash
+cargo build --release --features runtime-benchmarks -p nexus-node
+```
+
+### 单 pallet 重跑（示例）
+
+```bash
+./target/release/nexus-node benchmark pallet \
+  --chain dev \
+  --pallet pallet_chat_group \
+  --extrinsic '*' \
+  --steps 50 \
+  --repeat 20 \
+  --output benchmark-results/pallet_chat_group.txt
+```
+
+将 `pallet_chat_group` 换成下表任一行即可。生成后把数值合入对应 `src/weights.rs`
+（惯例：`Weight::from_parts(ref_time, proof_size)` + `DbWeight` 读写项）。
+
+**例外**：`group::disband_group` / `force_disband_group` 保留
+`MAX_DISBAND_ITEMS_PER_CALL` 预算公式（基准只种子小群，未覆盖最坏拆除）。
+
+### 产物清单（2026-06-19，dev 链 Xeon E5-2686 v4）
+
+| 文件 | Runtime pallet | 源码权重 |
+| --- | --- | --- |
+| `benchmark-results/pallet_chat_core.txt` | `ChatCore` | `core/src/weights.rs` |
+| `benchmark-results/pallet_chat_group.txt` | `ChatGroup` | `group/src/weights.rs` |
+| `benchmark-results/pallet_chat_permission.txt` | `ChatPermission` | `permission/src/weights.rs` |
+| `benchmark-results/pallet_chat_inbox.txt` | `ChatInbox` | `inbox/src/weights.rs` |
+| `benchmark-results/pallet_chat_sync.txt` | `ChatSync` | `sync/src/weights.rs` |
+| `benchmark-results/pallet_msg_identity.txt` | `MsgIdentity` | `msg-identity/src/weights.rs` |
+
+`common` 无 extrinsic，不参与 benchmark。主网前应在**参考硬件**按相同参数重跑并更新上表。
+
 ## 迁移历史
+
+- 2026-06-19: **上线审计收口（P0–P3 + benchmark）**：platform mute 覆盖 group MLS 写入；
+  permission v0→v1 分块迁移；`mark_session_as_read` 游标；`request_join` 限频；group
+  delta/epoch/限频后置等 P2 项；6 pallet dev benchmark 产物入 `benchmark-results/` 并同步
+  `weights.rs`；`list_conversations` RPC 上限 512。链下进阶 IM（引用/@/reaction 等）仍属
+  relay/客户端，链上不增 extrinsic。
+
+- 2026-06-19: 文档收口（删除已并入/落地的链下设计稿）：移除 `CHAT_OFFCHAIN_DELIVERY_DESIGN.md`、
+  `CHAT_P2_SESSION_ANCHOR_DESIGN.md`、`CHAT_SYNC_ANCHOR_ADR.md`、`CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md`、
+  `CHAT_GROUP_CLIENT_INTEGRATION.md`、`CHAT_DEVICE_RETENTION_DESIGN.md`（及 `CHAT_FRONTEND_PLAN.md`、
+  `EISA_LAUNCH_CHECKLIST.md`）。其链上锚点结论已落到对应 pallet（`inbox` 盲签投递、`sync` EISA、
+  `permission` 能力 epoch）的模块头与 README；链下 relay/客户端细节属链下组件、不在本仓。下方
+  历史条目中对这些文件名的引用为**当时记录**，文件现已不存在。
+
+- 2026-06-18: 多设备文档 v4 重整：废止「群=轨 A ⊕ 1:1=Wire」混合方案；群方向迁至
+  `CHAT_GROUP_WIREIFY_DESIGN.md`；`CHAT_MULTIDEVICE_MLS_SYNC_DESIGN.md` 精简为总纲（保留路线 B +
+  Gate-B）；删除已完成/过时文档 `CHAT_MULTIDEVICE_HYBRID_DESIGN.md`、
+  `CHAT_MODULES_CONSOLIDATION_DESIGN.md`。
 
 - 2025-12-29: 统一整合以下模块到 `pallets/chat/` 目录：
   - `pallets/chat` → `pallets/chat/core`

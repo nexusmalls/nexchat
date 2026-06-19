@@ -1,37 +1,33 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(deprecated)]
 
-//! # Pallet Chat - 去中心化聊天功能
-//! 
-//! ## 概述
-//! 
-//! 本模块提供去中心化的聊天功能，采用混合方案：
-//! - **链上存储**：消息元数据（发送方、接收方、IPFS CID、时间戳等）
-//! - **IPFS存储**：加密的消息内容
-//! - **端到端加密**：前端实现消息内容加密
-//! 
-//! ## 核心特性
-//! 
-//! - ✅ 私聊功能（1对1）
-//! - ✅ 会话管理
-//! - ✅ 已读/未读状态
-//! - ✅ 消息软删除
-//! - ✅ 未读计数
-//! - ✅ 批量标记已读
-//! 
-//! ## 架构设计
-//! 
+//! # Pallet Chat Core — on-chain private-chat slice / 链上私聊切片
+//!
+//! EN: On-chain anchor for the 1:1 chat **System-notification channel only**.
+//! Human chat (Text/Image/File/Voice) is delivered **off-chain** (MLS / X3DH + relay);
+//! this pallet stores session metadata, unread counters, pin/mute/archive flags, and
+//! **System** notices from trusted runtime-wired pallets (orders, disputes, governance).
+//! A direct `Session` row exists only after at least one System message between the pair.
+//!
+//! CN: 1:1 聊天在链上的**切片**：仅承载 **System 通知通道** 与会话元数据。
+//! 人类聊天（Text/Image/File/Voice）在**链下**（MLS / X3DH + relay）；本 pallet 存
+//! 会话元数据、未读、置顶/免打扰/归档，以及受信业务 pallet 投递的 **System** 通知
+//! （订单/争议/治理等）。私聊 `Session` 行仅在该对用户间发过 System 消息后才会出现。
+//!
+//! ## Architecture / 架构
+//!
 //! ```text
-//! 用户A → 加密消息 → 上传IPFS → 获取CID → 调用send_message → 链上存储元数据
-//!                                                    ↓
-//!                                               触发事件
-//!                                                    ↓
-//! 用户B ← 解密显示 ← 下载IPFS ← 获取CID ← 监听事件 ← 链上查询元数据
+//! Off-chain: E2EE human messages (MLS or X3DH) via relay — never touch the chain
+//! On-chain:  System notices + session flags + unread for the System channel only
+//! Client:    MUST merge chain slice with local/off-chain MLS state (see pallets/chat/README.md)
 //! ```
 
 extern crate alloc;
 
 pub use pallet::*;
+
+pub mod weights;
+pub use weights::{SubstrateWeight, WeightInfo};
 
 #[cfg(test)]
 mod mock;
@@ -171,167 +167,9 @@ pub struct ChatUserProfile<T: Config> {
 /// 客户端可重复调用。
 pub const MAX_SESSION_READ_SCAN: u32 = 512;
 
-/// 函数级详细中文注释：权重信息 trait
-/// - 定义所有可调用函数的权重计算
-/// - 实际项目中应通过 benchmark 生成精确权重
-/// - 这里提供保守的默认估算
-pub trait WeightInfo {
-	fn send_message() -> Weight;
-	fn notify() -> Weight;
-	fn mark_as_read() -> Weight;
-	fn delete_message() -> Weight;
-	fn recall_message() -> Weight;
-	fn mark_batch_as_read(n: u32) -> Weight;
-	fn mark_session_as_read(n: u32) -> Weight;
-	fn archive_session() -> Weight;
-	fn set_session_muted() -> Weight;
-	fn set_session_pinned() -> Weight;
-	fn cleanup_old_messages(n: u32) -> Weight;
-	// 新增ChatUserId相关功能权重
-	fn register_chat_user() -> Weight;
-	fn update_chat_profile() -> Weight;
-	fn set_user_status() -> Weight;
-	fn update_privacy_settings() -> Weight;
-}
-
-/// 函数级详细中文注释：默认权重实现
-/// - 基于 Substrate 标准权重单位估算
-/// - DbRead = 25_000_000 weight (25微秒)
-/// - DbWrite = 100_000_000 weight (100微秒)
-pub struct SubstrateWeight<T>(core::marker::PhantomData<T>);
-impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
-	/// 发送消息权重（保守估算，System 路径）：约 5 次读 + 4 次写
-	/// - 读：Sessions, NextMessageId, SessionMessages, ChatUserId 映射等
-	/// - 写：Messages, Sessions, SessionMessages, UnreadCount
-	fn send_message() -> Weight {
-		Weight::from_parts(
-			5 * 25_000_000 + 4 * 100_000_000, // 计算权重
-			0 // 存储权重（暂不考虑）
-		)
-	}
-
-	/// 程序化系统通知权重：等同 `send_message`（同走 `do_send` 的 System 分支）。
-	/// 业务 pallet 在其 extrinsic 权重中叠加本项以诚实计量通知成本。
-	/// Programmatic notify weight: same as `send_message` (shares `do_send`).
-	fn notify() -> Weight {
-		Self::send_message()
-	}
-
-	/// 标记已读权重：2次读 + 2次写
-	/// - 读：Messages, UnreadCount
-	/// - 写：Messages, UnreadCount
-	fn mark_as_read() -> Weight {
-		Weight::from_parts(
-			2 * 25_000_000 + 2 * 100_000_000,
-			0
-		)
-	}
-
-	/// 删除消息权重：1次读 + 2次写（Messages + 可能的 UnreadCount 抵消）
-	fn delete_message() -> Weight {
-		Weight::from_parts(
-			1 * 25_000_000 + 2 * 100_000_000,
-			0
-		)
-	}
-
-	/// 撤回消息权重（实测 / benchmarked）：Messages + UnreadCount（r:2 w:2）。
-	fn recall_message() -> Weight {
-		Weight::from_parts(49_236_000, 3710)
-			.saturating_add(T::DbWeight::get().reads(2))
-			.saturating_add(T::DbWeight::get().writes(2))
-	}
-
-	/// 批量标记已读权重：取决于消息数量
-	/// 每条消息：1次读 + 1次写
-	fn mark_batch_as_read(n: u32) -> Weight {
-		Weight::from_parts(
-			(n as u64) * (25_000_000 + 100_000_000),
-			0
-		)
-	}
-
-	/// 会话标记已读权重：取决于消息数量
-	/// 基础：2次读(Sessions + SessionMessages迭代)
-	/// 每条消息：1次读 + 1次写
-	fn mark_session_as_read(n: u32) -> Weight {
-		Weight::from_parts(
-			2 * 25_000_000 + (n as u64) * (25_000_000 + 100_000_000),
-			0
-		)
-	}
-
-	/// 归档会话权重：1次读 + 1次写
-	fn archive_session() -> Weight {
-		Weight::from_parts(
-			1 * 25_000_000 + 1 * 100_000_000,
-			0
-		)
-	}
-
-	/// 设置会话免打扰权重（实测 / benchmarked）：Sessions(r:1) + SessionMuted(w:1)。
-	fn set_session_muted() -> Weight {
-		Weight::from_parts(42_445_000, 3627)
-			.saturating_add(T::DbWeight::get().reads(1))
-			.saturating_add(T::DbWeight::get().writes(1))
-	}
-
-	/// 设置会话置顶权重（实测 / benchmarked）：Sessions(r:1) + SessionPinned(w:1)。
-	fn set_session_pinned() -> Weight {
-		Weight::from_parts(45_174_000, 3627)
-			.saturating_add(T::DbWeight::get().reads(1))
-			.saturating_add(T::DbWeight::get().writes(1))
-	}
-
-	/// 清理旧消息权重：取决于消息数量
-	/// 每条消息：1次读 + 2次写（Messages + SessionMessages）
-	fn cleanup_old_messages(n: u32) -> Weight {
-		Weight::from_parts(
-			(n as u64) * (25_000_000 + 2 * 100_000_000),
-			0
-		)
-	}
-
-	/// 注册聊天用户权重：多次读写操作
-	/// - 读：AccountToChatUserId检查 + UsedChatUserIds迭代检查
-	/// - 写：UsedChatUserIds + AccountToChatUserId + ChatUserIdToAccount + ChatUserProfiles
-	fn register_chat_user() -> Weight {
-		Weight::from_parts(
-			2 * 25_000_000 + 4 * 100_000_000,
-			0
-		)
-	}
-
-	/// 更新聊天资料权重：2次读 + 1次写
-	/// - 读：AccountToChatUserId + ChatUserProfiles
-	/// - 写：ChatUserProfiles
-	fn update_chat_profile() -> Weight {
-		Weight::from_parts(
-			2 * 25_000_000 + 1 * 100_000_000,
-			0
-		)
-	}
-
-	/// 设置用户状态权重：2次读 + 1次写
-	/// - 读：AccountToChatUserId + ChatUserProfiles
-	/// - 写：ChatUserProfiles
-	fn set_user_status() -> Weight {
-		Weight::from_parts(
-			2 * 25_000_000 + 1 * 100_000_000,
-			0
-		)
-	}
-
-	/// 更新隐私设置权重：2次读 + 1次写
-	/// - 读：AccountToChatUserId + ChatUserProfiles
-	/// - 写：ChatUserProfiles
-	fn update_privacy_settings() -> Weight {
-		Weight::from_parts(
-			2 * 25_000_000 + 1 * 100_000_000,
-			0
-		)
-	}
-}
+/// EN: Hard upper bound on message ids per `mark_batch_as_read` call (matches session scan cap).
+/// CN: `mark_batch_as_read` 单次允许的消息 id 上限（与会话扫描上限一致）。
+pub const MAX_BATCH_READ: u32 = 512;
 
 /// 函数级详细中文注释：消息元数据结构
 /// - 链上只存储元数据，不存储实际内容
@@ -423,7 +261,12 @@ pub mod pallet {
 		}
 	}
 
+	/// EN: v1 = off-chain human messages; System-only send path.
+	/// CN: v1 = 人类消息链下化；仅 System 发送路径。
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+
 	#[pallet::pallet]
+	#[pallet::storage_version(STORAGE_VERSION)]
 	pub struct Pallet<T>(_);
 
 	#[pallet::config]
@@ -577,6 +420,19 @@ pub mod pallet {
 		Blake2_128Concat,
 		u64,                  // message_id
 		(),
+		OptionQuery,
+	>;
+
+	/// EN: Per-user cursor for incremental `mark_session_as_read` scans (ascending msg_id).
+	/// CN: `mark_session_as_read` 增量扫描游标（按 msg_id 升序推进）。
+	#[pallet::storage]
+	pub type SessionReadCursor<T: Config> = StorageDoubleMap<
+		_,
+		Blake2_128Concat,
+		T::AccountId,
+		Blake2_128Concat,
+		T::Hash,
+		u64,
 		OptionQuery,
 	>;
 
@@ -795,6 +651,11 @@ pub mod pallet {
 			count: u32,
 		},
 
+		/// EN: Programmatic System notify failed (best-effort bridge). CN: 程序化 System 通知失败（尽力桥接）。
+		SystemNotifyFailed {
+			recipient: T::AccountId,
+		},
+
 		/// 函数级详细中文注释：聊天用户创建成功
 		/// [account_id, chat_user_id]
 		ChatUserCreated {
@@ -851,8 +712,8 @@ pub mod pallet {
 		InvalidCid,
 		/// 消息ID列表为空
 		EmptyMessageList,
-		/// 分页参数无效，offset或limit超出合理范围
-		InvalidPagination,
+		/// EN: Batch read list exceeds [`MAX_BATCH_READ`]. CN: 批量已读列表超过 [`MAX_BATCH_READ`]。
+		BatchReadListTooLong,
 		/// 无聊天权限：被对方拉黑、缺少有效场景授权 / 好友关系，或被隐私级别拒绝。
 		/// 统一由 pallet-chat-permission 判定（黑名单 / 陌生人 / 隐私级别单一来源）。
 		/// No chat permission: blocked, missing scene authorization / friendship, or
@@ -900,6 +761,19 @@ pub mod pallet {
 		/// 改走链下 MLS + relay，使「谁与谁聊、聊什么」不触链（隐私：隐藏通信关系）。
 		/// 链上仅允许经 [`Pallet::send_message`] 发送 [`MessageType::System`]。
 		HumanMessagesOffChain,
+	}
+
+	#[pallet::hooks]
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		fn on_runtime_upgrade() -> Weight {
+			let on_chain = <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
+			if on_chain < STORAGE_VERSION {
+				STORAGE_VERSION.put::<Pallet<T>>();
+				T::DbWeight::get().writes(1)
+			} else {
+				Weight::zero()
+			}
+		}
 	}
 
 	#[pallet::call]
@@ -1133,6 +1007,10 @@ pub mod pallet {
 
 			// 验证列表非空
 			ensure!(!message_ids.is_empty(), Error::<T>::EmptyMessageList);
+			ensure!(
+				message_ids.len() <= crate::MAX_BATCH_READ as usize,
+				Error::<T>::BatchReadListTooLong
+			);
 
 			let mut marked_count = 0u32;
 
@@ -1190,35 +1068,47 @@ pub mod pallet {
 			);
 
 			// B3（DoS）：会话消息条数无上界，必须有界扫描，否则固定权重会被低估。
-			// 单次最多扫描 `MAX_SESSION_READ_SCAN` 条；若仍有剩余，客户端可重复调用直至
-			// 未读归零（按本次实际标记数递减，分批安全、不会误清零）。
-			// B3 (DoS): a session's message count is unbounded, so the scan must be
-			// bounded or the fixed weight would be under-charged. Scan at most
-			// `MAX_SESSION_READ_SCAN` per call; the client may repeat until unread
-			// reaches zero (we decrement by the count actually marked this call,
-			// which is batch-safe and never over-zeros).
+			// 从游标处按 msg_id **升序**续扫；重复调用可推进至会话尾部（修复「永远扫最旧 512 条」缺陷）。
+			// B3 (DoS): unbounded session size requires a bounded scan. Resume in
+			// **ascending** msg_id order from `SessionReadCursor` so repeated calls
+			// advance through the session (fixes always re-scanning the oldest 512).
 			let max_scan = crate::MAX_SESSION_READ_SCAN as usize;
-			let message_ids: Vec<u64> = SessionMessages::<T>::iter_prefix(session_id)
-				.map(|(msg_id, _)| msg_id)
-				.take(max_scan)
-				.collect();
+			let cursor = SessionReadCursor::<T>::get(&who, &session_id);
 
-			// 批量标记已读，并记录本次实际标记数（仅本人未读的会被标记）。
+			let mut candidates: Vec<u64> = SessionMessages::<T>::iter_prefix(session_id)
+				.map(|(msg_id, _)| msg_id)
+				.filter(|id| cursor.map_or(true, |c| *id > c))
+				.collect();
+			candidates.sort_unstable();
+			if candidates.len() > max_scan {
+				candidates.truncate(max_scan);
+			}
+
 			let mut marked: u32 = 0;
-			for msg_id in message_ids.iter() {
+			for msg_id in candidates.iter() {
 				if let Some(mut msg) = Messages::<T>::get(msg_id) {
 					if msg.receiver == who && !msg.is_read {
 						msg.is_read = true;
-						Messages::<T>::insert(msg_id, msg);
+						Messages::<T>::insert(*msg_id, msg);
 						marked = marked.saturating_add(1);
 					}
 				}
 			}
 
-			// 按本次实际标记数抵消未读计数（分批收敛到 0）。
 			UnreadCount::<T>::mutate((who.clone(), session_id), |count| {
 				*count = count.saturating_sub(marked);
 			});
+
+			if candidates.is_empty() {
+				if UnreadCount::<T>::get((who.clone(), session_id)) > 0 {
+					SessionReadCursor::<T>::remove(&who, &session_id);
+				}
+			} else if let Some(&last) = candidates.last() {
+				SessionReadCursor::<T>::insert(&who, &session_id, last);
+				if UnreadCount::<T>::get((who.clone(), session_id)) == 0 {
+					SessionReadCursor::<T>::remove(&who, &session_id);
+				}
+			}
 
 			Self::deposit_event(Event::SessionMarkedAsRead {
 				session_id,
@@ -1347,8 +1237,9 @@ pub mod pallet {
 		///
 		/// Root/governance-only; scans at most `limit` entries per call resuming
 		/// from `LastCleanupCursor`, bounding work to O(limit) so the weight is
-		/// honest (fixes audit G). Removes only messages that are expired AND
-		/// soft-deleted by both parties.
+		/// honest (fixes audit G). Removes messages that are expired AND either
+		/// (a) soft-deleted by both parties, or (b) System messages whose receiver
+		/// has soft-deleted (system sender is a derived account with no user key).
 		#[pallet::call_index(8)]
 		#[pallet::weight(T::WeightInfo::cleanup_old_messages(*limit))]
 		pub fn cleanup_old_messages(
@@ -1363,6 +1254,7 @@ pub mod pallet {
 
 			let now = <frame_system::Pallet<T>>::block_number();
 			let expiration_time = T::MessageExpirationTime::get();
+			let system_account = T::SystemAccount::get();
 
 			// 从游标处续扫；游标为空则从头开始（有界增量 GC）。
 			let mut iter = match LastCleanupCursor::<T>::get() {
@@ -1383,10 +1275,11 @@ pub mod pallet {
 						last_seen = Some(msg_id);
 
 						let age = now.saturating_sub(msg.sent_at);
-						if age >= expiration_time
-							&& msg.is_deleted_by_sender
-							&& msg.is_deleted_by_receiver
-						{
+						let both_deleted =
+							msg.is_deleted_by_sender && msg.is_deleted_by_receiver;
+						let system_receiver_deleted = msg.sender == system_account
+							&& msg.is_deleted_by_receiver;
+						if age >= expiration_time && (both_deleted || system_receiver_deleted) {
 							messages_to_remove.push((msg_id, msg.session_id));
 							cleaned_count = cleaned_count.saturating_add(1);
 						}
@@ -1639,10 +1532,6 @@ pub mod pallet {
 	/// Trusted system-notification port impl (see top-level [`crate::SystemNotifier`]).
 	impl<T: Config> crate::SystemNotifier<T::AccountId> for Pallet<T> {
 		fn notify(receiver: &T::AccountId, notice: Vec<u8>) -> DispatchResult {
-			// sender = 平台系统账户；session=None → 自动复用/创建 system↔receiver 会话。
-			// 复用 `do_send` 的 System 分支：受信来源跳过权限闸门与限频，仅做 CID sanity。
-			// sender = platform system account; reuse `do_send`'s System branch
-			// (skips permission gate + rate limit; CID sanity only).
 			Self::do_send(
 				T::SystemAccount::get(),
 				receiver.clone(),
@@ -1650,6 +1539,18 @@ pub mod pallet {
 				MessageType::System,
 				None,
 			)
+		}
+	}
+
+	impl<T: Config> Pallet<T> {
+		/// EN: Best-effort System notify; emits [`Event::SystemNotifyFailed`] on error.
+		/// CN: 尽力发送 System 通知；失败时发 [`Event::SystemNotifyFailed`]。
+		pub fn notify_system_best_effort(receiver: &T::AccountId, notice: Vec<u8>) {
+			if <Self as crate::SystemNotifier<T::AccountId>>::notify(receiver, notice).is_err() {
+				Self::deposit_event(Event::SystemNotifyFailed {
+					recipient: receiver.clone(),
+				});
+			}
 		}
 	}
 

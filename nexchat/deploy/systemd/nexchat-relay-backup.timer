@@ -1,0 +1,11 @@
+[Unit]
+Description=Run NexChat Relay IPFS backup every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Persistent=true
+RandomizedDelaySec=90
+
+[Install]
+WantedBy=timers.target

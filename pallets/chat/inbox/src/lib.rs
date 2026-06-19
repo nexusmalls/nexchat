@@ -1,7 +1,8 @@
 //! # 链下投递信箱注册表 Pallet / Off-chain Delivery Inbox Registry Pallet
 //!
 //! EN: Minimal on-chain anchor for the **Blinded One-Time Delivery Token**
-//! protocol (see `pallets/chat/CHAT_OFFCHAIN_DELIVERY_DESIGN.md`). It registers
+//! protocol (baseline RFC 9474 Blind RSA; the off-chain relay/issuance details
+//! live in the relay component, not this repo). It registers
 //! opaque delivery inboxes and publishes, per inbox, the data a relay needs to
 //! verify a token *offline from chain state*:
 //! - an **inbox-keyed revocation `epoch`** (rotate to invalidate every token), and
@@ -13,8 +14,9 @@
 //! chain never performs RSA and the inbox stays unlinkable to any account beyond
 //! the throwaway *controller* that registered it.
 //!
-//! CN: **盲化一次性投递令牌**协议（见 `pallets/chat/CHAT_OFFCHAIN_DELIVERY_DESIGN.md`）
-//! 的最小链上锚点。它注册不透明投递信箱，并按信箱公布 relay **离线**验证令牌所需的数据：
+//! CN: **盲化一次性投递令牌**协议（基线 RFC 9474 Blind RSA；relay / 盲签发等链下细节
+//! 在 relay 组件、不在本仓）的最小链上锚点。它注册不透明投递信箱，并按信箱公布 relay
+//! **离线**验证令牌所需的数据：
 //! - **inbox 维度撤销 `epoch`**（轮换即作废所有令牌），与
 //! - **`revoked_tags`** 集合（每联系人定向撤销）。
 //!
@@ -78,8 +80,12 @@ pub mod pallet {
     use crate::types::{ContactTag, InboxId, InboxRecord};
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
+    use pallet_chat_common::{bump_u32_epoch, reserve_deposit, unreserve_deposit};
+
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
     #[pallet::pallet]
+    #[pallet::storage_version(STORAGE_VERSION)]
     pub struct Pallet<T>(_);
 
     /// EN: Pallet configuration. CN: Pallet 配置。
@@ -199,6 +205,19 @@ pub mod pallet {
         TooManyInboxes,
     }
 
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_runtime_upgrade() -> Weight {
+            let on_chain = <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
+            if on_chain < STORAGE_VERSION {
+                STORAGE_VERSION.put::<Pallet<T>>();
+                T::DbWeight::get().writes(1)
+            } else {
+                Weight::zero()
+            }
+        }
+    }
+
     // ==================== 调用 / Calls ====================
 
     #[pallet::call]
@@ -219,7 +238,7 @@ pub mod pallet {
             ensure!(count < T::MaxInboxesPerController::get(), Error::<T>::TooManyInboxes);
 
             let deposit = T::InboxDeposit::get();
-            T::Currency::reserve(&who, deposit)?;
+            reserve_deposit::<T::Currency, _, _>(&who, deposit)?;
 
             let record = InboxRecord {
                 controller: who.clone(),
@@ -246,9 +265,9 @@ pub mod pallet {
             let new_epoch = Inboxes::<T>::try_mutate(inbox_id, |maybe| {
                 let record = maybe.as_mut().ok_or(Error::<T>::InboxNotFound)?;
                 ensure!(record.controller == who, Error::<T>::NotController);
-                record.epoch = record.epoch.saturating_add(1);
+                let new_epoch = bump_u32_epoch(&mut record.epoch);
                 record.revoked_tags = BoundedVec::default();
-                Ok::<u32, DispatchError>(record.epoch)
+                Ok::<u32, DispatchError>(new_epoch)
             })?;
             Self::deposit_event(Event::InboxEpochBumped { inbox_id, new_epoch });
             Ok(())
@@ -286,7 +305,7 @@ pub mod pallet {
             let record = Inboxes::<T>::get(inbox_id).ok_or(Error::<T>::InboxNotFound)?;
             ensure!(record.controller == who, Error::<T>::NotController);
 
-            T::Currency::unreserve(&who, record.deposit);
+            unreserve_deposit::<T::Currency, _, _>(&who, record.deposit);
             Inboxes::<T>::remove(inbox_id);
             InboxCountByController::<T>::mutate(&who, |c| *c = c.saturating_sub(1));
 
@@ -349,8 +368,8 @@ pub mod pallet {
             // 先向新 controller 预留（可能因余额不足失败 → 整体回滚），再解押旧 controller。
             // Reserve from the new controller first (may fail on low balance → whole
             // call rolls back), then unreserve the old one.
-            T::Currency::reserve(&new_controller, record.deposit)?;
-            T::Currency::unreserve(&who, record.deposit);
+            reserve_deposit::<T::Currency, _, _>(&new_controller, record.deposit)?;
+            unreserve_deposit::<T::Currency, _, _>(&who, record.deposit);
 
             Inboxes::<T>::mutate(inbox_id, |maybe| {
                 if let Some(r) = maybe.as_mut() {
@@ -380,7 +399,7 @@ pub mod pallet {
             T::ForceOrigin::ensure_origin(origin)?;
             let record = Inboxes::<T>::get(inbox_id).ok_or(Error::<T>::InboxNotFound)?;
 
-            T::Currency::unreserve(&record.controller, record.deposit);
+            unreserve_deposit::<T::Currency, _, _>(&record.controller, record.deposit);
             Inboxes::<T>::remove(inbox_id);
             InboxCountByController::<T>::mutate(&record.controller, |c| *c = c.saturating_sub(1));
 

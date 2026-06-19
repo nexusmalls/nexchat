@@ -5,8 +5,9 @@
 use crate as pallet_chat;
 use frame_support::{
 	parameter_types,
-	traits::{ConstU32, ConstU64, Randomness, UnixTime},
+    traits::{ConstU32, ConstU64, EnsureOrigin, OriginTrait, Randomness, UnixTime},
 };
+use frame_system::RawOrigin;
 use sp_runtime::{
 	traits::{BlakeTwo256, IdentityLookup},
 	BuildStorage,
@@ -55,6 +56,26 @@ impl frame_system::Config for Test {
 	type PostInherents = ();
 	type PostTransactions = ();
 	type ExtensionsWeightInfo = ();
+}
+
+/// EN: Test origin gate — Root maps to [`SystemChatAccount`], Signed maps to the signer
+/// (matches production Root→system account while keeping unit tests unchanged).
+/// CN: 测试 origin 门控——Root 映射为 [`SystemChatAccount`]，Signed 映射为签名者
+/// （对齐生产 Root→系统账户，同时保持单测写法不变）。
+pub struct MockSystemMessageOrigin;
+impl EnsureOrigin<RuntimeOrigin> for MockSystemMessageOrigin {
+	type Success = u64;
+	fn try_origin(o: RuntimeOrigin) -> Result<Self::Success, RuntimeOrigin> {
+		match o.as_system_ref() {
+			Some(RawOrigin::Root) => Ok(SystemChatAccount::get()),
+			Some(RawOrigin::Signed(who)) => Ok(*who),
+			_ => Err(o),
+		}
+	}
+	#[cfg(feature = "runtime-benchmarks")]
+	fn try_successful_origin() -> Result<RuntimeOrigin, ()> {
+		Ok(<RuntimeOrigin as OriginTrait>::root())
+	}
 }
 
 // Chat Pallet配置
@@ -159,11 +180,9 @@ impl pallet_chat::Config for Test {
 	type MaxNicknameLength = frame_support::traits::ConstU32<64>;
 	type MaxSignatureLength = frame_support::traits::ConstU32<256>;
 	type ChatPermission = MockPermission;
-	// 测试中保持「签名即可」语义（sender = 签名者），令既有用例无需改写；
-	// 生产 runtime 则收敛到治理 / 系统账户（见 runtime 配置）。
-	// Permissive in tests (signed origin → sender = signer) so existing cases
-	// stay valid; production gates this to governance / a system account.
-	type SystemMessageOrigin = frame_system::EnsureSigned<u64>;
+	// 测试：Signed 或 Root（benchmark 用 Root，单测仍用 Signed）。
+	// Tests: Signed or Root (benchmarks use Root; unit tests keep Signed).
+	type SystemMessageOrigin = MockSystemMessageOrigin;
 	type SystemAccount = SystemChatAccount;
 }
 

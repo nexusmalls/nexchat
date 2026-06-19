@@ -1,0 +1,53 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Secrets / local env (commit .env.example only)
+.env
+.env.*
+!.env.example
+tsconfig.tsbuildinfo
+
+# Rust / wasm build artifacts (mls-wasm / dr-wasm / relay-rs). The generated
+# src/mls-pkg/ and src/dr-pkg/ ARE committed so the app/tests run without a Rust
+# toolchain; rebuild with `npm run mls:build` / `npm run dr:build`.
+mls-wasm/target
+mls-wasm/Cargo.lock
+dr-wasm/target
+dr-wasm/target-native
+relay-rs/target
+**/target/
+# EN: lockfile is committed for reproducible CI/native tests (unlike mls-wasm).
+# CN: 提交 lockfile 以保证 CI/原生测试可复现（与 mls-wasm 策略不同）。
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Relay ops secrets + local backup artifacts (see scripts/relay-ops-init.sh)
+relay-ops/backup.pass
+relay-ops/relay-backup.env
+relay-ops/backups/
+relay-ops/latest-backup.json
+relay-ops/data/
+deploy/deploy-web.env
+android/keystore.properties
+android/*.jks
+android/*.keystore

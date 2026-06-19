@@ -343,6 +343,11 @@ mod runtime {
     #[runtime::pallet_index(79)]
     pub type ChatSync = pallet_chat_sync;
 
+    // 消息身份预密钥锚（X3DH IK/SPK/OPK 根 + 1:1 栈能力，CHAT_1TO1_X3DH_DOUBLE_RATCHET_DESIGN）。
+    // Messaging identity prekey anchor (X3DH IK/SPK/OPK root + 1:1 stack caps).
+    #[runtime::pallet_index(80)]
+    pub type MsgIdentity = pallet_msg_identity;
+
     // ============================================================================
     // Smart Contracts
     // ============================================================================

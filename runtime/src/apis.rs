@@ -44,9 +44,10 @@ use sp_version::RuntimeVersion;
 // Local module imports
 use super::{
     AccountId, Arbitration, Babe, Balance, Block, BlockNumber, ChatCore, ChatGroup, ChatInbox,
-    ChatPermission, ChatSync,
+    ChatPermission, ChatSync, MsgIdentity,
     CommissionPoolReward, EntityMarket, EntityRegistry, Evidence, Executive, Grandpa, Hash,
-    Historical, InherentDataExt, NexMarket, Nonce, Runtime, RuntimeCall, RuntimeGenesisConfig,
+    Historical, InherentDataExt, NexMarket, Nonce, Runtime,
+    RuntimeCall, RuntimeGenesisConfig,
     SessionKeys, StorageService, System, TransactionPayment, VERSION,
 };
 impl_runtime_apis! {
@@ -782,13 +783,18 @@ impl_runtime_apis! {
         fn list_conversations(
             who: AccountId,
         ) -> Vec<pallet_chat_common::runtime_api::ConversationSummary<AccountId, Hash, BlockNumber>> {
-            use pallet_chat_common::runtime_api::{ConversationKind, ConversationSummary, role};
+            use pallet_chat_common::runtime_api::{
+                ConversationKind, ConversationSummary, MAX_CONVERSATIONS_API, role,
+            };
 
             let mut out = Vec::new();
 
             // 私聊会话：core 已按"置顶优先 + 最后活跃倒序"排序。
             // Direct sessions: already sorted (pinned first, last-active desc) by core.
-            for sid in ChatCore::list_sessions(who.clone()) {
+            for (i, sid) in ChatCore::list_sessions(who.clone()).into_iter().enumerate() {
+                if i >= MAX_CONVERSATIONS_API {
+                    break;
+                }
                 if let Some(session) = ChatCore::get_session(sid) {
                     let peer = session.participants.iter().find(|p| **p != who).cloned();
                     out.push(ConversationSummary {
@@ -816,9 +822,10 @@ impl_runtime_apis! {
             // Emit groups sorted by group_id ascending to give clients a deterministic,
             // pageable baseline (real ordering is still merged client-side using off-chain
             // last_active; see README Merge Spec).
+            let remaining = MAX_CONVERSATIONS_API.saturating_sub(out.len());
             let mut group_ids = ChatGroup::user_group_ids(&who);
             group_ids.sort_unstable();
-            for gid in group_ids {
+            for gid in group_ids.into_iter().take(remaining) {
                 let (name, avatar_cid) = ChatGroup::group_profile(gid)
                     .map(|p| (p.name.into_inner(), p.avatar_cid.into_inner()))
                     .unwrap_or_default();
@@ -893,6 +900,43 @@ impl_runtime_apis! {
 
         fn inbox_exists(inbox_id: pallet_chat_inbox::InboxId) -> bool {
             ChatInbox::inbox_exists(inbox_id)
+        }
+    }
+
+    // 消息身份预密钥锚只读查询：对端/relay 取 X3DH 预密钥（IK/SPK/OPK 根）与 1:1 栈能力。
+    // Messaging identity prekey-anchor read queries: peers/relays fetch X3DH prekeys
+    // (IK/SPK/OPK root) and 1:1 stack capabilities.
+    impl pallet_msg_identity::runtime_api::MsgIdentityApi<Block, AccountId, BlockNumber> for Runtime {
+        fn device_ik(
+            account: AccountId,
+            device_id: pallet_msg_identity::DeviceId,
+        ) -> Option<(pallet_msg_identity::X25519Pub, u32)> {
+            MsgIdentity::device_ik(&account, device_id)
+        }
+
+        fn device_spk(
+            account: AccountId,
+            device_id: pallet_msg_identity::DeviceId,
+        ) -> Option<(pallet_msg_identity::X25519Pub, BlockNumber)> {
+            MsgIdentity::device_spk(&account, device_id)
+        }
+
+        fn device_opk_root(
+            account: AccountId,
+            device_id: pallet_msg_identity::DeviceId,
+        ) -> Option<(pallet_msg_identity::MerkleRoot, u32, u32)> {
+            MsgIdentity::device_opk_root(&account, device_id)
+        }
+
+        fn stack_caps(account: AccountId) -> Option<(u8, u16)> {
+            MsgIdentity::stack_caps(&account)
+        }
+
+        fn device_exists(
+            account: AccountId,
+            device_id: pallet_msg_identity::DeviceId,
+        ) -> bool {
+            MsgIdentity::device_exists(&account, device_id)
         }
     }
 

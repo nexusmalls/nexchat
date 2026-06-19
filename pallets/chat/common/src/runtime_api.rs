@@ -14,7 +14,7 @@
 //! # 链上 / 链下边界（重要 — 客户端必读）
 //! EN: This API returns an ON-CHAIN SLICE only; it is NOT a complete message
 //! list. Human chat (Text/Image/File/Voice — both 1:1 and group) is delivered
-//! off-chain (MLS + node relay; ciphertext never touches the chain). The ONLY
+//! off-chain (MLS + relay-rs; ciphertext never touches the chain). The ONLY
 //! on-chain messages are `System` notifications (order / dispute / governance),
 //! and a direct session/`Session` row exists ONLY because a `System` message
 //! was sent between the pair (see `pallet-chat-core::send_message`).
@@ -122,6 +122,11 @@ pub struct ConversationSummary<AccountId, Hash, BlockNumber> {
     /// CN: 群角色标记（见 `role`）；私聊或非成员为 255。
     pub group_role: u8,
 }
+
+/// EN: Maximum rows returned by `list_conversations` (direct + group combined).
+/// Protects RPC/runtime from unbounded reads on heavy accounts.
+/// CN: `list_conversations` 返回的最大行数（私聊 + 群合计），防止大账户无界读取。
+pub const MAX_CONVERSATIONS_API: usize = 512;
 
 sp_api::decl_runtime_apis! {
     /// EN: Unified chat view API. CN: 统一聊天视图 API。

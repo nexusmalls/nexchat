@@ -6061,6 +6061,7 @@ dependencies = [
  "pallet-im-online",
  "pallet-inscription",
  "pallet-membership",
+ "pallet-msg-identity",
  "pallet-nex-market",
  "pallet-offences",
  "pallet-preimage",
@@ -6604,6 +6605,7 @@ dependencies = [
 name = "pallet-chat-common"
 version = "0.1.0"
 dependencies = [
+ "frame-support",
  "parity-scale-codec",
  "scale-info",
  "sp-api 41.0.0",
@@ -6618,7 +6620,6 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "log",
  "pallet-chat-permission",
  "parity-scale-codec",
  "scale-info",
@@ -6653,8 +6654,8 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "log",
  "pallet-balances",
+ "pallet-chat-common",
  "parity-scale-codec",
  "scale-info",
  "sp-api 41.0.0",
@@ -6671,7 +6672,7 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "log",
+ "pallet-chat-common",
  "parity-scale-codec",
  "scale-info",
  "sp-api 41.0.0",
@@ -6688,8 +6689,8 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "log",
  "pallet-balances",
+ "pallet-chat-common",
  "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",
@@ -7447,6 +7448,24 @@ dependencies = [
  "polkadot-sdk-frame",
  "scale-info",
  "sp-mmr-primitives",
+]
+
+[[package]]
+name = "pallet-msg-identity"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "pallet-balances",
+ "pallet-chat-common",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api 41.0.0",
+ "sp-core 40.0.0",
+ "sp-io 45.0.0",
+ "sp-runtime 46.0.0",
+ "sp-std",
 ]
 
 [[package]]

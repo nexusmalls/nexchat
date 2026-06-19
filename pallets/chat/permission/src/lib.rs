@@ -67,6 +67,8 @@ pub use types::*;
 pub use runtime_api::*;
 pub use weights::WeightInfo;
 
+mod migration;
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
@@ -75,8 +77,14 @@ pub mod pallet {
     use sp_runtime::traits::Saturating;
     use sp_runtime::SaturatedConversion;
     use sp_std::vec::Vec;
+    use pallet_chat_common::{bump_u32_epoch, min_blocks_elapsed};
+
+    /// EN: v1 = friend graph removed; privacy settings without on-chain lists.
+    /// CN: v1 = 好友图谱已删；隐私设置不含链上名单。
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
     #[pallet::pallet]
+    #[pallet::storage_version(STORAGE_VERSION)]
     pub struct Pallet<T>(_);
 
     /// Pallet 配置 trait
@@ -136,14 +144,14 @@ pub mod pallet {
     /// EN: Per-account chat-capability revocation epoch (a monotonic counter).
     /// The on-chain friend graph has been removed for privacy: contacts and the
     /// "may DM me" right now live entirely off-chain as receiver-signed chat
-    /// capability tokens (see `CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md`). The chain's
+    /// capability tokens (issued/verified off-chain by the relay component). The chain's
     /// only role is to publish this epoch so off-chain relays/clients can reject
     /// capabilities issued before the latest `bump_capability_epoch` (e.g. after
     /// removing a contact or rotating a device). A token is fresh iff its embedded
     /// epoch equals `CapabilityEpoch[issuer]`.
     /// CN: 每账户的聊天能力撤销纪元（单调递增计数器）。为隐私起见已删除链上好友图谱：
     /// 联系人与「允许向我私聊」的权利现完全以链下、由接收方签名的聊天能力令牌承载
-    /// （见 `CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md`）。链上唯一职责是公布该纪元，
+    /// （由链下 relay 组件签发/验证）。链上唯一职责是公布该纪元，
     /// 供链下 relay/客户端拒绝在最近一次 `bump_capability_epoch`（如删除联系人或
     /// 更换设备）之前签发的能力令牌。令牌新鲜当且仅当其内嵌纪元等于
     /// `CapabilityEpoch[签发者]`。
@@ -266,6 +274,17 @@ pub mod pallet {
             new_expires_at: Option<BlockNumberFor<T>>,
         },
 
+        /// EN: Runtime hook failed to grant scene authorization (group/order bridges).
+        /// CN: Runtime 钩子未能授予场景授权（群/订单桥接）。
+        SceneAuthorizationHookFailed {
+            source: [u8; 8],
+            user1: T::AccountId,
+            user2: T::AccountId,
+            scene_type: SceneType,
+            scene_id: SceneId,
+            is_grant: bool,
+        },
+
         /// EN: An account was platform-muted by governance. CN: 账户被治理平台级禁言。
         AccountMuted {
             who: T::AccountId,
@@ -307,9 +326,6 @@ pub mod pallet {
         /// 场景授权不存在
         SceneAuthorizationNotFound,
 
-        /// 场景授权已存在
-        SceneAuthorizationAlreadyExists,
-
         /// 元数据过长
         MetadataTooLong,
 
@@ -321,6 +337,13 @@ pub mod pallet {
 
         /// EN: No report with the given id. CN: 指定 id 的举报不存在。
         ReportNotFound,
+    }
+
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_runtime_upgrade() -> Weight {
+            migration::migrate_v0_to_v1::<T>()
+        }
     }
 
     // ==================== 用户调用 ====================
@@ -402,10 +425,7 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::bump_capability_epoch())]
         pub fn bump_capability_epoch(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            let new_epoch = CapabilityEpoch::<T>::mutate(&who, |e| {
-                *e = e.saturating_add(1);
-                *e
-            });
+            let new_epoch = CapabilityEpoch::<T>::mutate(&who, bump_u32_epoch);
             Self::deposit_event(Event::CapabilityEpochBumped { who, new_epoch });
             Ok(())
         }
@@ -472,7 +492,7 @@ pub mod pallet {
             // 举报人冷却 / per-reporter cooldown
             if let Some(last) = LastReportAt::<T>::get(&who) {
                 ensure!(
-                    now.saturating_sub(last) >= T::ReportCooldown::get(),
+                    min_blocks_elapsed(last, now, T::ReportCooldown::get()),
                     Error::<T>::ReportCooldown
                 );
             }
@@ -543,6 +563,58 @@ pub mod pallet {
                     frame_system::Pallet::<T>::block_number() < until
                 }
                 None => false,
+            }
+        }
+
+        /// EN: Grant scene auth from a runtime hook; emits [`Event::SceneAuthorizationHookFailed`]
+        /// on error without aborting the caller. CN: Runtime 钩子授予场景授权；失败发事件且不中断调用方。
+        pub fn grant_scene_from_hook(
+            source: [u8; 8],
+            from: &T::AccountId,
+            to: &T::AccountId,
+            scene_type: SceneType,
+            scene_id: SceneId,
+            duration: Option<BlockNumberFor<T>>,
+            metadata: Vec<u8>,
+        ) {
+            let result = <Self as SceneAuthorizationManager<T::AccountId, BlockNumberFor<T>>>::grant_bidirectional_scene_authorization(
+                source, from, to, scene_type.clone(), scene_id.clone(), duration, metadata,
+            );
+            if result.is_err() {
+                let (user1, user2) = Self::sorted_pair(from, to);
+                Self::deposit_event(Event::SceneAuthorizationHookFailed {
+                    source,
+                    user1,
+                    user2,
+                    scene_type,
+                    scene_id,
+                    is_grant: true,
+                });
+            }
+        }
+
+        /// EN: Revoke scene auth from a runtime hook; emits hook-failed event on error.
+        /// CN: Runtime 钩子撤销场景授权；失败发事件。
+        pub fn revoke_scene_from_hook(
+            source: [u8; 8],
+            from: &T::AccountId,
+            to: &T::AccountId,
+            scene_type: SceneType,
+            scene_id: SceneId,
+        ) {
+            let result = <Self as SceneAuthorizationManager<T::AccountId, BlockNumberFor<T>>>::revoke_scene_authorization(
+                source, from, to, scene_type.clone(), scene_id.clone(),
+            );
+            if result.is_err() {
+                let (user1, user2) = Self::sorted_pair(from, to);
+                Self::deposit_event(Event::SceneAuthorizationHookFailed {
+                    source,
+                    user1,
+                    user2,
+                    scene_type,
+                    scene_id,
+                    is_grant: false,
+                });
             }
         }
 
@@ -719,10 +791,13 @@ pub mod pallet {
             };
 
             SceneAuthorizations::<T>::try_mutate(&user1, &user2, |auths| {
-                // 检查是否已存在相同场景
-                let existing_pos = auths
-                    .iter()
-                    .position(|a| a.scene_type == scene_type && a.scene_id == scene_id);
+                // EN: Key on (source, scene_type, scene_id) so order/group grants coexist.
+                // CN: 以 (source, scene_type, scene_id) 为键，订单/群授权可并存。
+                let existing_pos = auths.iter().position(|a| {
+                    a.source_pallet == source
+                        && a.scene_type == scene_type
+                        && a.scene_id == scene_id
+                });
 
                 if let Some(pos) = existing_pos {
                     // 更新现有授权

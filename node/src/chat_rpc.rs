@@ -26,7 +26,7 @@
 //! MLS 状态合并——见 `pallets/chat/README.md` 的客户端 Merge Spec。
 //!
 //! 提供方法 / Methods:
-//! - `chat_listConversations(who, at?)` — 链上会话切片（私聊 + 群聊；非完整列表）
+//! - `chat_listConversations(who, at?)` — 链上会话切片（私聊 + 群聊；非完整列表；最多 512 行）
 //! - `chat_totalDirectUnread(who, at?)` — 链上 System 通道未读总数（非 App 全局角标）
 //! - `chat_checkPermission(sender, receiver, at?)` — 聊天权限检查
 //! - `chat_getActiveScenes(user1, user2, at?)` — 场景授权

@@ -1722,3 +1722,48 @@ fn pinned_session_sorts_first() {
 	});
 }
 
+#[test]
+fn mark_session_as_read_scans_forward_with_cursor() {
+	new_test_ext().execute_with(|| {
+		for i in 0..600u64 {
+			assert_ok!(Chat::send_message(
+				RuntimeOrigin::signed(ALICE),
+				BOB,
+				encrypted_cid(i as u8),
+				4,
+				None,
+			));
+		}
+		let session_id = Chat::get_message(0).unwrap().session_id;
+		let indexed = crate::SessionMessages::<Test>::iter_prefix(session_id).count();
+		assert_eq!(indexed, 600, "all sends must index into the session");
+		assert_eq!(Chat::get_unread_count(BOB, Some(session_id)), 600);
+
+		assert_ok!(Chat::mark_session_as_read(RuntimeOrigin::signed(BOB), session_id));
+		assert_eq!(Chat::get_unread_count(BOB, Some(session_id)), 88);
+
+		assert_ok!(Chat::mark_session_as_read(RuntimeOrigin::signed(BOB), session_id));
+		assert_eq!(Chat::get_unread_count(BOB, Some(session_id)), 0);
+	});
+}
+
+#[test]
+fn cleanup_removes_expired_system_message_when_receiver_deleted() {
+	use crate::mock::SystemChatAccount;
+	new_test_ext().execute_with(|| {
+		assert_ok!(Chat::send_message(
+			RuntimeOrigin::root(),
+			BOB,
+			encrypted_cid(1),
+			4,
+			None,
+		));
+		let msg = Chat::get_message(0).unwrap();
+		assert_eq!(msg.sender, SystemChatAccount::get());
+		assert_ok!(Chat::delete_message(RuntimeOrigin::signed(BOB), 0));
+		System::set_block_number(1002);
+		assert_ok!(Chat::cleanup_old_messages(RuntimeOrigin::root(), 100));
+		assert!(Chat::get_message(0).is_none());
+	});
+}
+

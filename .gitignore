@@ -18,7 +18,7 @@
 /keystore/
 /network/
 /my-chain-state/
-/nexchat/
+
 
 # Node.js / package managers
 node_modules/
@@ -122,8 +122,6 @@ hs_err_pid*
 /nexus-pitch/
 /investors/
 /website/
-/nexchat/
-
 
 # Telegram bot local data
 /telegram/
@@ -160,6 +158,10 @@ secrets.yaml
 *.db-journal
 *.db-wal
 *.db-shm
+# Chopsticks mainnet fork cache (see chopsticks-fork.yml) — local only, never commit
+/db-nexus-fork.sqlite
+/db-nexus-fork.sqlite-shm
+/db-nexus-fork.sqlite-wal
 
 # Archives
 *.zip

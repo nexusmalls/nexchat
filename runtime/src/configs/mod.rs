@@ -70,6 +70,7 @@ use super::{
     EntityTokenSale,
     EntityTransaction,
     Escrow,
+    ChatCore,
     ChatPermission,
     Hash,
     Historical,
@@ -955,7 +956,11 @@ impl pallet_dispute_evidence::pallet::EvidenceAuthorizer<AccountId>
                 return true;
             }
         }
-        pallet_collective::Members::<Runtime, ArbitrationCollectiveInstance>::get().contains(who)
+        if pallet_collective::Members::<Runtime, ArbitrationCollectiveInstance>::get().contains(who)
+        {
+            return true;
+        }
+        false
     }
 }
 
@@ -1017,20 +1022,18 @@ const DOMAIN_ENTITY_ORDER: [u8; 8] = *b"entorder";
 /// 统一仲裁域路由器
 ///
 /// 将仲裁决议路由到各业务模块执行
-/// 当前支持：entorder（商城订单），其余域保留默认行为
+/// 当前支持：`entorder`（商城订单）
 pub struct UnifiedArbitrationRouter;
 
 impl pallet_dispute_arbitration::pallet::ArbitrationRouter<AccountId, Balance>
     for UnifiedArbitrationRouter
 {
     /// 校验是否允许发起争议
-    /// MVP 阶段仅开放 ENTITY_ORDER 域，其他域待对应 Pallet 上线后逐步开放
     fn can_dispute(domain: [u8; 8], who: &AccountId, id: u64) -> bool {
         use pallet_entity_common::OrderProvider;
         if domain == DOMAIN_ENTITY_ORDER {
             <EntityTransaction as OrderProvider<AccountId, Balance>>::can_dispute(id, who)
         } else {
-            // MVP: 非 ENTITY_ORDER 域暂不开放，待 nex-market/ads 等模块集成后逐步启用
             false
         }
     }
@@ -1042,8 +1045,8 @@ impl pallet_dispute_arbitration::pallet::ArbitrationRouter<AccountId, Balance>
         decision: pallet_dispute_arbitration::pallet::Decision,
     ) -> sp_runtime::DispatchResult {
         use pallet_dispute_escrow::pallet::Escrow as EscrowTrait;
+        use pallet_entity_common::OrderProvider;
         if domain == DOMAIN_ENTITY_ORDER {
-            use pallet_entity_common::OrderProvider;
             let buyer = <EntityTransaction as OrderProvider<AccountId, Balance>>::order_buyer(id)
                 .ok_or(sp_runtime::DispatchError::Other("order not found"))?;
             let seller = <EntityTransaction as OrderProvider<AccountId, Balance>>::order_seller(id)
@@ -1124,8 +1127,7 @@ impl pallet_dispute_arbitration::pallet::EvidenceExistenceChecker for EvidenceEx
 pub struct ArbitrationChatNotifier;
 impl pallet_dispute_arbitration::ArbitrationNotifier<AccountId> for ArbitrationChatNotifier {
     fn notify(to: &AccountId, notice: alloc::vec::Vec<u8>) {
-        use pallet_chat_core::SystemNotifier;
-        let _ = <crate::ChatCore as SystemNotifier<AccountId>>::notify(to, notice);
+        ChatCore::notify_system_best_effort(to, notice);
     }
 }
 
@@ -1214,6 +1216,15 @@ impl pallet_chat_core::Config for Runtime {
     type SystemAccount = ChatSystemMessenger;
 }
 
+/// EN: Wire platform mute from chat-permission into group MLS write extrinsics.
+/// CN: 将 chat-permission 的平台禁言接入群 MLS 写入 extrinsic。
+pub struct GroupPlatformMuteCheck;
+impl pallet_chat_group::PlatformMuteChecker<AccountId> for GroupPlatformMuteCheck {
+    fn is_platform_muted(who: &AccountId) -> bool {
+        ChatPermission::is_account_muted(who)
+    }
+}
+
 /// Adapter mapping `pallet-chat-group` membership hooks to `chat-permission`
 /// scene authorizations (`source = *b"chatgrp "`, `SceneType::Group`,
 /// `scene_id = Numeric(group_id)`). Each member is related to the group owner so
@@ -1225,8 +1236,7 @@ impl pallet_chat_core::Config for Runtime {
 pub struct GroupChatAuthorizer;
 impl pallet_chat_group::GroupChatHook<AccountId> for GroupChatAuthorizer {
     fn on_member_added(group_id: u64, member: &AccountId, counterparty: &AccountId) {
-        use pallet_chat_permission::SceneAuthorizationManager;
-        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::grant_bidirectional_scene_authorization(
+        ChatPermission::grant_scene_from_hook(
             *b"chatgrp ",
             member,
             counterparty,
@@ -1237,8 +1247,7 @@ impl pallet_chat_group::GroupChatHook<AccountId> for GroupChatAuthorizer {
         );
     }
     fn on_member_removed(group_id: u64, member: &AccountId, counterparty: &AccountId) {
-        use pallet_chat_permission::SceneAuthorizationManager;
-        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::revoke_scene_authorization(
+        ChatPermission::revoke_scene_from_hook(
             *b"chatgrp ",
             member,
             counterparty,
@@ -1249,8 +1258,8 @@ impl pallet_chat_group::GroupChatHook<AccountId> for GroupChatAuthorizer {
 }
 
 parameter_types! {
-    /// 建群押金 / group creation deposit (1 NEX)
-    pub const GroupDeposit: Balance = UNIT;
+    /// 建群押金 / group creation deposit (100_000 NEX)
+    pub const GroupDeposit: Balance = 100_000 * UNIT;
     /// KeyPackage 押金 / per-KeyPackage deposit (0.1 NEX)
     pub const KeyPackageDeposit: Balance = UNIT / 10;
 }
@@ -1262,6 +1271,7 @@ impl pallet_chat_group::Config for Runtime {
     type MaxPendingJoins = ConstU32<256>;
     // 成员↔群主场景授权（可选 1:1 私聊）/ member↔owner scene auth
     type ChatHook = GroupChatAuthorizer;
+    type PlatformMuteCheck = GroupPlatformMuteCheck;
     type MaxGroupMembers = ConstU32<500>; // 单群最大成员数 / max members per group
     type MaxGroupsPerUser = ConstU32<500>;
     type MaxKeyPackageLen = ConstU32<4096>;
@@ -1277,6 +1287,10 @@ impl pallet_chat_group::Config for Runtime {
     // Write-heavy MLS actions: ≤30 per account per minute (anti-spam for logs/anchors).
     type MlsActionWindow = ConstU32<MINUTES>;
     type MaxMlsActionsPerWindow = ConstU32<30>;
+    // 入群申请：单账户每小时最多 20 次（跨群合计），防刷 PendingJoinCount。
+    // Join requests: ≤20 per account per hour (across all groups).
+    type JoinRequestWindow = ConstU32<{ 60 * MINUTES }>;
+    type MaxJoinRequestsPerWindow = ConstU32<20>;
     // 平台合规：Root 或技术委员会多数可强制解散/冻结群。
     // Compliance: Root or technical-committee majority can force-disband/freeze.
     type GovernanceOrigin = RootOrTechnicalMajority;
@@ -1302,6 +1316,25 @@ impl pallet_chat_inbox::Config for Runtime {
     // 单控制账户信箱上限 / max inboxes per controller account.
     type MaxInboxesPerController = ConstU32<16>;
     type WeightInfo = pallet_chat_inbox::weights::SubstrateWeight<Runtime>;
+}
+
+parameter_types! {
+    /// 设备身份押金 / per-device identity deposit（反垃圾；量级同 inbox 押金）。
+    pub const DeviceDeposit: Balance = UNIT / 2;
+}
+
+// 消息身份预密钥锚（X3DH IK/SPK/OPK 根 + 1:1 栈能力位）。
+// Messaging identity prekey anchor (X3DH IK/SPK/OPK root + 1:1 stack caps).
+impl pallet_msg_identity::Config for Runtime {
+    type Currency = Balances;
+    // 治理回收：controller/设备密钥丢失或滥用时，Root / 技术委员会多数可强制注销并退押金。
+    // Governance recovery: Root / technical-committee majority may force-unregister
+    // (and refund) a device on key loss or abuse.
+    type ForceOrigin = RootOrTechnicalMajority;
+    type DeviceDeposit = DeviceDeposit;
+    // 单账户设备上限（多设备 X3DH 场景）/ max devices per account (multi-device X3DH).
+    type MaxDevicesPerAccount = ConstU32<16>;
+    type WeightInfo = pallet_msg_identity::weights::SubstrateWeight<Runtime>;
 }
 
 parameter_types! {
@@ -1969,8 +2002,7 @@ impl pallet_entity_product::Config for Runtime {
 pub struct OrderChatNotifier;
 impl pallet_entity_order::OrderNotifier<AccountId> for OrderChatNotifier {
     fn notify(to: &AccountId, notice: alloc::vec::Vec<u8>) {
-        use pallet_chat_core::SystemNotifier;
-        let _ = <crate::ChatCore as SystemNotifier<AccountId>>::notify(to, notice);
+        ChatCore::notify_system_best_effort(to, notice);
     }
 }
 
@@ -1982,8 +2014,7 @@ impl pallet_entity_order::OrderNotifier<AccountId> for OrderChatNotifier {
 pub struct OrderChatSceneAuthorizer;
 impl pallet_entity_order::OrderChatAuthorizer<AccountId> for OrderChatSceneAuthorizer {
     fn grant(order_id: u64, buyer: &AccountId, seller: &AccountId) {
-        use pallet_chat_permission::SceneAuthorizationManager;
-        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::grant_bidirectional_scene_authorization(
+        ChatPermission::grant_scene_from_hook(
             *b"entorder",
             buyer,
             seller,
@@ -1994,8 +2025,7 @@ impl pallet_entity_order::OrderChatAuthorizer<AccountId> for OrderChatSceneAutho
         );
     }
     fn revoke(order_id: u64, buyer: &AccountId, seller: &AccountId) {
-        use pallet_chat_permission::SceneAuthorizationManager;
-        let _ = <ChatPermission as SceneAuthorizationManager<AccountId, BlockNumber>>::revoke_scene_authorization(
+        ChatPermission::revoke_scene_from_hook(
             *b"entorder",
             buyer,
             seller,

@@ -44,43 +44,43 @@ pub struct SubstrateWeight<T>(core::marker::PhantomData<T>);
 
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     fn publish_key_package() -> Weight {
-        Weight::from_parts(84_613_000, 3521)
-            .saturating_add(T::DbWeight::get().reads(2))
+        Weight::from_parts(88_696_000, 3521)
+            .saturating_add(T::DbWeight::get().reads(3))
             .saturating_add(T::DbWeight::get().writes(3))
     }
     fn revoke_key_package() -> Weight {
-        Weight::from_parts(82_932_000, 7627)
+        Weight::from_parts(77_266_000, 7627)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(2))
     }
     fn create_group() -> Weight {
-        Weight::from_parts(101_658_000, 7515)
-            .saturating_add(T::DbWeight::get().reads(3))
+        Weight::from_parts(103_188_000, 7515)
+            .saturating_add(T::DbWeight::get().reads(4))
             .saturating_add(T::DbWeight::get().writes(6))
     }
     fn claim_welcome() -> Weight {
-        Weight::from_parts(49_368_000, 11731)
+        Weight::from_parts(43_861_000, 11731)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     fn anchor_message_digest() -> Weight {
-        Weight::from_parts(68_715_000, 3698)
-            .saturating_add(T::DbWeight::get().reads(4))
+        Weight::from_parts(81_246_000, 3698)
+            .saturating_add(T::DbWeight::get().reads(5))
             .saturating_add(T::DbWeight::get().writes(2))
     }
     fn request_join() -> Weight {
-        Weight::from_parts(78_575_000, 3698)
-            .saturating_add(T::DbWeight::get().reads(6))
-            .saturating_add(T::DbWeight::get().writes(2))
+        Weight::from_parts(88_518_000, 3698)
+            .saturating_add(T::DbWeight::get().reads(8))
+            .saturating_add(T::DbWeight::get().writes(3))
     }
     fn cancel_join_request() -> Weight {
-        Weight::from_parts(57_208_000, 3541)
+        Weight::from_parts(54_126_000, 3541)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(3))
     }
     fn approve_join() -> Weight {
-        Weight::from_parts(70_394_000, 6110)
-            .saturating_add(T::DbWeight::get().reads(5))
+        Weight::from_parts(78_161_000, 6110)
+            .saturating_add(T::DbWeight::get().reads(7))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: GroupMls (r:1 w:1), GroupMembers (r:5 w:2), SceneAuthorizations
@@ -89,47 +89,47 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     /// `MaxGroupMembers` bound. / 转让群主会为每个成员重写场景授权，读写与证明
     /// 大小随群规模增长，最坏情况取成员上限。
     fn transfer_ownership() -> Weight {
-        Weight::from_parts(214_560_000, 82335)
+        Weight::from_parts(209_783_000, 82335)
             .saturating_add(T::DbWeight::get().reads(11))
             .saturating_add(T::DbWeight::get().writes(8))
     }
     fn set_admin() -> Weight {
-        Weight::from_parts(59_666_000, 3698)
+        Weight::from_parts(53_520_000, 3698)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     fn set_group_profile() -> Weight {
-        Weight::from_parts(55_462_000, 5767)
+        Weight::from_parts(48_881_000, 5767)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     fn set_group_nickname() -> Weight {
-        Weight::from_parts(48_007_000, 3550)
+        Weight::from_parts(41_874_000, 3550)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     fn ban_member() -> Weight {
-        Weight::from_parts(74_729_000, 3698)
+        Weight::from_parts(66_609_000, 3698)
             .saturating_add(T::DbWeight::get().reads(4))
             .saturating_add(T::DbWeight::get().writes(2))
     }
     fn unban_member() -> Weight {
-        Weight::from_parts(62_727_000, 3698)
+        Weight::from_parts(57_256_000, 3698)
             .saturating_add(T::DbWeight::get().reads(3))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     fn set_member_mute() -> Weight {
-        Weight::from_parts(72_207_000, 6110)
+        Weight::from_parts(63_730_000, 6110)
             .saturating_add(T::DbWeight::get().reads(3))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     fn set_group_mute_all() -> Weight {
-        Weight::from_parts(50_163_000, 3698)
+        Weight::from_parts(46_274_000, 3698)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     fn set_group_frozen() -> Weight {
-        Weight::from_parts(39_680_000, 3698)
+        Weight::from_parts(35_886_000, 3698)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
@@ -138,10 +138,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     // commit scales with the membership delta (measured slopes): base + per-added /
     // per-removed time and DB reads/writes.
     fn commit(a: u32, r: u32) -> Weight {
-        Weight::from_parts(107_933_973, 3698)
-            .saturating_add(Weight::from_parts(73_901_945, 16269).saturating_mul(a.into()))
-            .saturating_add(Weight::from_parts(67_647_463, 16269).saturating_mul(r.into()))
-            .saturating_add(T::DbWeight::get().reads(4))
+        Weight::from_parts(96_507_424, 3698)
+            .saturating_add(Weight::from_parts(69_866_354, 16269).saturating_mul(a.into()))
+            .saturating_add(Weight::from_parts(66_100_915, 16269).saturating_mul(r.into()))
+            .saturating_add(T::DbWeight::get().reads(5))
             .saturating_add(T::DbWeight::get().reads((6u64).saturating_mul(a.into())))
             .saturating_add(T::DbWeight::get().reads((3u64).saturating_mul(r.into())))
             .saturating_add(T::DbWeight::get().writes(3))
@@ -155,7 +155,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     // group, so we keep the per-call budget formula (base time set from the measurement).
     fn disband_group() -> Weight {
         let n = crate::MAX_DISBAND_ITEMS_PER_CALL as u64;
-        Weight::from_parts(220_110_000, 7515)
+        Weight::from_parts(212_492_000, 7515)
             .saturating_add(T::DbWeight::get().reads(3u64.saturating_add(n.saturating_mul(2))))
             .saturating_add(T::DbWeight::get().writes(8u64.saturating_add(n.saturating_mul(10))))
     }

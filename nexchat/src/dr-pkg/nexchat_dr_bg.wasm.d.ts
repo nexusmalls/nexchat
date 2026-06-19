@@ -1,0 +1,34 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_drclient_free: (a: number, b: number) => void;
+export const __wbg_drinbound_free: (a: number, b: number) => void;
+export const __wbg_get_drinbound_identity_key: (a: number) => [number, number];
+export const __wbg_get_drinbound_plaintext: (a: number) => [number, number];
+export const __wbg_set_drinbound_identity_key: (a: number, b: number, c: number) => void;
+export const __wbg_set_drinbound_plaintext: (a: number, b: number, c: number) => void;
+export const drclient_createInboundSession: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const drclient_createOutboundSession: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+export const drclient_decrypt: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const drclient_ed25519Key: (a: number) => [number, number];
+export const drclient_encrypt: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+export const drclient_fallbackKey: (a: number) => [number, number];
+export const drclient_generateFallbackKey: (a: number) => void;
+export const drclient_generateOneTimeKeys: (a: number, b: number) => void;
+export const drclient_hasSession: (a: number, b: number, c: number) => number;
+export const drclient_identityKey: (a: number) => [number, number];
+export const drclient_loadSession: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+export const drclient_markKeysAsPublished: (a: number) => void;
+export const drclient_new: () => number;
+export const drclient_oneTimeKeys: (a: number) => [number, number];
+export const drclient_pickle: (a: number) => [number, number, number, number];
+export const drclient_pickleSession: (a: number, b: number, c: number) => [number, number, number, number];
+export const drclient_restore: (a: number, b: number) => [number, number, number];
+export const __wbindgen_exn_store: (a: number) => void;
+export const __externref_table_alloc: () => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_start: () => void;

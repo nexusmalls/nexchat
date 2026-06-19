@@ -1,7 +1,7 @@
 //! # 账户派生加密同步锚 Pallet / Account-derived Encrypted Sync Anchor (EISA) Pallet
 //!
-//! EN: Layer C of the chat sync/recovery design (`pallets/chat/CHAT_SYNC_ANCHOR_ADR.md`).
-//! Stores, per opaque `anchor_id = blake2_256(anchor_pk)`, one client-encrypted
+//! EN: Layer C of the chat sync/recovery design (the account-derived encrypted sync
+//! anchor, EISA). Stores, per opaque `anchor_id = blake2_256(anchor_pk)`, one client-encrypted
 //! `SyncManifest` (CIDs of the user's conv-index / contacts-vault / msg-archive blobs).
 //! Properties:
 //! - **Key is mnemonic-recomputable**: `anchor_pk` derives deterministically from the
@@ -16,7 +16,7 @@
 //!   coupling; LWW by `updated_at` with an upper-bound clock-skew guard so a stolen or
 //!   buggy client cannot self-lock the anchor at `u64::MAX`.
 //!
-//! CN: 聊天同步/恢复设计（`pallets/chat/CHAT_SYNC_ANCHOR_ADR.md`）的 C 层。以不透明
+//! CN: 聊天同步/恢复设计（账户派生加密同步锚 EISA）的 C 层。以不透明
 //! `anchor_id = blake2_256(anchor_pk)` 为键，存储一份客户端加密的 `SyncManifest`
 //! （用户 conv-index / contacts-vault / msg-archive blob 的 CID）。特性：
 //! - **键可凭助记词重算**：`anchor_pk` 由客户端 `vault_master` 确定性派生，新设备零外部
@@ -49,7 +49,7 @@ pub use types::*;
 pub use weights::WeightInfo;
 
 use frame_support::traits::{Currency, EnsureOrigin, ReservableCurrency};
-use sp_runtime::{traits::Saturating, SaturatedConversion};
+use sp_runtime::traits::SaturatedConversion;
 use sp_std::vec::Vec;
 
 /// EN: Balance type of the configured reservable currency.
@@ -78,6 +78,7 @@ pub mod pallet {
     use crate::types::{AnchorId, SyncAnchorRecord};
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
+    use pallet_chat_common::{min_blocks_elapsed, reserve_deposit, unreserve_deposit};
     use sp_core::ed25519;
     use sp_io::hashing::blake2_256;
 
@@ -204,6 +205,19 @@ pub mod pallet {
         PublishTooFrequent,
     }
 
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_runtime_upgrade() -> Weight {
+            let on_chain = <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
+            if on_chain < STORAGE_VERSION {
+                STORAGE_VERSION.put::<Pallet<T>>();
+                T::DbWeight::get().writes(1)
+            } else {
+                Weight::zero()
+            }
+        }
+    }
+
     // ==================== 调用 / Calls ====================
 
     #[pallet::call]
@@ -274,8 +288,11 @@ pub mod pallet {
 
                     // 6. 每锚块高频率限制 / per-anchor block-height rate limit.
                     ensure!(
-                        current_block.saturating_sub(record.last_publish_block)
-                            >= T::MinBlocksBetweenPublish::get(),
+                        min_blocks_elapsed(
+                            record.last_publish_block,
+                            current_block,
+                            T::MinBlocksBetweenPublish::get(),
+                        ),
                         Error::<T>::PublishTooFrequent
                     );
                     // 7. depositor 与押金保持不变（不论本次 origin 是谁）。
@@ -298,7 +315,7 @@ pub mod pallet {
                     }
                     // 7. 首次发布：从 origin 预留押金 / first publish: reserve from origin.
                     let deposit = T::AnchorDeposit::get();
-                    T::Currency::reserve(&who, deposit)?;
+                    reserve_deposit::<T::Currency, _, _>(&who, deposit)?;
                     SyncAnchors::<T>::insert(
                         anchor_id,
                         SyncAnchorRecord {
@@ -338,7 +355,7 @@ pub mod pallet {
             let payload = Self::clear_payload(&anchor_id, record.updated_at);
             Self::verify_anchor_sig(&anchor_pk, &anchor_sig, &payload)?;
 
-            T::Currency::unreserve(&record.depositor, record.deposit);
+            unreserve_deposit::<T::Currency, _, _>(&record.depositor, record.deposit);
             SyncAnchors::<T>::remove(anchor_id);
             // 墓碑水位：使所有 ≤ 此值的历史 publish 签名永久失效（防复活）。
             // Tombstone watermark: permanently invalidates all historical publish
@@ -363,7 +380,7 @@ pub mod pallet {
             T::ForceOrigin::ensure_origin(origin)?;
 
             let record = SyncAnchors::<T>::get(anchor_id).ok_or(Error::<T>::AnchorNotFound)?;
-            T::Currency::unreserve(&record.depositor, record.deposit);
+            unreserve_deposit::<T::Currency, _, _>(&record.depositor, record.deposit);
             SyncAnchors::<T>::remove(anchor_id);
             ClearedAt::<T>::insert(anchor_id, record.updated_at);
 

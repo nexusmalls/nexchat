@@ -8,7 +8,9 @@
 //! are stored on chain), this crate intentionally holds ONLY what is actually
 //! shared across pallets / runtime:
 //! - `rate_limit`: a windowed anti-spam counter (used by `pallet-chat-group` to
-//!   bound write-heavy MLS actions).
+//!   bound write-heavy MLS actions) plus block-height cooldown helpers.
+//! - `deposit`: thin reserve/unreserve helpers for anti-spam deposits.
+//! - `epoch`: u32 revocation/publication epoch bump helpers (`+1` saturating).
 //! - `runtime_api`: the unified conversation-view Runtime API (`ChatViewApi`),
 //!   whose aggregation is implemented in the runtime where both `ChatCore` and
 //!   `ChatGroup` are visible.
@@ -16,7 +18,9 @@
 //! CN: 聊天子系统的轻量共享构件。链下收敛后（人类消息 Text/Image/File/Voice，无论
 //! 私聊还是群聊，均走链下 MLS + relay；链上仅存 `System` 通知），本 crate 仅保留
 //! **真正跨 pallet / runtime 共享**的部分：
-//! - `rate_limit`：窗口化反垃圾计数器（`pallet-chat-group` 用于约束写入型 MLS 操作）。
+//! - `rate_limit`：窗口化反垃圾计数器（`pallet-chat-group` 用于约束写入型 MLS 操作）及块高冷却辅助。
+//! - `deposit`：反垃圾押金的薄 reserve/unreserve 辅助函数。
+//! - `epoch`：u32 撤销/发布纪元递增辅助（饱和 +1）。
 //! - `runtime_api`：统一会话视图 Runtime API（`ChatViewApi`），聚合逻辑在 runtime 实现。
 //!
 //! ## 已移除（审计 P1 类型收敛）/ Removed (audit P1, type convergence)
@@ -39,7 +43,11 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+pub mod deposit;
+pub mod epoch;
 pub mod rate_limit;
 pub mod runtime_api;
 
+pub use deposit::*;
+pub use epoch::*;
 pub use rate_limit::*;

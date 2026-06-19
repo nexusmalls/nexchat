@@ -1,0 +1,33 @@
+# EN: relay-rs — NexChat relay (server + 3 pinners). Standalone workspace (detached
+# from the parent substrate workspace, like nexchat/mls-wasm).
+# CN: relay-rs —— NexChat relay（server + 三个 pinner）。独立 workspace（脱离父 substrate
+# workspace，与 nexchat/mls-wasm 同模式）。
+[workspace]
+resolver = "2"
+members = ["core", "server", "pinners"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT-0"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake2 = "0.10"
+bs58 = "0.5"
+hex = "0.4"
+tempfile = "3"
+schnorrkel = "0.11"
+# Async runtime + WebSocket transport for the relay server.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+tokio-tungstenite = "0.24"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+# RFC 9474 verify == RSASSA-PSS verify (SHA-384, salt_len=48) over the prepared message.
+rsa = "0.9"
+sha2 = "0.10"
+base64 = "0.22"
+# Pinner IO: IPFS HTTP API + Crust W3Auth PSA (reqwest), on-chain pin (subxt, optional).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+subxt = "0.38"
+subxt-signer = { version = "0.38", features = ["subxt"] }

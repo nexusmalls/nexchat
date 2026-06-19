@@ -721,4 +721,48 @@ mod compliance {
             );
         });
     }
+
+    /// EN: Order and group grants with the same scene id must coexist (P1 fix).
+    /// CN: 相同 scene id 的订单/群授权须并存（P1 修复）。
+    #[test]
+    fn distinct_sources_same_scene_id_coexist() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(
+                <ChatPermission as SceneAuthorizationManager<u64, u64>>::grant_scene_authorization(
+                    *b"entorder",
+                    &ALICE,
+                    &BOB,
+                    SceneType::Order,
+                    SceneId::Numeric(1),
+                    None,
+                    vec![],
+                )
+            );
+            assert_ok!(
+                <ChatPermission as SceneAuthorizationManager<u64, u64>>::grant_scene_authorization(
+                    *b"chatgrp ",
+                    &ALICE,
+                    &BOB,
+                    SceneType::Group,
+                    SceneId::Numeric(1),
+                    None,
+                    vec![],
+                )
+            );
+            let auths = ChatPermission::scene_authorizations(ALICE, BOB);
+            assert_eq!(auths.len(), 2);
+            assert_ok!(
+                <ChatPermission as SceneAuthorizationManager<u64, u64>>::revoke_scene_authorization(
+                    *b"entorder",
+                    &ALICE,
+                    &BOB,
+                    SceneType::Order,
+                    SceneId::Numeric(1),
+                )
+            );
+            let auths = ChatPermission::scene_authorizations(ALICE, BOB);
+            assert_eq!(auths.len(), 1);
+            assert_eq!(auths[0].source_pallet, *b"chatgrp ");
+        });
+    }
 }

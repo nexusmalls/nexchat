@@ -16,6 +16,7 @@ codec = { features = ["derive"], workspace = true }
 scale-info = { features = ["derive"], workspace = true }
 
 # Substrate 核心依赖 / Substrate core deps
+frame-support = { workspace = true }
 sp-std = { workspace = true }
 sp-runtime = { workspace = true }
 sp-api = { workspace = true }
@@ -25,6 +26,7 @@ default = ["std"]
 std = [
     "codec/std",
     "scale-info/std",
+    "frame-support/std",
     "sp-std/std",
     "sp-runtime/std",
     "sp-api/std",

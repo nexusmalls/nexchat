@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="下载 NexChat Android 客户端 — Nexus 链上加密聊天与商城" />
+    <title>下载 NexChat App</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ededed;
+        --card: #fff;
+        --text: #111;
+        --muted: #666;
+        --accent: #07c160;
+        --accent-dark: #06ad56;
+        --border: rgba(0, 0, 0, 0.08);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111;
+          --card: #1c1c1e;
+          --text: #f5f5f5;
+          --muted: #aaa;
+          --border: rgba(255, 255, 255, 0.08);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        padding: max(24px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+      }
+      .wrap {
+        max-width: 420px;
+        margin: 0 auto;
+      }
+      .logo {
+        width: 88px;
+        height: 88px;
+        margin: 12px auto 16px;
+        border-radius: 22px;
+        background: linear-gradient(135deg, #07c160, #10aeff);
+        display: grid;
+        place-items: center;
+        font-size: 40px;
+        font-weight: 700;
+        color: #fff;
+        box-shadow: 0 12px 32px rgba(7, 193, 96, 0.25);
+      }
+      h1 {
+        margin: 0;
+        text-align: center;
+        font-size: 24px;
+      }
+      .sub {
+        margin: 8px 0 24px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      .btn {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 12px;
+        padding: 14px 16px;
+        font-size: 16px;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+        cursor: pointer;
+        transition: transform 0.15s ease, opacity 0.15s ease;
+      }
+      .btn:active {
+        transform: scale(0.98);
+      }
+      .btn-primary {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: var(--accent-dark);
+      }
+      .btn-secondary {
+        margin-top: 10px;
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--accent);
+      }
+      .meta {
+        margin-top: 14px;
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .steps {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.8;
+      }
+      .steps strong {
+        color: var(--text);
+      }
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .err {
+        display: none;
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(255, 59, 48, 0.12);
+        color: #ff3b30;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="logo">N</div>
+      <h1>NexChat</h1>
+      <p class="sub">链上加密聊天 · 商城 · 钱包<br />Android 客户端下载</p>
+
+      <div class="card">
+        <a id="download-btn" class="btn btn-primary" href="./nexchat.apk" download="nexchat.apk">
+          下载 Android 安装包
+        </a>
+        <a class="btn btn-secondary" href="./">在浏览器中使用</a>
+        <p class="meta" id="version-meta">版本加载中…</p>
+        <p class="err" id="apk-err">安装包暂不可用，请稍后再试或使用网页版。</p>
+      </div>
+
+      <div class="card">
+        <p class="note"><strong>安装说明</strong></p>
+        <ol class="steps">
+          <li>点击上方按钮下载 <strong>nexchat.apk</strong></li>
+          <li>若系统提示「未知来源」，请在设置中允许安装</li>
+          <li>安装完成后打开 App，首次启动会自动加载最新网页功能</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <p class="note">
+          App 采用远程加载模式：界面与功能从
+          <strong>nexusmall.net</strong> 自动更新，通常无需重复安装 APK。
+        </p>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var apkUrl = "./nexchat.apk";
+        var versionMeta = document.getElementById("version-meta");
+        var err = document.getElementById("apk-err");
+        var btn = document.getElementById("download-btn");
+
+        fetch("./version.json", { cache: "no-store" })
+          .then(function (r) {
+            return r.ok ? r.json() : null;
+          })
+          .then(function (v) {
+            if (!v) {
+              versionMeta.textContent = "网页版 v0.1.0";
+              return;
+            }
+            versionMeta.textContent = "网页版 v" + v.version + " · 构建于 " + new Date(v.builtAt).toLocaleString("zh-CN");
+          })
+          .catch(function () {
+            versionMeta.textContent = "网页版 v0.1.0";
+          });
+
+        fetch(apkUrl, { method: "HEAD", cache: "no-store" })
+          .then(function (r) {
+            if (!r.ok) throw new Error("apk missing");
+            var size = r.headers.get("content-length");
+            if (size) {
+              var mb = (Number(size) / 1024 / 1024).toFixed(1);
+              versionMeta.textContent += " · APK " + mb + " MB";
+            }
+          })
+          .catch(function () {
+            err.style.display = "block";
+            btn.style.opacity = "0.5";
+            btn.style.pointerEvents = "none";
+          });
+      })();
+    </script>
+  </body>
+</html>

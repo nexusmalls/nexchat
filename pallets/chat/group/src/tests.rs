@@ -1111,3 +1111,222 @@ fn disband_clears_profile_ban_mute_nickname() {
         assert!(!Banned::<Test>::contains_key(gid, BOB));
     });
 }
+
+// EN: Multi-device prerequisite (Track B / CHAT_MULTIDEVICE_MLS_SYNC_DESIGN §9.2 Phase 0).
+// A `commit` is signed by the AccountId; the `committer must be a member` gate checks
+// AccountId membership. For the same-account multi-device case the account is already a
+// member, so an empty-delta commit (the on-chain projection of an MLS external-commit /
+// rekey performed by a new device) MUST pass: epoch advances, HandshakeLog gets an entry,
+// member set is unchanged, and none of NotMember / NotAuthorized / TwoMemberGroupForbidden
+// fire. This proves the chain does NOT block multi-device self-rekey — no chain change is
+// needed for it (Phase 3 External Commit is only for a true cross-account non-member).
+// CN: 多设备前置（路线 B / 设计文档 §9.2 Phase 0）。`commit` 由 AccountId 签名，
+// 「committer 必须是成员」闸门校验的是 AccountId 成员资格。同账户多设备场景账户本就是成员，
+// 故一条空增删 commit（新设备做 MLS external-commit/rekey 的链上投影）必须放行：epoch 推进、
+// HandshakeLog 落条、成员集不变，且不触发 NotMember/NotAuthorized/TwoMemberGroupForbidden。
+// 这证明链上不阻挡多设备自助 rekey——该场景无需链改（Phase 3 External Commit 仅为真·跨账户非成员）。
+#[test]
+fn same_account_empty_delta_commit_rekey_is_allowed() {
+    new_test_ext().execute_with(|| {
+        let gid = create(OWNER);
+        seed_group(gid); // epoch 1, members: OWNER + ALICE + BOB (count 3)
+
+        let before = GroupMls::<Test>::get(gid).unwrap();
+        assert_eq!(before.epoch, 1);
+        assert_eq!(before.member_count, 3);
+
+        // 普通成员 ALICE 以「新设备」身份提交空增删 commit（rekey / external-commit 投影）。
+        // A regular member ALICE submits an empty-delta commit as a "new device" (rekey).
+        assert_ok!(ChatGroup::commit(
+            RuntimeOrigin::signed(ALICE),
+            gid,
+            1, // expected_epoch == current
+            vec![7, 7, 7], // opaque commit bytes
+            [9u8; 32],
+            [9u8; 32],
+            b"cid-rekey".to_vec(),
+            vec![],            // no welcomes: no added members
+            delta(vec![], vec![]),
+        ));
+
+        let after = GroupMls::<Test>::get(gid).unwrap();
+        // epoch 推进；成员数不变 / epoch advanced; membership unchanged
+        assert_eq!(after.epoch, 2);
+        assert_eq!(after.member_count, 3);
+        // 新 epoch 的 Commit 落入 HandshakeLog，供其它设备补齐 / logged for catch-up
+        assert!(crate::HandshakeLog::<Test>::contains_key(gid, 2));
+        // ALICE 仍是成员，未被误判 / still a member, not misjudged
+        assert!(GroupMembers::<Test>::contains_key(gid, ALICE));
+        System::assert_has_event(
+            Event::Committed { group_id: gid, epoch: 2, committer: ALICE }.into(),
+        );
+    });
+}
+
+// EN: Boundary of the above: a true cross-account non-member (never joined) is still
+// rejected with NotMember even with an empty delta. This is the ONLY gap that a future
+// External Commit channel (Phase 3) would need to open; it is NOT the multi-device case.
+// CN: 上一条的边界：真·跨账户非成员（从未入群）即便空增删也仍被 NotMember 拒绝。
+// 这是未来 External Commit 通道（Phase 3）唯一需要放开的缺口，且**不是**多设备场景。
+#[test]
+fn true_non_member_commit_still_rejected() {
+    new_test_ext().execute_with(|| {
+        let gid = create(OWNER);
+        seed_group(gid); // CAROL 从未入群 / CAROL never joined
+        assert_noop!(
+            ChatGroup::commit(
+                RuntimeOrigin::signed(CAROL),
+                gid,
+                1,
+                vec![],
+                [0u8; 32],
+                [0u8; 32],
+                b"cid".to_vec(),
+                vec![],
+                delta(vec![], vec![]),
+            ),
+            Error::<Test>::NotMember
+        );
+    });
+}
+
+#[test]
+fn platform_muted_committer_is_rejected() {
+    use crate::mock::{clear_platform_mutes, mute_platform};
+    new_test_ext().execute_with(|| {
+        clear_platform_mutes();
+        let gid = create(OWNER);
+        seed_group(gid);
+        mute_platform(ALICE);
+        assert_noop!(
+            ChatGroup::commit(
+                RuntimeOrigin::signed(ALICE),
+                gid,
+                1,
+                vec![1, 2, 3],
+                [1u8; 32],
+                [2u8; 32],
+                b"cid".to_vec(),
+                vec![],
+                delta(vec![], vec![]),
+            ),
+            Error::<Test>::SenderPlatformMuted
+        );
+    });
+}
+
+#[test]
+fn approve_join_rejected_when_group_frozen() {
+    new_test_ext().execute_with(|| {
+        let gid = create_with(OWNER, false);
+        assert_ok!(ChatGroup::request_join(RuntimeOrigin::signed(ALICE), gid));
+        assert_ok!(ChatGroup::set_group_frozen(RuntimeOrigin::root(), gid, true));
+        assert_noop!(
+            ChatGroup::approve_join(RuntimeOrigin::signed(OWNER), gid, ALICE),
+            Error::<Test>::GroupFrozen
+        );
+    });
+}
+
+#[test]
+fn member_delta_rejects_duplicate_accounts() {
+    new_test_ext().execute_with(|| {
+        let gid = create(OWNER);
+        let epoch = GroupMls::<Test>::get(gid).unwrap().epoch;
+        assert_noop!(
+            ChatGroup::commit(
+                RuntimeOrigin::signed(OWNER),
+                gid,
+                epoch,
+                vec![],
+                [0u8; 32],
+                [0u8; 32],
+                b"cid".to_vec(),
+                welcomes(&[ALICE, ALICE]),
+                delta(vec![ALICE, ALICE], vec![]),
+            ),
+            Error::<Test>::BadMemberDelta
+        );
+    });
+}
+
+#[test]
+fn anchor_rejects_stale_epoch() {
+    new_test_ext().execute_with(|| {
+        let gid = create(OWNER);
+        assert_noop!(
+            ChatGroup::anchor_message_digest(
+                RuntimeOrigin::signed(OWNER),
+                gid,
+                0,
+                [1u8; 32],
+                99,
+            ),
+            Error::<Test>::EpochStale
+        );
+    });
+}
+
+#[test]
+fn failed_commit_does_not_consume_mls_rate_limit() {
+    use frame_support::traits::Get;
+    new_test_ext().execute_with(|| {
+        let gid = create(OWNER);
+        let max = <<Test as crate::Config>::MaxMlsActionsPerWindow as Get<u32>>::get();
+        for seq in 0..max.saturating_sub(1) {
+            assert_ok!(ChatGroup::anchor_message_digest(
+                RuntimeOrigin::signed(OWNER),
+                gid,
+                seq as u64,
+                [1u8; 32],
+                0,
+            ));
+        }
+        let stale_epoch = GroupMls::<Test>::get(gid).unwrap().epoch.saturating_add(1);
+        for _ in 0..5 {
+            assert_noop!(
+                ChatGroup::commit(
+                    RuntimeOrigin::signed(OWNER),
+                    gid,
+                    stale_epoch,
+                    vec![],
+                    [0u8; 32],
+                    [0u8; 32],
+                    b"cid".to_vec(),
+                    vec![],
+                    delta(vec![], vec![]),
+                ),
+                Error::<Test>::EpochStale
+            );
+        }
+        assert_ok!(ChatGroup::anchor_message_digest(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            max as u64,
+            [1u8; 32],
+            0,
+        ));
+    });
+}
+
+#[test]
+fn request_join_rate_limit_blocks_excess_requests() {
+    use crate::mock::run_to_block;
+    use frame_support::traits::Get;
+    new_test_ext().execute_with(|| {
+        let max = <<Test as crate::Config>::MaxJoinRequestsPerWindow as Get<u32>>::get();
+        let window = <<Test as crate::Config>::JoinRequestWindow as Get<u64>>::get();
+        let owners = [OWNER, BOB, CAROL, 5u64, 6u64];
+        for owner in owners.iter().take(max as usize) {
+            let gid = create_with(*owner, false);
+            assert_ok!(ChatGroup::request_join(RuntimeOrigin::signed(ALICE), gid));
+        }
+        let gid = create_with(7, false);
+        assert_noop!(
+            ChatGroup::request_join(RuntimeOrigin::signed(ALICE), gid),
+            Error::<Test>::RateLimited
+        );
+        run_to_block(1 + window);
+        assert_ok!(ChatGroup::request_join(RuntimeOrigin::signed(ALICE), gid));
+    });
+}

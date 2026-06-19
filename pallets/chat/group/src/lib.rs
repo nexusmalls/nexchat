@@ -77,7 +77,8 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use pallet_chat_common::rate_limit::{check_and_update_rate_limit, RateLimitResult, RateLimitState};
-use sp_runtime::traits::{Saturating, UniqueSaturatedInto, Zero};
+use pallet_chat_common::{min_blocks_elapsed, reserve_deposit, unreserve_deposit};
+use sp_runtime::traits::{UniqueSaturatedInto, Zero};
 use sp_std::vec::Vec;
 
 /// EN: Balance type of the configured reservable currency.
@@ -223,6 +224,22 @@ impl<AccountId> GroupChatHook<AccountId> for () {
     fn on_member_removed(_: GroupId, _: &AccountId, _: &AccountId) {}
 }
 
+/// EN: Platform-mute gate for MLS write paths (`commit`, `create_group`, etc.).
+/// Wired in runtime to `pallet-chat-permission::Pallet::is_account_muted`.
+/// CN: MLS 写入路径的平台禁言闸门（`commit`、`create_group` 等）。runtime 接线至
+/// `pallet-chat-permission::Pallet::is_account_muted`。
+pub trait PlatformMuteChecker<AccountId> {
+    /// EN: True when governance has platform-muted `who` as a sender.
+    /// CN: 治理已对 `who` 作平台级禁言（发送方视角）时为 true。
+    fn is_platform_muted(who: &AccountId) -> bool;
+}
+
+impl<AccountId> PlatformMuteChecker<AccountId> for () {
+    fn is_platform_muted(_who: &AccountId) -> bool {
+        false
+    }
+}
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
@@ -252,6 +269,10 @@ pub mod pallet {
         /// (e.g. chat-permission). Defaults to no-op `()`.
         /// CN: 把成员关系镜像到外部授权层（如 chat-permission）的钩子，默认空实现 `()`。
         type ChatHook: GroupChatHook<Self::AccountId>;
+
+        /// EN: Platform-mute check for write-heavy MLS extrinsics.
+        /// CN: 写入型 MLS extrinsic 的平台禁言检查。
+        type PlatformMuteCheck: PlatformMuteChecker<Self::AccountId>;
 
         /// EN: Max members per group / CN: 单群最大成员数
         #[pallet::constant]
@@ -315,6 +336,17 @@ pub mod pallet {
         #[pallet::constant]
         type MaxMlsActionsPerWindow: Get<u32>;
 
+        /// EN: Rate-limit window (in blocks) for `request_join`, per account.
+        /// Caps cross-group join-request spam. CN: `request_join` 按账户的限频窗口
+        /// （区块数），防止跨群刷入群申请。
+        #[pallet::constant]
+        type JoinRequestWindow: Get<BlockNumberFor<Self>>;
+
+        /// EN: Max `request_join` calls per account within `JoinRequestWindow`.
+        /// CN: 单账户在 `JoinRequestWindow` 内允许的 `request_join` 次数上限。
+        #[pallet::constant]
+        type MaxJoinRequestsPerWindow: Get<u32>;
+
         /// EN: Privileged origin (Root / governance) allowed to force-disband or
         /// freeze a group for platform compliance. Distinct from the in-group
         /// owner/admin authority. CN: 平台合规用的特权来源（Root / 治理），可强制解散
@@ -325,15 +357,22 @@ pub mod pallet {
         type WeightInfo: WeightInfo;
     }
 
+    /// EN: Baseline storage version (v1 = launch baseline with runtime upgrade hook).
+    /// CN: 基线存储版本（v1 = 带 runtime 升级钩子的上线基线）。
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+
     #[pallet::pallet]
+    #[pallet::storage_version(STORAGE_VERSION)]
     pub struct Pallet<T>(_);
 
     // ---------------------------------------------------------------------
     // Storage / 存储
     // ---------------------------------------------------------------------
 
-    /// EN: Published MLS KeyPackages (one-shot pre-keys). Consumed on Add.
-    /// CN: 成员发布的 MLS KeyPackage（一次性预共享公钥包），被 Add 消费即删。
+    /// EN: Published MLS KeyPackages. Opt-in gate: Add requires `KeyPackageCount > 0`
+    /// (presence at commit time; rows are **not** deleted on Add — see `revoke_key_package`).
+    /// CN: 已发布的 MLS KeyPackage。opt-in 闸门：Add 要求 `KeyPackageCount > 0`
+    /// （commit 时刻存在即可；Add **不会**删除 KP 行——见 `revoke_key_package`）。
     #[pallet::storage]
     pub type KeyPackages<T: Config> = StorageDoubleMap<
         _,
@@ -424,6 +463,13 @@ pub mod pallet {
     /// 窗口过期自动重置；非按群维度，故可跨群限制同一滥用者。
     #[pallet::storage]
     pub type MlsActionRate<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, RateLimitState<BlockNumberFor<T>>, ValueQuery>;
+
+    /// EN: Per-account windowed rate-limit state for `request_join`. Caps
+    /// cross-group join-request spam. CN: `request_join` 的按账户窗口限频状态，
+    /// 防止跨群刷待批入群申请。
+    #[pallet::storage]
+    pub type JoinRequestRate<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, RateLimitState<BlockNumberFor<T>>, ValueQuery>;
 
     /// EN: Groups frozen by governance for compliance. A frozen group blocks
@@ -672,6 +718,26 @@ pub mod pallet {
         /// Valid counts are 1 (creator only) or 3+. CN: 链上群不得恰好 2 人（隐私不变量：
         /// 2 人关系等价于公开谁↔谁；1:1 走链下）。合法人数为 1（仅创建者）或 3+。
         TwoMemberGroupForbidden,
+        /// EN: Sender is platform-muted by governance (same gate as `check_permission`).
+        /// CN: 发送方被治理平台级禁言（与 `check_permission` 同级闸门）。
+        SenderPlatformMuted,
+    }
+
+    // ---------------------------------------------------------------------
+    // Hooks / 钩子
+    // ---------------------------------------------------------------------
+
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_runtime_upgrade() -> Weight {
+            let on_chain = <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
+            if on_chain < STORAGE_VERSION {
+                STORAGE_VERSION.put::<Pallet<T>>();
+                T::DbWeight::get().writes(1)
+            } else {
+                Weight::zero()
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -686,6 +752,7 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::publish_key_package())]
         pub fn publish_key_package(origin: OriginFor<T>, kp_bytes: Vec<u8>) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            Self::ensure_sender_not_platform_muted(&who)?;
             let blob: BoundedVec<u8, T::MaxKeyPackageLen> =
                 kp_bytes.try_into().map_err(|_| Error::<T>::TooLong)?;
 
@@ -693,7 +760,7 @@ pub mod pallet {
             ensure!(count < T::MaxKeyPackagesPerUser::get(), Error::<T>::TooManyKeyPackages);
 
             // 预留押金防滥用 / reserve anti-spam deposit
-            T::Currency::reserve(&who, T::KeyPackageDeposit::get())?;
+            reserve_deposit::<T::Currency, _, _>(&who, T::KeyPackageDeposit::get())?;
 
             let id = NextKeyPackageId::<T>::get(&who);
             KeyPackages::<T>::insert(&who, id, blob);
@@ -714,7 +781,7 @@ pub mod pallet {
             KeyPackages::<T>::remove(&who, id);
             KeyPackageCount::<T>::mutate(&who, |c| *c = c.saturating_sub(1));
             // 退还押金 / refund deposit
-            T::Currency::unreserve(&who, T::KeyPackageDeposit::get());
+            unreserve_deposit::<T::Currency, _, _>(&who, T::KeyPackageDeposit::get());
             Self::deposit_event(Event::KeyPackageRevoked { who, id });
             Ok(())
         }
@@ -733,13 +800,14 @@ pub mod pallet {
             transcript_hash: [u8; 32],
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            Self::ensure_sender_not_platform_muted(&who)?;
 
             // 建群冷却 / creation cooldown
             let now = frame_system::Pallet::<T>::block_number();
             let last = LastGroupCreation::<T>::get(&who);
             if !last.is_zero() {
                 ensure!(
-                    now.saturating_sub(last) >= T::GroupCreationCooldown::get(),
+                    min_blocks_elapsed(last, now, T::GroupCreationCooldown::get()),
                     Error::<T>::CreationCooldown
                 );
             }
@@ -755,7 +823,7 @@ pub mod pallet {
 
             // 预留建群押金 / reserve group creation deposit
             let deposit = T::GroupDeposit::get();
-            T::Currency::reserve(&who, deposit)?;
+            reserve_deposit::<T::Currency, _, _>(&who, deposit)?;
 
             let group_id = NextGroupId::<T>::get();
             let next = group_id.checked_add(1).ok_or(Error::<T>::GroupIdOverflow)?;
@@ -814,10 +882,9 @@ pub mod pallet {
             member_delta: MemberDelta<T>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            Self::ensure_sender_not_platform_muted(&who)?;
             // 治理冻结闸门 / governance freeze gate
             ensure!(!GroupFrozen::<T>::contains_key(group_id), Error::<T>::GroupFrozen);
-            // 写入型 MLS 操作限频（防滥用）/ rate-limit write-heavy MLS action
-            Self::note_mls_action(&who)?;
 
             let mut g = GroupMls::<T>::get(group_id).ok_or(Error::<T>::GroupNotFound)?;
             // ★ 防分叉闸门 / anti-fork gate
@@ -841,6 +908,8 @@ pub mod pallet {
                     Error::<T>::NotAuthorized
                 );
             }
+
+            Self::ensure_member_delta_unique(&member_delta)?;
 
             let new_epoch = g.epoch.saturating_add(1);
             let joined_at = Self::block_u32(frame_system::Pallet::<T>::block_number());
@@ -880,6 +949,10 @@ pub mod pallet {
             // 隐私不变量：禁止恰好 2 人的链上群（1:1 走链下，见模块头注释）。
             // Privacy invariant: forbid exactly-2-member on-chain groups (1:1 is off-chain).
             ensure!(new_count != 2, Error::<T>::TwoMemberGroupForbidden);
+
+            // 全部校验通过后再计限频，避免失败 commit 消耗配额。
+            // Rate-limit only after validation so failed commits do not burn quota.
+            Self::note_mls_action(&who)?;
 
             // 应用成员表 + UserGroups 同步（杜绝幽灵群）
             // apply member table + UserGroups sync (no ghost entries)
@@ -983,16 +1056,18 @@ pub mod pallet {
             epoch: u64,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            Self::ensure_sender_not_platform_muted(&who)?;
             // 治理冻结闸门 / governance freeze gate
             ensure!(!GroupFrozen::<T>::contains_key(group_id), Error::<T>::GroupFrozen);
-            // 写入型 MLS 操作限频（防滥用）/ rate-limit write-heavy MLS action
-            Self::note_mls_action(&who)?;
-            ensure!(GroupMls::<T>::contains_key(group_id), Error::<T>::GroupNotFound);
+            let g = GroupMls::<T>::get(group_id).ok_or(Error::<T>::GroupNotFound)?;
+            ensure!(g.epoch == epoch, Error::<T>::EpochStale);
             let m = GroupMembers::<T>::get(group_id, &who).ok_or(Error::<T>::NotMember)?;
             ensure!(
                 matches!(m.role, MemberRole::Owner | MemberRole::Admin),
                 Error::<T>::NotAuthorized
             );
+            // 写入型 MLS 操作限频（校验通过后再计）/ rate-limit after validation
+            Self::note_mls_action(&who)?;
             let now = frame_system::Pallet::<T>::block_number();
             MessageDigestAnchor::<T>::insert(group_id, batch_seq, (digest, epoch, now));
             Self::deposit_event(Event::MessageDigestAnchored { group_id, batch_seq, epoch });
@@ -1006,6 +1081,7 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::request_join())]
         pub fn request_join(origin: OriginFor<T>, group_id: GroupId) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            Self::ensure_sender_not_platform_muted(&who)?;
             // 治理冻结闸门：冻结群不接受新入群申请 / frozen groups reject new join requests
             ensure!(!GroupFrozen::<T>::contains_key(group_id), Error::<T>::GroupFrozen);
             let g = GroupMls::<T>::get(group_id).ok_or(Error::<T>::GroupNotFound)?;
@@ -1018,6 +1094,7 @@ pub mod pallet {
             ensure!(cnt < T::MaxPendingJoins::get(), Error::<T>::TooManyPendingJoins);
 
             let now = frame_system::Pallet::<T>::block_number();
+            Self::note_join_request(&who)?;
             JoinRequests::<T>::insert(group_id, &who, now);
             PendingJoinCount::<T>::insert(group_id, cnt.saturating_add(1));
             Self::deposit_event(Event::JoinRequested { group_id, who });
@@ -1050,6 +1127,8 @@ pub mod pallet {
             who: T::AccountId,
         ) -> DispatchResult {
             let by = ensure_signed(origin)?;
+            Self::ensure_sender_not_platform_muted(&by)?;
+            ensure!(!GroupFrozen::<T>::contains_key(group_id), Error::<T>::GroupFrozen);
             ensure!(GroupMls::<T>::contains_key(group_id), Error::<T>::GroupNotFound);
             let approver = GroupMembers::<T>::get(group_id, &by).ok_or(Error::<T>::NotMember)?;
             ensure!(
@@ -1355,6 +1434,16 @@ pub mod pallet {
     // ---------------------------------------------------------------------
 
     impl<T: Config> Pallet<T> {
+        /// EN: Reject platform-muted senders on MLS write extrinsics.
+        /// CN: 拒绝被平台禁言的发送方执行 MLS 写入 extrinsic。
+        fn ensure_sender_not_platform_muted(who: &T::AccountId) -> DispatchResult {
+            ensure!(
+                !T::PlatformMuteCheck::is_platform_muted(who),
+                Error::<T>::SenderPlatformMuted
+            );
+            Ok(())
+        }
+
         /// EN: Ensure `welcomes` bijectively matches `added`: same length, each added
         /// account appears exactly once with a non-empty blob, and no extras.
         /// CN: 校验 `welcomes` 与 `added` 双射一致：长度相同、每名新成员恰一条非空
@@ -1380,6 +1469,27 @@ pub mod pallet {
             Ok(())
         }
 
+        /// EN: Reject duplicate accounts within `added`/`removed` or overlap between
+        /// the two lists. CN: 拒绝 `added`/`removed` 内重复账户或两列表交集。
+        fn ensure_member_delta_unique(member_delta: &MemberDelta<T>) -> DispatchResult {
+            let added = &member_delta.added;
+            let removed = &member_delta.removed;
+            for i in 0..added.len() {
+                for j in (i + 1)..added.len() {
+                    ensure!(added[i] != added[j], Error::<T>::BadMemberDelta);
+                }
+                for acct in removed.iter() {
+                    ensure!(&added[i] != acct, Error::<T>::BadMemberDelta);
+                }
+            }
+            for i in 0..removed.len() {
+                for j in (i + 1)..removed.len() {
+                    ensure!(removed[i] != removed[j], Error::<T>::BadMemberDelta);
+                }
+            }
+            Ok(())
+        }
+
         /// EN: Account a write-heavy MLS action (`commit` / `anchor`) against the
         /// per-account windowed rate limit; errors with `RateLimited` when the
         /// window quota is exhausted. CN: 把一次写入型 MLS 操作（`commit` / `anchor`）
@@ -1392,6 +1502,22 @@ pub mod pallet {
                     now,
                     T::MlsActionWindow::get(),
                     T::MaxMlsActionsPerWindow::get(),
+                );
+                ensure!(res == RateLimitResult::Allowed, Error::<T>::RateLimited);
+                Ok(())
+            })
+        }
+
+        /// EN: Account a `request_join` against the per-account windowed rate limit.
+        /// CN: 把一次 `request_join` 计入按账户窗口限频。
+        fn note_join_request(who: &T::AccountId) -> DispatchResult {
+            let now = frame_system::Pallet::<T>::block_number();
+            JoinRequestRate::<T>::try_mutate(who, |state| -> DispatchResult {
+                let res = check_and_update_rate_limit(
+                    state,
+                    now,
+                    T::JoinRequestWindow::get(),
+                    T::MaxJoinRequestsPerWindow::get(),
                 );
                 ensure!(res == RateLimitResult::Allowed, Error::<T>::RateLimited);
                 Ok(())
@@ -1553,6 +1679,14 @@ pub mod pallet {
                 }
                 GroupMembers::<T>::remove(group_id, acct);
             }
+            if !members.is_empty() {
+                let removed_count = members.len() as u32;
+                GroupMls::<T>::mutate(group_id, |maybe| {
+                    if let Some(g) = maybe {
+                        g.member_count = g.member_count.saturating_sub(removed_count);
+                    }
+                });
+            }
 
             // 2. 有界清理其余（可能很大的）前缀。/ Bounded-clear the other prefixes.
             let c_hand = HandshakeLog::<T>::clear_prefix(group_id, budget, None);
@@ -1589,7 +1723,7 @@ pub mod pallet {
             GroupFrozen::<T>::remove(group_id);
             // 退还建群押金 / refund group creation deposit
             if let Some((depositor, amount)) = GroupDepositOf::<T>::take(group_id) {
-                T::Currency::unreserve(&depositor, amount);
+                unreserve_deposit::<T::Currency, _, _>(&depositor, amount);
             }
             GroupMls::<T>::remove(group_id);
             Self::deposit_event(Event::GroupDisbanded { group_id });

@@ -1,0 +1,51 @@
+[package]
+name = "pallet-msg-identity"
+version = "0.1.0"
+authors = ["Stardust Team"]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/lao-sha/stardust"
+description = "去中心化消息身份预密钥锚（X3DH IK/SPK/OPK 根 + 1:1 栈能力位） / Decentralized messaging identity prekey anchor (X3DH IK/SPK/OPK root + 1:1 stack caps)"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+codec = { features = ["derive"], workspace = true }
+scale-info = { features = ["derive"], workspace = true }
+
+# Substrate
+frame-benchmarking = { optional = true, workspace = true }
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+pallet-chat-common = { workspace = true }
+sp-runtime = { workspace = true }
+sp-std = { workspace = true }
+sp-io = { workspace = true }
+sp-api = { workspace = true }
+
+[dev-dependencies]
+sp-core = { workspace = true, features = ["std"] }
+pallet-balances = { workspace = true, features = ["std"] }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"scale-info/std",
+	"frame-benchmarking?/std",
+	"frame-support/std",
+	"frame-system/std",
+	"pallet-chat-common/std",
+	"sp-runtime/std",
+	"sp-std/std",
+	"sp-io/std",
+	"sp-api/std",
+]
+try-runtime = ["frame-support/try-runtime"]
+runtime-benchmarks = [
+	"frame-benchmarking/runtime-benchmarks",
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
+]

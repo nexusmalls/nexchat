@@ -1,0 +1,38 @@
+[package]
+name = "relay-pinners"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# EN: hot/crust pinners build by default (reqwest only); the chain pinner needs the heavy
+# subxt stack, gated behind the `chain` feature so the default workspace build stays light.
+# CN: hot/crust 默认构建（仅 reqwest）；chain pinner 依赖庞大的 subxt，置于 `chain` feature
+# 之后，使默认 workspace 构建保持轻量。
+[features]
+chain = ["dep:subxt", "dep:subxt-signer"]
+
+[dependencies]
+relay-core = { path = "../core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+subxt = { workspace = true, optional = true }
+subxt-signer = { workspace = true, optional = true }
+
+[lib]
+name = "relay_pinners"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pinner-hot"
+path = "src/bin/pinner-hot.rs"
+
+[[bin]]
+name = "pinner-crust"
+path = "src/bin/pinner-crust.rs"
+
+[[bin]]
+name = "pinner-chain"
+path = "src/bin/pinner-chain.rs"
+required-features = ["chain"]

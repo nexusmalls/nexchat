@@ -2,7 +2,7 @@
 
 > 状态：设计 / 边界决策（**链上不新增 extrinsic / storage**）
 > 适用范围：`pallets/chat/{core,group,common}` 的文件类消息 + 链下投递/存储层
-> 关联：`CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md`（MLS payload 信封）、
+> 关联：链下 MLS payload 信封约定（relay 组件 / 客户端 `nexchat/`）、
 > `core/src/lib.rs` §13 收敛说明、`pallets/storage/service/`（Pin 计费/多副本）、
 > `common/media/`（媒体类型与大小上限）
 
@@ -41,7 +41,7 @@ tiered Pin service (or off-chain hosting).
 
 ## 3. 文件信封约定（MLS payload 内，解密后结构）
 
-文件类消息是 `CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md` §3 信封的一种 `type`，`body` 填本规范字段。
+文件类消息是链下 MLS payload 信封的一种 `type`，`body` 填本规范字段。
 序列化用 CBOR / JSON（与客户端、relay 约定其一），链上对这些字段**完全无感**。
 
 ```jsonc
@@ -184,4 +184,4 @@ IPFS 上传 ≠ 永久。**可选**链上分级 Pin（用户显式开启或标�
   持久化复用 `pallet-storage-service` 既有接口。
 - **链下侧（客户端 + relay）**：按 §3 信封、§4 分块 / manifest、§5 缩略图、§9 流程实现；
   持久化按 §6 选择链上 Pin 或链下托管。
-- 如链下实现过程中确需链上原语，回到 `CHAT_P3_ADVANCED_OFFCHAIN_DESIGN.md` §6 流程单独评审。
+- 如链下实现过程中确需链上原语，回到 `core/src/lib.rs` §13 链上/链下边界单独评审。

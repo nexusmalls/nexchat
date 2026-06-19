@@ -100,12 +100,34 @@ pub fn drain_hook_events() -> Vec<(bool, GroupId, u64, u64)> {
     HOOK_EVENTS.with(|e| core::mem::take(&mut *e.borrow_mut()))
 }
 
+pub struct MockPlatformMuteCheck;
+impl crate::PlatformMuteChecker<u64> for MockPlatformMuteCheck {
+    fn is_platform_muted(who: &u64) -> bool {
+        PLATFORM_MUTED.with(|m| m.borrow().contains(who))
+    }
+}
+
+thread_local! {
+    static PLATFORM_MUTED: core::cell::RefCell<Vec<u64>> = core::cell::RefCell::new(Vec::new());
+}
+
+/// EN: Mark `who` platform-muted for tests. CN: 测试用：标记平台禁言。
+pub fn mute_platform(who: u64) {
+    PLATFORM_MUTED.with(|m| m.borrow_mut().push(who));
+}
+
+/// EN: Clear platform-mute test state. CN: 清空平台禁言测试状态。
+pub fn clear_platform_mutes() {
+    PLATFORM_MUTED.with(|m| m.borrow_mut().clear());
+}
+
 impl pallet_chat_group::Config for Test {
     type Currency = Balances;
     type GroupDeposit = ConstU128<100>;
     type KeyPackageDeposit = ConstU128<10>;
     type MaxPendingJoins = ConstU32<16>;
     type ChatHook = RecordingHook;
+    type PlatformMuteCheck = MockPlatformMuteCheck;
     type MaxGroupMembers = ConstU32<8>;
     type MaxGroupsPerUser = ConstU32<4>;
     type MaxKeyPackageLen = ConstU32<256>;
@@ -119,6 +141,8 @@ impl pallet_chat_group::Config for Test {
     type GroupCreationCooldown = ConstU64<10>;
     type MlsActionWindow = ConstU64<50>;
     type MaxMlsActionsPerWindow = ConstU32<50>;
+    type JoinRequestWindow = ConstU64<50>;
+    type MaxJoinRequestsPerWindow = ConstU32<5>;
     type GovernanceOrigin = frame_system::EnsureRoot<u64>;
     type WeightInfo = ();
 }

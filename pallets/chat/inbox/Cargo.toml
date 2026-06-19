@@ -13,19 +13,19 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 codec = { features = ["derive"], workspace = true }
 scale-info = { features = ["derive"], workspace = true }
-log = { workspace = true }
 
 # Substrate
 frame-benchmarking = { optional = true, workspace = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
+pallet-chat-common = { workspace = true }
 sp-runtime = { workspace = true }
 sp-std = { workspace = true }
-sp-core = { workspace = true }
 sp-api = { workspace = true }
 
 [dev-dependencies]
 sp-io = { workspace = true }
+sp-core = { workspace = true, features = ["std"] }
 pallet-balances = { workspace = true, features = ["std"] }
 
 [features]
@@ -33,13 +33,12 @@ default = ["std"]
 std = [
 	"codec/std",
 	"scale-info/std",
-	"log/std",
 	"frame-benchmarking?/std",
 	"frame-support/std",
 	"frame-system/std",
+	"pallet-chat-common/std",
 	"sp-runtime/std",
 	"sp-std/std",
-	"sp-core/std",
 	"sp-api/std",
 ]
 try-runtime = ["frame-support/try-runtime"]

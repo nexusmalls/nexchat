@@ -26,21 +26,21 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     /// ChatSync::SyncAnchors (r:1 w:1), ChatSync::ClearedAt (r:1 w:0);
     /// + ed25519_verify.
     fn publish_sync_anchor() -> Weight {
-        Weight::from_parts(193_886_000, 4088)
+        Weight::from_parts(189_844_000, 4088)
             .saturating_add(T::DbWeight::get().reads(4))
             .saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: ChatSync::SyncAnchors (r:1 w:1), System::BlockHash (r:1 w:0),
     /// ChatSync::ClearedAt (r:0 w:1); + ed25519_verify.
     fn clear_sync_anchor() -> Weight {
-        Weight::from_parts(179_879_000, 4088)
+        Weight::from_parts(173_271_000, 4088)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(2))
     }
     /// Storage: ChatSync::SyncAnchors (r:1 w:1), ChatSync::ClearedAt (r:0 w:1);
     /// no signature verification (privileged origin).
     fn force_clear_sync_anchor() -> Weight {
-        Weight::from_parts(79_396_000, 4088)
+        Weight::from_parts(75_230_000, 4088)
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(2))
     }

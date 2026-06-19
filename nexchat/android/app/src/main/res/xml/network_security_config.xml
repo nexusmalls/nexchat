@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EN: Allow cleartext HTTP for dev (local node / Vite on LAN). Production should use HTTPS CAP_SERVER_URL.
+     CN: 开发环境允许明文 HTTP（本地节点 / 局域网 Vite）；生产请用 HTTPS 的 CAP_SERVER_URL。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
