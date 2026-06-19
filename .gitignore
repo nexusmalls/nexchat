@@ -19,6 +19,8 @@
 /network/
 /my-chain-state/
 
+# NexChat web client — local only; not tracked in this repo (see nexusmalls/nexchat client repo)
+/nexchat/
 
 # Node.js / package managers
 node_modules/
@@ -122,6 +124,7 @@ hs_err_pid*
 /nexus-pitch/
 /investors/
 /website/
+/nexchat/
 
 # Telegram bot local data
 /telegram/
