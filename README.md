@@ -315,7 +315,7 @@ cd website && npm install && npm run dev
 | **质押** | Nominated Proof-of-Stake |
 | **SS58 格式** | 42 |
 | **Runtime 名称** | nexus |
-| **Spec 版本** | 102 |
+| **Spec 版本** | 103 |
 
 ## 技术栈
 
