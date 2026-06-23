@@ -82,13 +82,12 @@ impl pallet_ismp::Config for Runtime {
     type HostStateMachine = HostStateMachine;
     type Coprocessor = Coprocessor;
     type Router = Router;
-    // Stage 1b: register the live GRANDPA consensus client here, i.e.
-    // `(ismp_grandpa::consensus::GrandpaConsensusClient<Runtime>,)`. Until then no
-    // consensus client is configured, so inbound proofs cannot yet be verified.
-    // Stage 1b：此处注册实际 GRANDPA 共识客户端，即
-    // `(ismp_grandpa::consensus::GrandpaConsensusClient<Runtime>,)`；在此之前未配置
-    // 共识客户端，入站证明尚不可验证。
-    type ConsensusClients = ();
+    // GRANDPA consensus client (Stage 1b-2): verifies finality proofs from the
+    // Hyperbridge coprocessor / connected Substrate chains, enabling inbound message
+    // verification. Uses the published `ismp-grandpa 2512.1.0`.
+    // GRANDPA 共识客户端（Stage 1b-2）：验证来自 Hyperbridge 协处理器 / 所连 Substrate 链的
+    // 终局性证明，从而支持入站消息验证。使用已发布的 `ismp-grandpa 2512.1.0`。
+    type ConsensusClients = (ismp_grandpa::consensus::GrandpaConsensusClient<Runtime>,);
     type FeeHandler = ();
     type OffchainDB = ();
     type MigrationWeightInfo = ();
@@ -105,15 +104,18 @@ impl pallet_hyperbridge::Config for Runtime {
     type IsmpHost = pallet_ismp::Pallet<Runtime>;
 }
 
-// Stage 1b (still deferred): `ismp_grandpa::Config` is added once the GRANDPA
-// consensus client is vendored/released for `ismp 2512.1.0`. It will likewise reuse
-// `pallet_ismp::Pallet<Runtime>` as its host:
-//
-//   impl ismp_grandpa::Config for Runtime {
-//       type IsmpHost = pallet_ismp::Pallet<Runtime>;
-//       type WeightInfo = ();
-//       type RootOrigin = EnsureRoot<AccountId>;
-//   }
-//
-// Stage 1b（仍暂缓）：待为 `ismp 2512.1.0` vendor/发布 GRANDPA 共识客户端后补回
-// `ismp_grandpa::Config`，同样复用 `pallet_ismp::Pallet<Runtime>` 作为 host。
+/// `ismp-grandpa` (Stage 1b-2): the GRANDPA consensus client pallet. It maintains the
+/// whitelist of supported state machines (`AdminOrigin`-gated) and, via
+/// [`GrandpaConsensusClient`](ismp_grandpa::consensus::GrandpaConsensusClient),
+/// verifies GRANDPA finality proofs. It reuses `pallet_ismp::Pallet<Runtime>` as its
+/// [`IsmpHost`], and gates its privileged calls behind root.
+/// `ismp-grandpa`（Stage 1b-2）：GRANDPA 共识客户端 pallet。维护受支持状态机白名单
+///（由 `AdminOrigin` 把关），并通过
+/// [`GrandpaConsensusClient`](ismp_grandpa::consensus::GrandpaConsensusClient)
+/// 验证 GRANDPA 终局性证明。复用 `pallet_ismp::Pallet<Runtime>` 作为 [`IsmpHost`]，
+/// 特权调用由 root 把关。
+impl ismp_grandpa::Config for Runtime {
+    type IsmpHost = pallet_ismp::Pallet<Runtime>;
+    type WeightInfo = ();
+    type RootOrigin = EnsureRoot<AccountId>;
+}

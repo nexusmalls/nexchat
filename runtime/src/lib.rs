@@ -469,13 +469,13 @@ mod runtime {
     #[runtime::pallet_index(170)]
     pub type Ismp = pallet_ismp;
 
-    // Stage 1b: vendored `pallet-hyperbridge` (D3=(c)) — host-param / fee module.
-    // Stage 1b：vendor 的 `pallet-hyperbridge`（D3=(c)）——host-param / 费用模块。
+    // Stage 1b-1: vendored `pallet-hyperbridge` (D3=(c)) — host-param / fee module.
+    // Stage 1b-1：vendor 的 `pallet-hyperbridge`（D3=(c)）——host-param / 费用模块。
     #[runtime::pallet_index(171)]
     pub type Hyperbridge = pallet_hyperbridge;
 
-    // Stage 1b (still deferred): `ismp_grandpa` (index 172) GRANDPA consensus client,
-    // added once vendored/released for `ismp 2512.1.0`.
-    // Stage 1b（仍暂缓）：`ismp_grandpa`（索引 172）GRANDPA 共识客户端，待为
-    // `ismp 2512.1.0` vendor/发布后补回。
+    // Stage 1b-2: `ismp-grandpa` GRANDPA consensus client (published 2512.1.0).
+    // Stage 1b-2：`ismp-grandpa` GRANDPA 共识客户端（已发布 2512.1.0）。
+    #[runtime::pallet_index(172)]
+    pub type IsmpGrandpa = ismp_grandpa;
 }

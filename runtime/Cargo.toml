@@ -112,10 +112,9 @@ pallet-ismp-runtime-api = { workspace = true }
 # Vendored (D3=(c)): local `pallets/bridge/hyperbridge`, patched for ismp 2512.1.0.
 # 已 vendor（D3=(c)）：本地 `pallets/bridge/hyperbridge`，已按 ismp 2512.1.0 改造。
 pallet-hyperbridge = { workspace = true }
-# Stage 1b (still deferred): `ismp-grandpa` GRANDPA consensus client (heavy
-# grandpa-verifier closure: alloy/revm/gmp/blst); to be vendored later.
-# Stage 1b（仍暂缓）：`ismp-grandpa` GRANDPA 共识客户端（沉重 grandpa-verifier 闭包）；后续 vendor。
-# ismp-grandpa = { workspace = true }
+# `ismp-grandpa` 2512.1.0: published against ismp 2512.1.0, used directly (no vendor).
+# `ismp-grandpa` 2512.1.0：按 ismp 2512.1.0 发布，直接使用（无需 vendor）。
+ismp-grandpa = { workspace = true }
 anyhow = { version = "1.0", default-features = false }
 scale-info = { features = ["derive", "serde"], workspace = true }
 serde_json = { workspace = true, default-features = false, features = ["alloc"] }
@@ -157,7 +156,7 @@ std = [
 	"pallet-ismp/std",
 	"pallet-ismp-runtime-api/std",
 	"pallet-hyperbridge/std",
-	# "ismp-grandpa/std", # Stage 1b
+	"ismp-grandpa/std",
 	"anyhow/std",
 	"pallet-babe/std",
 	"pallet-balances/std",

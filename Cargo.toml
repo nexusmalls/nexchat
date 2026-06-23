@@ -241,11 +241,15 @@ pallet-ismp-runtime-api = { version = "2512.1.0", default-features = false }
 # `pallet-hyperbridge` 已 VENDOR（D3=(c)）：已发布的 2512.0.0 只对应被 yank 的 `ismp 2512.0.0`，
 # 无法对 `ismp 2512.1.0` 编译；本地拷贝（`pallets/bridge/hyperbridge`）已按 ismp 2512.1.0 API 改造。
 pallet-hyperbridge = { path = "./pallets/bridge/hyperbridge", default-features = false }
-# Stage 1b: `ismp-grandpa` (GRANDPA consensus client) — same yank issue + heavy
-# grandpa-verifier closure (alloy/revm/gmp/blst). Still deferred (vendor later).
-# Stage 1b：`ismp-grandpa`（GRANDPA 共识客户端）——同样的 yank 问题 + 沉重的 grandpa-verifier
-# 闭包（alloy/revm/gmp/blst）。仍暂缓（后续 vendor）。
-ismp-grandpa = { version = "2512.0.0", default-features = false }
+# `ismp-grandpa` (GRANDPA consensus client). Unlike `pallet-hyperbridge`, the
+# `2512.1.0` line is published *against* `ismp 2512.1.0` (deps: ismp 2512.1.0 /
+# pallet-ismp 2512.2.0 / polkadot-sdk =2512.3.2 / grandpa-verifier 2512.1.0), so it
+# is used directly (no vendor needed); its closure is clean substrate/grandpa code.
+# `ismp-grandpa`（GRANDPA 共识客户端）。与 `pallet-hyperbridge` 不同，`2512.1.0` 这条线是
+# 按 `ismp 2512.1.0` 发布的（依赖 ismp 2512.1.0 / pallet-ismp 2512.2.0 / polkadot-sdk
+# =2512.3.2 / grandpa-verifier 2512.1.0），故直接使用（无需 vendor）；其闭包为干净的
+# substrate/grandpa 代码。
+ismp-grandpa = { version = "2512.1.0", default-features = false }
 
 [patch.crates-io]
 ark-vrf = { git = "https://github.com/davxy/ark-vrf", tag = "v0.1.1" }
