@@ -8528,6 +8528,8 @@ dependencies = [
  "pallet-chat-inbox",
  "pallet-chat-permission",
  "pallet-chat-sync",
+ "pallet-ismp-rpc",
+ "pallet-ismp-runtime-api",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc",
  "sc-basic-authorship",
@@ -10811,6 +10813,28 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-io",
+]
+
+[[package]]
+name = "pallet-ismp-rpc"
+version = "2512.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65815cfddc05c2505b58b39bc90088334f18768eccc9c4cf607edc092d335590"
+dependencies = [
+ "anyhow",
+ "hash-db",
+ "hex",
+ "hex-literal",
+ "ismp",
+ "jsonrpsee",
+ "pallet-ismp",
+ "pallet-ismp-runtime-api",
+ "parity-scale-codec",
+ "polkadot-sdk",
+ "serde",
+ "serde_json",
+ "tower 0.4.13",
+ "trie-db",
 ]
 
 [[package]]
@@ -13834,7 +13858,9 @@ dependencies = [
  "polkadot-runtime-parachains",
  "polkadot-sdk-frame",
  "polkadot-service",
+ "sc-client-api",
  "sc-executor",
+ "sc-rpc",
  "slot-range-helper",
  "sp-api",
  "sp-api-proc-macro",
@@ -13842,6 +13868,7 @@ dependencies = [
  "sp-arithmetic",
  "sp-authority-discovery",
  "sp-block-builder",
+ "sp-blockchain",
  "sp-consensus-aura",
  "sp-consensus-babe",
  "sp-consensus-beefy",

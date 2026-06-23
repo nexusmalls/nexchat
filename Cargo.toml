@@ -235,6 +235,9 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 ismp = { version = "2512.1.0", default-features = false }
 pallet-ismp = { version = "2512.2.0", default-features = false }
 pallet-ismp-runtime-api = { version = "2512.1.0", default-features = false }
+# `pallet-ismp-rpc` is a node/client-side crate (depends on sc-*); used by `node` only.
+# `pallet-ismp-rpc` 为节点/客户端侧 crate（依赖 sc-*）；仅 `node` 使用。
+pallet-ismp-rpc = { version = "2512.1.0", default-features = false }
 # `pallet-hyperbridge` is VENDORED (D3=(c)): the published 2512.0.0 only targets the
 # yanked `ismp 2512.0.0` and does not compile against `ismp 2512.1.0`. The local copy
 # (`pallets/bridge/hyperbridge`) is patched for the ismp 2512.1.0 API delta.

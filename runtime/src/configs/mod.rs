@@ -114,9 +114,16 @@ parameter_types! {
         Weight::from_parts(2u64 * WEIGHT_REF_TIME_PER_SECOND, u64::MAX),
         NORMAL_DISPATCH_RATIO,
     );
+    // Hyperbridge (Stage 1b-3): ISMP consensus/state proofs are large, so the block
+    // length is raised to 8 MiB with an 85% normal-extrinsic ratio. The length ratio
+    // is intentionally decoupled from the weight ratio (`NORMAL_DISPATCH_RATIO`, 75%):
+    // proofs are byte-heavy but not compute-heavy, so only the byte budget is widened.
+    // Hyperbridge（Stage 1b-3）：ISMP 共识/状态证明体积较大，故将块长度提升至 8 MiB、普通
+    // 外部交易占比 85%。长度占比刻意与权重占比（`NORMAL_DISPATCH_RATIO`，75%）解耦：证明
+    // 占字节多但算力少，故只放宽字节预算。
     pub RuntimeBlockLength: BlockLength = BlockLength::max_with_normal_ratio(
-        5 * 1024 * 1024,
-        NORMAL_DISPATCH_RATIO,
+        8 * 1024 * 1024,
+        Perbill::from_percent(85),
     );
     pub const SS58Prefix: u16 = 273;
 }

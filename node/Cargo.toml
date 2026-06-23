@@ -23,6 +23,10 @@ futures = { features = ["thread-pool"], workspace = true }
 jsonrpsee = { features = ["server"], workspace = true }
 pallet-transaction-payment-rpc = { default-features = true, workspace = true }
 pallet-transaction-payment = { default-features = true, workspace = true }
+# ISMP relayer-facing RPC + runtime-api trait bound (Hyperbridge Stage 1b-3).
+# ISMP relayer 面向的 RPC + runtime-api trait bound（Hyperbridge Stage 1b-3）。
+pallet-ismp-rpc = { default-features = true, workspace = true }
+pallet-ismp-runtime-api = { default-features = true, workspace = true }
 sc-basic-authorship = { default-features = true, workspace = true }
 sc-cli = { default-features = true, workspace = true }
 sc-client-api = { default-features = true, workspace = true }

@@ -9,25 +9,29 @@ use std::sync::Arc;
 
 use jsonrpsee::RpcModule;
 use nexus_runtime::{opaque::Block, AccountId, Balance, BlockNumber, Hash, Nonce};
+use sc_client_api::{Backend, BlockBackend, ProofProvider};
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 
 /// Full client dependencies.
-pub struct FullDeps<C, P> {
+pub struct FullDeps<C, P, B> {
     /// The client instance to use.
     pub client: Arc<C>,
     /// Transaction pool instance.
     pub pool: Arc<P>,
+    /// The node backend (required by the ISMP RPC for offchain proof access).
+    /// 节点 backend（ISMP RPC 读取链下证明所需）。
+    pub backend: Arc<B>,
 }
 
 /// Instantiate all full RPC extensions.
-pub fn create_full<C, P>(
-    deps: FullDeps<C, P>,
+pub fn create_full<C, P, B>(
+    deps: FullDeps<C, P, B>,
 ) -> Result<RpcModule<()>, Box<dyn std::error::Error + Send + Sync>>
 where
-    C: ProvideRuntimeApi<Block>,
+    C: ProvideRuntimeApi<Block> + BlockBackend<Block> + ProofProvider<Block>,
     C: HeaderBackend<Block> + HeaderMetadata<Block, Error = BlockChainError> + 'static,
     C: Send + Sync + 'static,
     C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Nonce>,
@@ -37,19 +41,23 @@ where
     C::Api: pallet_chat_inbox::runtime_api::ChatInboxApi<Block>,
     C::Api: pallet_chat_sync::runtime_api::ChatSyncApi<Block>,
     C::Api: pallet_chat_group::runtime_api::ChatGroupApi<Block, AccountId>,
+    C::Api: pallet_ismp_runtime_api::IsmpRuntimeApi<Block, Hash>,
     C::Api: BlockBuilder<Block>,
     P: TransactionPool + 'static,
+    B: Backend<Block> + Send + Sync + 'static,
 {
     use crate::chat_rpc::{Chat, ChatApiServer};
+    use pallet_ismp_rpc::{IsmpApiServer, IsmpRpcHandler};
     use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApiServer};
     use substrate_frame_rpc_system::{System, SystemApiServer};
 
     let mut module = RpcModule::new(());
-    let FullDeps { client, pool } = deps;
+    let FullDeps { client, pool, backend } = deps;
 
     module.merge(System::new(client.clone(), pool).into_rpc())?;
     module.merge(TransactionPayment::new(client.clone()).into_rpc())?;
-    module.merge(Chat::<_, Block>::new(client).into_rpc())?;
+    module.merge(Chat::<_, Block>::new(client.clone()).into_rpc())?;
+    module.merge(IsmpRpcHandler::new(client, backend)?.into_rpc())?;
 
     // Extend this RPC with a custom API by using the following syntax.
     // `YourRpcStruct` should have a reference to a client, which is needed
