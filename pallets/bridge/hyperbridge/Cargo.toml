@@ -1,0 +1,42 @@
+[package]
+name = "pallet-hyperbridge"
+version = "2512.0.0"
+description = "Vendored pallet-hyperbridge (Polytope Labs), adapted to ismp 2512.1.0 for Nexus."
+license = "Apache-2.0"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "pallet_hyperbridge"
+path = "src/lib.rs"
+
+[dependencies]
+codec = { workspace = true, features = ["derive"] }
+scale-info = { workspace = true, features = ["derive"] }
+anyhow = { version = "1.0", default-features = false }
+primitive-types = { version = "0.13.1", default-features = false }
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+ismp = { workspace = true }
+pallet-ismp = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"scale-info/std",
+	"anyhow/std",
+	"primitive-types/std",
+	"frame-support/std",
+	"frame-system/std",
+	"ismp/std",
+	"pallet-ismp/std",
+]
+try-runtime = [
+	"frame-support/try-runtime",
+	"frame-system/try-runtime",
+	"pallet-ismp/try-runtime",
+]

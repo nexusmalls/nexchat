@@ -69,6 +69,8 @@ members = [
     "pallets/grouprobot/rewards",
 # Inscription pallet (创世铭文)
     "pallets/inscription",
+# Bridge pallets (Hyperbridge / ISMP)
+    "pallets/bridge/hyperbridge",
 ]
 resolver = "2"
 exclude = ["grouprobot"]
@@ -233,14 +235,16 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 ismp = { version = "2512.1.0", default-features = false }
 pallet-ismp = { version = "2512.2.0", default-features = false }
 pallet-ismp-runtime-api = { version = "2512.1.0", default-features = false }
-# Stage 1b: published `pallet-hyperbridge`/`ismp-grandpa` (2512.0.0) only target the
-# YANKED `ismp 2512.0.0` and do not compile against `ismp 2512.1.0` (they reference the
-# removed `router::Response`/`dispatch_response`). Deferred until an upstream re-release
-# or until vendored under the D3=(c) plan.
-# Stage 1b：已发布的 `pallet-hyperbridge`/`ismp-grandpa`（2512.0.0）只对应已被 YANK 的
-# `ismp 2512.0.0`，无法对 `ismp 2512.1.0` 编译（引用了被移除的
-# `router::Response`/`dispatch_response`）。暂缓，待上游重发或按 D3=(c) vendor。
-pallet-hyperbridge = { version = "2512.0.0", default-features = false }
+# `pallet-hyperbridge` is VENDORED (D3=(c)): the published 2512.0.0 only targets the
+# yanked `ismp 2512.0.0` and does not compile against `ismp 2512.1.0`. The local copy
+# (`pallets/bridge/hyperbridge`) is patched for the ismp 2512.1.0 API delta.
+# `pallet-hyperbridge` 已 VENDOR（D3=(c)）：已发布的 2512.0.0 只对应被 yank 的 `ismp 2512.0.0`，
+# 无法对 `ismp 2512.1.0` 编译；本地拷贝（`pallets/bridge/hyperbridge`）已按 ismp 2512.1.0 API 改造。
+pallet-hyperbridge = { path = "./pallets/bridge/hyperbridge", default-features = false }
+# Stage 1b: `ismp-grandpa` (GRANDPA consensus client) — same yank issue + heavy
+# grandpa-verifier closure (alloy/revm/gmp/blst). Still deferred (vendor later).
+# Stage 1b：`ismp-grandpa`（GRANDPA 共识客户端）——同样的 yank 问题 + 沉重的 grandpa-verifier
+# 闭包（alloy/revm/gmp/blst）。仍暂缓（后续 vendor）。
 ismp-grandpa = { version = "2512.0.0", default-features = false }
 
 [patch.crates-io]

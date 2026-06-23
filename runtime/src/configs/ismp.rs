@@ -1,20 +1,20 @@
 //! ISMP / Hyperbridge protocol-layer runtime configuration.
 //! ISMP / Hyperbridge 协议层运行时配置。
 //!
-//! Stage 1a wires only the ISMP core engine `pallet-ismp` (request/response, host,
-//! dispatcher, consensus-state store) plus its runtime API. Two components are
-//! deferred to Stage 1b because the published crates do not compile against the only
-//! available `ismp 2512.1.0` (the matching `ismp 2512.0.0` was yanked):
-//!   - `pallet-hyperbridge` — host-param / fee module (governance updates from the
-//!     Hyperbridge coprocessor);
+//! Stage 1a wired the ISMP core engine `pallet-ismp` (request/response, host,
+//! dispatcher, consensus-state store) plus its runtime API. Stage 1b adds the
+//! vendored `pallet-hyperbridge` (host-param / fee module that receives governance
+//! updates from the Hyperbridge coprocessor) — vendored under D3=(c) because the
+//! published crate does not compile against the only available `ismp 2512.1.0` (the
+//! matching `ismp 2512.0.0` was yanked). One component is still deferred:
 //!   - `ismp-grandpa` — GRANDPA consensus client used to verify Hyperbridge proofs.
 //! Asset bridging (`pallet-bridge-ismp`, vendored from HFT per D3=(c)) is added in
 //! Stage 2. See `docs/HYPERBRIDGE_INTEGRATION.md` §13 for the supply-chain rationale.
 //!
-//! Stage 1a 仅接入 ISMP 核心引擎 `pallet-ismp`（请求/响应、host、dispatcher、共识状态
-//! 存储）及其 runtime API。两个组件暂缓至 Stage 1b——因为已发布 crate 无法对唯一可用的
-//! `ismp 2512.1.0` 编译（对应的 `ismp 2512.0.0` 已被 yank）：
-//!   - `pallet-hyperbridge`——host-param / 费用模块（接收 Hyperbridge 协处理器的治理更新）；
+//! Stage 1a 已接入 ISMP 核心引擎 `pallet-ismp`（请求/响应、host、dispatcher、共识状态
+//! 存储）及其 runtime API。Stage 1b 加入 vendor 的 `pallet-hyperbridge`（host-param / 费用
+//! 模块，接收 Hyperbridge 协处理器的治理更新）——按 D3=(c) vendor，因为已发布 crate 无法对
+//! 唯一可用的 `ismp 2512.1.0` 编译（对应的 `ismp 2512.0.0` 已被 yank）。仍暂缓一个组件：
 //!   - `ismp-grandpa`——用于验证 Hyperbridge 证明的 GRANDPA 共识客户端。
 //! 资产桥（`pallet-bridge-ismp`，按 D3=(c) 从 HFT vendor）在 Stage 2 引入。
 //! 供应链原因见 `docs/HYPERBRIDGE_INTEGRATION.md` §13。
@@ -54,23 +54,23 @@ parameter_types! {
 /// ISMP request/response router.
 /// ISMP 请求/响应路由。
 ///
-/// Stage 1a registers no modules yet: the `pallet-hyperbridge` fee/host-param
-/// module is deferred (Stage 1b), and asset / cross-order modules arrive in later
-/// stages. Until a module is registered the host accepts no inbound application
-/// requests (the core consensus/state-proof engine still runs).
-/// Stage 1a 尚未注册任何模块：`pallet-hyperbridge` 费用/host-param 模块暂缓（Stage 1b），
-/// 资产 / 跨链下单模块在后续阶段加入。在注册模块前，host 不接受入站应用请求
-///（核心共识/状态证明引擎仍正常运行）。
+/// Stage 1b registers the vendored `pallet-hyperbridge` fee/host-param module under
+/// its [`PALLET_HYPERBRIDGE_ID`], so the Hyperbridge coprocessor can push host-param
+/// updates and relayer-fee withdrawals to this chain. Asset / cross-order modules
+/// arrive in later stages. Unknown ids are rejected.
+/// Stage 1b 注册 vendor 的 `pallet-hyperbridge` 费用/host-param 模块（按其
+/// [`PALLET_HYPERBRIDGE_ID`]），以便 Hyperbridge 协处理器向本链推送 host-param 更新与
+/// relayer 费用提取。资产 / 跨链下单模块在后续阶段加入；未知 id 一律拒绝。
 #[derive(Default)]
 pub struct Router;
 
 impl IsmpRouter for Router {
     fn module_for_id(&self, id: Vec<u8>) -> Result<Box<dyn IsmpModule>, anyhow::Error> {
-        // Stage 1b: route `pallet_hyperbridge::PALLET_HYPERBRIDGE_ID` to
-        // `pallet_hyperbridge::Pallet::<Runtime>` here once that pallet is enabled.
-        // Stage 1b：启用该 pallet 后，在此将 `pallet_hyperbridge::PALLET_HYPERBRIDGE_ID`
-        // 路由到 `pallet_hyperbridge::Pallet::<Runtime>`。
-        Err(anyhow::anyhow!("No ISMP module registered for id {:?}", id))
+        match id.as_slice() {
+            pallet_hyperbridge::PALLET_HYPERBRIDGE_ID =>
+                Ok(Box::new(pallet_hyperbridge::Pallet::<Runtime>::default())),
+            _ => Err(anyhow::anyhow!("No ISMP module registered for id {:?}", id)),
+        }
     }
 }
 
@@ -94,20 +94,26 @@ impl pallet_ismp::Config for Runtime {
     type MigrationWeightInfo = ();
 }
 
-// Stage 1b: `pallet_hyperbridge::Config` and `ismp_grandpa::Config` are added once
-// those pallets have releases compatible with `ismp 2512.1.0` (or are vendored per
-// D3=(c)). `pallet_ismp::Pallet<Runtime>` implements `IsmpDispatcher + IsmpHost +
-// Default`, so both will reuse it as the host:
+/// `pallet-hyperbridge` (vendored, D3=(c)): the fee/host-param module. It reuses
+/// `pallet_ismp::Pallet<Runtime>` as its [`IsmpHost`], which implements
+/// `IsmpDispatcher + Default`, to perform the actual outbound dispatch after charging
+/// the per-byte protocol fee.
+/// `pallet-hyperbridge`（已 vendor，D3=(c)）：费用/host-param 模块。它复用
+/// `pallet_ismp::Pallet<Runtime>` 作为 [`IsmpHost`]（实现 `IsmpDispatcher + Default`），
+/// 在收取按字节计的协议费用后执行实际出站派发。
+impl pallet_hyperbridge::Config for Runtime {
+    type IsmpHost = pallet_ismp::Pallet<Runtime>;
+}
+
+// Stage 1b (still deferred): `ismp_grandpa::Config` is added once the GRANDPA
+// consensus client is vendored/released for `ismp 2512.1.0`. It will likewise reuse
+// `pallet_ismp::Pallet<Runtime>` as its host:
 //
-//   impl pallet_hyperbridge::Config for Runtime {
-//       type IsmpHost = pallet_ismp::Pallet<Runtime>;
-//   }
 //   impl ismp_grandpa::Config for Runtime {
 //       type IsmpHost = pallet_ismp::Pallet<Runtime>;
 //       type WeightInfo = ();
 //       type RootOrigin = EnsureRoot<AccountId>;
 //   }
 //
-// Stage 1b：待 `pallet-hyperbridge`/`ismp-grandpa` 有与 `ismp 2512.1.0` 兼容的发布
-//（或按 D3=(c) vendor）后补回上述 Config。`pallet_ismp::Pallet<Runtime>` 实现
-// `IsmpDispatcher + IsmpHost + Default`，两者都将复用它作为 host。
+// Stage 1b（仍暂缓）：待为 `ismp 2512.1.0` vendor/发布 GRANDPA 共识客户端后补回
+// `ismp_grandpa::Config`，同样复用 `pallet_ismp::Pallet<Runtime>` 作为 host。
