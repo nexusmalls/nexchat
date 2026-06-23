@@ -10,7 +10,7 @@
 
 use codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
-use sp_runtime::Debug;
+use core::fmt::Debug;
 
 // Re-export 通用广告类型 (已迁移到 ads-primitives)
 pub use pallet_ads_primitives::{

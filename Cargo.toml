@@ -140,89 +140,108 @@ pallet-grouprobot-rewards = { path = "./pallets/grouprobot/rewards", default-fea
 pallet-inscription = { path = "./pallets/inscription", default-features = false }
 # Additional dependencies
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
-sp-application-crypto = { version = "45.0.0", default-features = false }
+sp-application-crypto = { version = "44.0.0", default-features = false }
 clap = { version = "4.5.13" }
-frame-benchmarking-cli = { version = "54.0.0", default-features = false }
-frame-metadata-hash-extension = { version = "0.14.0", default-features = false }
-frame-system = { version = "46.0.0", default-features = false }
+frame-benchmarking-cli = { version = "53.0.0", default-features = false }
+frame-metadata-hash-extension = { version = "0.13.0", default-features = false }
+frame-system = { version = "45.0.0", default-features = false }
 futures = { version = "0.3.31" }
 jsonrpsee = { version = "0.24.3" }
-pallet-transaction-payment = { version = "46.0.0", default-features = false }
-pallet-assets = { version = "49.0.0", default-features = false }
-pallet-insecure-randomness-collective-flip = { version = "25.0.0", default-features = false }
-pallet-transaction-payment-rpc = { version = "49.0.0", default-features = false }
-sc-basic-authorship = { version = "0.54.0", default-features = false }
-sc-cli = { version = "0.58.0", default-features = false }
-sc-client-api = { version = "45.0.0", default-features = false }
-sc-consensus = { version = "0.55.0", default-features = false }
-sc-consensus-aura = { version = "0.56.0", default-features = false }
-sc-consensus-babe = { version = "0.56.0", default-features = false }
-sc-consensus-grandpa = { version = "0.41.0", default-features = false }
-sc-executor = { version = "0.48.0", default-features = false }
-sc-network = { version = "0.56.0", default-features = false }
-sc-offchain = { version = "51.0.0", default-features = false }
-sc-service = { version = "0.57.0", default-features = false }
-sc-telemetry = { version = "30.0.1", default-features = false }
-sc-transaction-pool = { version = "45.0.0", default-features = false }
-sc-transaction-pool-api = { version = "44.0.0", default-features = false }
-sp-api = { version = "41.0.0", default-features = false }
-sp-block-builder = { version = "41.0.0", default-features = false }
-sp-blockchain = { version = "44.0.0", default-features = false }
-sp-consensus-aura = { version = "0.47.0", default-features = false }
-sp-consensus = { version = "0.47.0" }
-sp-consensus-babe = { version = "0.47.0", default-features = false }
-sp-core = { version = "40.0.0", default-features = false }
-sp-genesis-builder = { version = "0.22.0", default-features = false }
-sp-inherents = { version = "41.0.0", default-features = false }
-sp-io = { version = "45.0.0", default-features = false }
-sp-keyring = { version = "46.0.0", default-features = false }
-sp-keystore = { version = "0.46.0", default-features = false }
-sp-runtime = { version = "46.0.0", default-features = false }
+pallet-transaction-payment = { version = "45.0.0", default-features = false }
+pallet-assets = { version = "48.1.0", default-features = false }
+pallet-insecure-randomness-collective-flip = { version = "33.0.0", default-features = false }
+pallet-transaction-payment-rpc = { version = "48.0.0", default-features = false }
+sc-basic-authorship = { version = "0.53.0", default-features = false }
+sc-cli = { version = "0.57.0", default-features = false }
+sc-client-api = { version = "44.0.0", default-features = false }
+sc-consensus = { version = "0.54.0", default-features = false }
+sc-consensus-aura = { version = "0.55.0", default-features = false }
+sc-consensus-babe = { version = "0.55.0", default-features = false }
+sc-consensus-grandpa = { version = "0.40.0", default-features = false }
+sc-executor = { version = "0.47.0", default-features = false }
+sc-network = { version = "0.55.1", default-features = false }
+sc-offchain = { version = "50.0.0", default-features = false }
+sc-service = { version = "0.56.0", default-features = false }
+sc-telemetry = { version = "30.0.0", default-features = false }
+sc-transaction-pool = { version = "44.1.0", default-features = false }
+sc-transaction-pool-api = { version = "43.0.0", default-features = false }
+sp-api = { version = "40.0.0", default-features = false }
+sp-block-builder = { version = "40.0.0", default-features = false }
+sp-blockchain = { version = "43.0.0", default-features = false }
+sp-consensus-aura = { version = "0.46.0", default-features = false }
+sp-consensus = { version = "0.46.0" }
+sp-consensus-babe = { version = "0.46.0", default-features = false }
+sp-core = { version = "39.0.0", default-features = false }
+sp-genesis-builder = { version = "0.21.0", default-features = false }
+sp-inherents = { version = "40.0.0", default-features = false }
+sp-io = { version = "44.0.0", default-features = false }
+sp-keyring = { version = "45.0.0", default-features = false }
+sp-keystore = { version = "0.45.0", default-features = false }
+sp-runtime = { version = "45.0.0", default-features = false }
 sp-arithmetic = { version = "28.0.0", default-features = false }
-sp-timestamp = { version = "41.0.0", default-features = false }
-substrate-frame-rpc-system = { version = "50.0.0", default-features = false }
+sp-timestamp = { version = "40.0.0", default-features = false }
+substrate-frame-rpc-system = { version = "49.0.0", default-features = false }
 substrate-build-script-utils = { version = "11.0.0", default-features = false }
 codec = { version = "3.7.4", default-features = false, package = "parity-scale-codec" }
-frame-benchmarking = { version = "46.0.0", default-features = false }
-frame-election-provider-support = { version = "46.0.0", default-features = false }
-frame-executive = { version = "46.0.0", default-features = false }
-frame-support = { version = "46.0.1", default-features = false }
-frame-system-benchmarking = { version = "46.0.0", default-features = false }
-frame-system-rpc-runtime-api = { version = "41.0.0", default-features = false }
-frame-try-runtime = { version = "0.52.0", default-features = false }
+frame-benchmarking = { version = "45.0.3", default-features = false }
+frame-election-provider-support = { version = "45.0.0", default-features = false }
+frame-executive = { version = "45.0.1", default-features = false }
+frame-support = { version = "45.1.0", default-features = false }
+frame-system-benchmarking = { version = "45.0.0", default-features = false }
+frame-system-rpc-runtime-api = { version = "40.0.0", default-features = false }
+frame-try-runtime = { version = "0.51.0", default-features = false }
 pallet-aura = { version = "44.0.0", default-features = false }
-pallet-babe = { version = "46.0.0", default-features = false }
-pallet-balances = { version = "47.0.0", default-features = false }
-pallet-grandpa = { version = "46.0.0", default-features = false }
-pallet-session = { version = "46.0.0", default-features = false, features = ["historical"] }
-pallet-offences = { version = "45.0.0", default-features = false }
-pallet-staking = { version = "46.0.0", default-features = false }
+pallet-babe = { version = "45.0.0", default-features = false }
+pallet-balances = { version = "46.0.0", default-features = false }
+pallet-grandpa = { version = "45.0.0", default-features = false }
+pallet-session = { version = "45.1.0", default-features = false, features = ["historical"] }
+pallet-offences = { version = "44.0.0", default-features = false }
+pallet-staking = { version = "45.0.0", default-features = false }
 pallet-staking-reward-curve = { version = "12.0.0" }
-pallet-authorship = { version = "46.0.0", default-features = false }
-pallet-sudo = { version = "46.0.0", default-features = false }
-pallet-preimage = { version = "46.0.0", default-features = false }
-pallet-scheduler = { version = "47.0.0", default-features = false }
-pallet-im-online = { version = "45.0.0", default-features = false }
-pallet-collective = { version = "46.0.0", default-features = false }
-pallet-collective-membership = { package = "pallet-membership", version = "46.0.0", default-features = false }
-pallet-timestamp = { version = "45.0.0", default-features = false }
-pallet-contracts = { version = "46.0.0", default-features = false }
-pallet-transaction-payment-rpc-runtime-api = { version = "46.0.0", default-features = false }
+pallet-authorship = { version = "45.0.0", default-features = false }
+pallet-sudo = { version = "45.0.0", default-features = false }
+pallet-preimage = { version = "45.0.0", default-features = false }
+pallet-scheduler = { version = "46.0.0", default-features = false }
+pallet-im-online = { version = "44.0.0", default-features = false }
+pallet-collective = { version = "45.0.0", default-features = false }
+pallet-collective-membership = { package = "pallet-membership", version = "45.0.0", default-features = false }
+pallet-timestamp = { version = "44.0.0", default-features = false }
+pallet-contracts = { version = "45.0.1", default-features = false }
+pallet-transaction-payment-rpc-runtime-api = { version = "45.0.0", default-features = false }
 scale-info = { version = "2.11.6", default-features = false }
 serde_json = { version = "1.0.132", default-features = false }
-sp-consensus-grandpa = { version = "28.0.0", default-features = false }
-sp-offchain = { version = "41.0.0", default-features = false }
-sp-session = { version = "43.0.0", default-features = false }
-sp-staking = { version = "43.0.0", default-features = false }
-sp-storage = { version = "23.0.0", default-features = false }
-sp-transaction-pool = { version = "41.0.0", default-features = false }
-sp-version = { version = "44.0.0", default-features = false }
-substrate-wasm-builder = { version = "31.0.0", default-features = false }
+sp-consensus-grandpa = { version = "27.0.0", default-features = false }
+sp-offchain = { version = "40.0.0", default-features = false }
+sp-session = { version = "42.0.0", default-features = false }
+sp-staking = { version = "42.1.0", default-features = false }
+sp-storage = { version = "22.0.0", default-features = false }
+sp-transaction-pool = { version = "40.0.0", default-features = false }
+sp-version = { version = "43.0.0", default-features = false }
+substrate-wasm-builder = { version = "31.1.0", default-features = false }
 sp-std = { version = "14.0.0", default-features = false }
 log = { version = "0.4.22", default-features = false }
 lite-json = { version = "0.2", default-features = false }
 serde = { version = "1.0.215", default-features = false, features = ["derive"] }
 p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+# Hyperbridge / ISMP 协议层（D2 已对齐 stable2512）。
+# Hyperbridge / ISMP protocol layer (aligned to stable2512 via D2).
+# Stage 1a wires the available, coherent ISMP core: `ismp 2512.1.0` +
+# `pallet-ismp 2512.2.0` + `pallet-ismp-runtime-api 2512.1.0` (all on
+# polkadot-sdk =2512.3.2, matching the D2 downgrade).
+# Stage 1a 接入可用且自洽的 ISMP 核心：`ismp 2512.1.0` + `pallet-ismp 2512.2.0`
+# + `pallet-ismp-runtime-api 2512.1.0`（均基于 polkadot-sdk =2512.3.2，与 D2 对齐）。
+ismp = { version = "2512.1.0", default-features = false }
+pallet-ismp = { version = "2512.2.0", default-features = false }
+pallet-ismp-runtime-api = { version = "2512.1.0", default-features = false }
+# Stage 1b: published `pallet-hyperbridge`/`ismp-grandpa` (2512.0.0) only target the
+# YANKED `ismp 2512.0.0` and do not compile against `ismp 2512.1.0` (they reference the
+# removed `router::Response`/`dispatch_response`). Deferred until an upstream re-release
+# or until vendored under the D3=(c) plan.
+# Stage 1b：已发布的 `pallet-hyperbridge`/`ismp-grandpa`（2512.0.0）只对应已被 YANK 的
+# `ismp 2512.0.0`，无法对 `ismp 2512.1.0` 编译（引用了被移除的
+# `router::Response`/`dispatch_response`）。暂缓，待上游重发或按 D3=(c) vendor。
+pallet-hyperbridge = { version = "2512.0.0", default-features = false }
+ismp-grandpa = { version = "2512.0.0", default-features = false }
 
 [patch.crates-io]
 ark-vrf = { git = "https://github.com/davxy/ark-vrf", tag = "v0.1.1" }

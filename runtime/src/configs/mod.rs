@@ -23,6 +23,10 @@
 //
 // For more information, please refer to <http://unlicense.org>
 
+// ISMP / Hyperbridge protocol-layer config (Stage 1).
+// ISMP / Hyperbridge 协议层配置（Stage 1）。
+pub mod ismp;
+
 // Substrate and Polkadot dependencies
 use crate::{
     CommissionCore, CommissionSingleLine, EntityGovernance, EntityLoyalty, EntityMarket,
@@ -110,12 +114,10 @@ parameter_types! {
         Weight::from_parts(2u64 * WEIGHT_REF_TIME_PER_SECOND, u64::MAX),
         NORMAL_DISPATCH_RATIO,
     );
-    pub RuntimeBlockLength: BlockLength = BlockLength::builder()
-        .max_length(5 * 1024 * 1024)
-        .modify_max_length_for_class(frame_support::dispatch::DispatchClass::Normal, |m| {
-            *m = NORMAL_DISPATCH_RATIO * 5 * 1024 * 1024;
-        })
-        .build();
+    pub RuntimeBlockLength: BlockLength = BlockLength::max_with_normal_ratio(
+        5 * 1024 * 1024,
+        NORMAL_DISPATCH_RATIO,
+    );
     pub const SS58Prefix: u16 = 273;
 }
 

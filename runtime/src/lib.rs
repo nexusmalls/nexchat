@@ -460,4 +460,18 @@ mod runtime {
 
     #[runtime::pallet_index(162)]
     pub type AdsEntity = pallet_ads_entity;
+
+    // ============================================================================
+    // Hyperbridge / ISMP protocol layer (Stage 1: cross-chain messaging base)
+    // Hyperbridge / ISMP 协议层（Stage 1：跨链消息基座）
+    // ============================================================================
+
+    #[runtime::pallet_index(170)]
+    pub type Ismp = pallet_ismp;
+
+    // Stage 1b: `pallet_hyperbridge` (index 171) and `ismp_grandpa` (index 172) are
+    // added once they have releases compatible with `ismp 2512.1.0` (or are vendored
+    // per D3=(c)).
+    // Stage 1b：待 `pallet_hyperbridge`（索引 171）与 `ismp_grandpa`（索引 172）有与
+    // `ismp 2512.1.0` 兼容的发布（或按 D3=(c) vendor）后补回。
 }

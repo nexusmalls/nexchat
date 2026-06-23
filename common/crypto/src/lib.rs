@@ -35,7 +35,7 @@ use frame_support::{
 };
 use scale_info::TypeInfo;
 use sp_core::{ConstU32, H256};
-use sp_runtime::Debug;
+use core::fmt::Debug;
 
 // ============================================================
 // EncryptionMethod — 替代原始 u8

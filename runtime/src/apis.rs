@@ -175,14 +175,52 @@ impl_runtime_apis! {
     }
 
     impl sp_session::SessionKeys<Block> for Runtime {
-        fn generate_session_keys(_owner: Vec<u8>, seed: Option<Vec<u8>>) -> sp_session::OpaqueGeneratedSessionKeys {
-            SessionKeys::generate(&[], seed).into()
+        fn generate_session_keys(seed: Option<Vec<u8>>) -> Vec<u8> {
+            SessionKeys::generate(seed)
         }
 
         fn decode_session_keys(
             encoded: Vec<u8>,
         ) -> Option<Vec<(Vec<u8>, KeyTypeId)>> {
             SessionKeys::decode_into_raw_public_keys(&encoded)
+        }
+    }
+
+    impl pallet_ismp_runtime_api::IsmpRuntimeApi<Block, Hash> for Runtime {
+        fn host_state_machine() -> ismp::host::StateMachine {
+            <<Runtime as pallet_ismp::Config>::HostStateMachine as frame_support::traits::Get<ismp::host::StateMachine>>::get()
+        }
+
+        fn block_events() -> Vec<ismp::events::Event> {
+            pallet_ismp::Pallet::<Runtime>::block_events()
+        }
+
+        fn block_events_with_metadata() -> Vec<(ismp::events::Event, Option<u32>)> {
+            pallet_ismp::Pallet::<Runtime>::block_events_with_metadata()
+        }
+
+        fn consensus_state(id: ismp::consensus::ConsensusClientId) -> Option<Vec<u8>> {
+            pallet_ismp::Pallet::<Runtime>::consensus_states(id)
+        }
+
+        fn state_machine_update_time(id: ismp::consensus::StateMachineHeight) -> Option<u64> {
+            pallet_ismp::Pallet::<Runtime>::state_machine_update_time(id)
+        }
+
+        fn challenge_period(id: ismp::consensus::StateMachineId) -> Option<u64> {
+            pallet_ismp::Pallet::<Runtime>::challenge_period(id)
+        }
+
+        fn latest_state_machine_height(id: ismp::consensus::StateMachineId) -> Option<u64> {
+            pallet_ismp::Pallet::<Runtime>::latest_state_machine_height(id)
+        }
+
+        fn requests(commitments: Vec<sp_core::H256>) -> Vec<ismp::router::Request> {
+            pallet_ismp::Pallet::<Runtime>::requests(commitments)
+        }
+
+        fn responses(commitments: Vec<sp_core::H256>) -> Vec<ismp::router::GetResponse> {
+            pallet_ismp::Pallet::<Runtime>::responses(commitments)
         }
     }
 

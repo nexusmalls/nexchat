@@ -6,7 +6,7 @@
 //! - v0.1.0 (2026-01-18): 初始版本，从 OTC/Swap/Maker 模块提取
 
 use frame_support::{pallet_prelude::ConstU32, BoundedVec};
-use sp_runtime::Debug;
+use core::fmt::Debug;
 
 /// 函数级详细中文注释：TRON 地址类型（固定 34 字节）
 ///

@@ -104,6 +104,22 @@ pallet-ads-entity = { workspace = true }
 pallet-ads-router = { workspace = true }
 # Inscription pallet (创世铭文)
 pallet-inscription = { workspace = true }
+# Hyperbridge / ISMP protocol layer (Stage 1: cross-chain messaging base).
+# Hyperbridge / ISMP 协议层（Stage 1：跨链消息基座）。
+ismp = { workspace = true }
+pallet-ismp = { workspace = true }
+pallet-ismp-runtime-api = { workspace = true }
+# Stage 1b deps (deferred):
+#  - `pallet-hyperbridge`: no release compatible with the available `ismp 2512.1.0`
+#    (the 2512.0.0 build targets the yanked `ismp 2512.0.0`).
+#  - `ismp-grandpa`: GRANDPA consensus client; also pulls the heavy grandpa-verifier
+#    closure (alloy/revm/gmp/blst). Re-enable when wiring the live consensus client.
+# Stage 1b 依赖（暂缓）：
+#  - `pallet-hyperbridge`：无与可用 `ismp 2512.1.0` 兼容的发布（2512.0.0 对应已被 yank 的 ismp）。
+#  - `ismp-grandpa`：GRANDPA 共识客户端；且引入沉重的 grandpa-verifier 闭包（alloy/revm/gmp/blst）。
+# pallet-hyperbridge = { workspace = true }
+# ismp-grandpa = { workspace = true }
+anyhow = { version = "1.0", default-features = false }
 scale-info = { features = ["derive", "serde"], workspace = true }
 serde_json = { workspace = true, default-features = false, features = ["alloc"] }
 sp-api = { workspace = true }
@@ -140,6 +156,12 @@ std = [
 	"frame-system-rpc-runtime-api/std",
 	"frame-system/std",
 	"frame-try-runtime?/std",
+	"ismp/std",
+	"pallet-ismp/std",
+	"pallet-ismp-runtime-api/std",
+	# "pallet-hyperbridge/std", # Stage 1b
+	# "ismp-grandpa/std", # Stage 1b
+	"anyhow/std",
 	"pallet-babe/std",
 	"pallet-balances/std",
 	"pallet-grandpa/std",
