@@ -149,6 +149,52 @@ parameter_types! {
     pub const BridgeRequestTimeout: u64 = 60 * 60;
 }
 
+/// EVM `H160` → Nexus `AccountId` derivation for cross-chain identities (HB-ENT-01,
+/// G-B4): `blake2_256(b"nexus-evm" ++ h160)`. EVM wallet users have no Substrate key,
+/// so their funds live in this deterministic derived account and can only be moved by
+/// the matching EVM private key via the gateway (`bridge_out_from_derived`).
+/// 跨链身份的 EVM `H160` → Nexus `AccountId` 派生（HB-ENT-01，G-B4）：
+/// `blake2_256(b"nexus-evm" ++ h160)`。EVM 钱包用户无 Substrate 私钥，其资金存于此确定性
+/// 派生账户，且只能由对应 EVM 私钥经网关（`bridge_out_from_derived`）驱动动用。
+pub struct NexusEvmDerivation;
+impl pallet_bridge_ismp::types::EvmToSubstrate<Runtime> for NexusEvmDerivation {
+    fn convert(addr: sp_core::H160) -> AccountId {
+        let mut data = Vec::with_capacity(9 + 20);
+        data.extend_from_slice(b"nexus-evm");
+        data.extend_from_slice(&addr.0);
+        AccountId::from(sp_core::hashing::blake2_256(&data))
+    }
+}
+
+/// Bridges authenticated cross-chain digital orders (HB-ENT-01) from
+/// `pallet-bridge-ismp` into `pallet-entity-order::do_cross_order`, keeping the
+/// low-level bridge decoupled from the order pallet. The bridge wraps this call in a
+/// nested storage layer, so a returned error rolls back only the order side while the
+/// inbound NEX mint is kept as DerivedCredit.
+/// 将经鉴权的跨链数字下单（HB-ENT-01）从 `pallet-bridge-ismp` 接到
+/// `pallet-entity-order::do_cross_order`，使底层桥与订单 pallet 解耦。桥会在嵌套存储层内
+/// 调用本方法，故返回错误仅回滚订单侧，入站 NEX 铸造作为 DerivedCredit 保留。
+pub struct NexusCrossOrderHandler;
+impl pallet_bridge_ismp::types::CrossChainOrderHandler<AccountId, Balance> for NexusCrossOrderHandler {
+    fn do_cross_order(
+        buyer: AccountId,
+        payer: AccountId,
+        product_id: u64,
+        quantity: u32,
+        max_nex_amount: Balance,
+        referrer: Option<AccountId>,
+    ) -> Result<u64, sp_runtime::DispatchError> {
+        pallet_entity_order::Pallet::<Runtime>::do_cross_order(
+            buyer,
+            payer,
+            product_id,
+            quantity,
+            max_nex_amount,
+            referrer,
+        )
+    }
+}
+
 /// `pallet-bridge-ismp` (Stage 2 / HB-ASSET-01): the self-built native-NEX asset
 /// bridge. It dispatches outbound requests through `pallet-hyperbridge` (per-byte
 /// fee + ISMP commit) and burns/mints native NEX directly via `Balances`. All
@@ -162,11 +208,12 @@ impl pallet_bridge_ismp::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type Dispatcher = pallet_hyperbridge::Pallet<Runtime>;
     type NativeCurrency = Balances;
-    type EvmToSubstrate = ();
+    type EvmToSubstrate = NexusEvmDerivation;
     type NativeDecimals = BridgeNativeDecimals;
     type MinBridgeAmount = BridgeMinAmount;
     type DailyLimitWindow = BridgeDailyWindow;
     type RequestTimeout = BridgeRequestTimeout;
     type BridgeOrigin = EnsureRoot<AccountId>;
+    type CrossOrderHandler = NexusCrossOrderHandler;
     type WeightInfo = pallet_bridge_ismp::weights::SubstrateWeight<Runtime>;
 }
