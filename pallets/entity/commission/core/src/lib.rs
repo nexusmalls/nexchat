@@ -22,7 +22,7 @@ extern crate alloc;
 pub use pallet::*;
 pub use pallet_commission_common::{
     CommissionModes, CommissionOutput, CommissionPlugin, CommissionProvider, CommissionRecord,
-    CommissionStatus, CommissionType, EntityReferrerProvider, LevelDiffPlanWriter,
+    CommissionStatus, CommissionType, CrossChainPayout, EntityReferrerProvider, LevelDiffPlanWriter,
     LevelDiffQueryProvider, MemberCommissionStatsData, MemberProvider,
     MemberTokenCommissionStatsData, MultiLevelPlanWriter, MultiLevelQueryProvider,
     ParticipationGuard, PoolRewardPlanWriter, PoolRewardQueryProvider, ReferralPlanWriter,
@@ -460,6 +460,14 @@ pub mod pallet {
         /// 设为 0 则不强制最小值（测试用）。
         #[pallet::constant]
         type MinShoppingBalanceTtlBlocks: Get<u32>;
+
+        /// Cross-chain native-NEX payout port (HB-WD-01). Wired by the runtime to
+        /// the bridge's outbound core; defaults to `()` (cross-chain withdrawal
+        /// disabled — `withdraw_commission_to_evm` fails without burning or
+        /// touching pending).
+        /// 原生 NEX 跨链派发端口（HB-WD-01）。由 runtime 对接桥的出站核心；默认 `()`
+        ///（关闭跨链提现——`withdraw_commission_to_evm` 失败且不 burn、不动 pending）。
+        type CrossChainPayout: crate::CrossChainPayout<Self::AccountId, BalanceOf<Self>>;
     }
 
     /// 提现记录
@@ -994,6 +1002,21 @@ pub mod pallet {
             repurchase_amount: BalanceOf<T>,
             bonus_amount: BalanceOf<T>,
         },
+        /// HB-WD-01: the `withdrawal` part of a tiered withdrawal was bridged out
+        /// to an EVM chain as native NEX (repurchase + bonus still credited to the
+        /// on-chain shopping balance). Carries the ISMP request commitment.
+        /// HB-WD-01：分级提现的 `withdrawal` 部分作为原生 NEX 桥出到某 EVM 链
+        ///（repurchase + bonus 仍计入链上购物余额）。携带 ISMP 请求 commitment。
+        CommissionBridgedOut {
+            entity_id: u64,
+            account: T::AccountId,
+            evm_chain_id: u32,
+            recipient: [u8; 20],
+            withdrawn_amount: BalanceOf<T>,
+            repurchase_amount: BalanceOf<T>,
+            bonus_amount: BalanceOf<T>,
+            commitment: [u8; 32],
+        },
         WithdrawalConfigUpdated {
             entity_id: u64,
         },
@@ -1431,6 +1454,22 @@ pub mod pallet {
         TokenShoppingBalanceExceedsThreshold,
         /// USDT 金额精度错误（非零值必须 >= 1_000_000，即 >= 1 USDT，防止漏乘 10^6）
         UsdtAmountTooSmall,
+        /// HB-WD-01: cross-chain payout port not configured (`CrossChainPayout = ()`).
+        /// HB-WD-01：跨链派发端口未接线（`CrossChainPayout = ()`）。
+        CrossChainPayoutNotConfigured,
+        /// HB-WD-01: the bridge rejected the payout (paused / per-tx or daily limit /
+        /// chain not registered / below min / ED). pending is left untouched.
+        /// HB-WD-01：桥拒绝派发（暂停 / 单笔或单日限额 / 未注册链 / 低于最小额 / ED）。
+        /// pending 不动。
+        CrossChainPayoutFailed,
+        /// HB-WD-01: the bridged withdrawal part is zero (full repurchase), nothing
+        /// to bridge — use `withdraw_commission` instead.
+        /// HB-WD-01：桥出的 withdrawal 部分为 0（全额复购），无可桥出——请改用
+        /// `withdraw_commission`。
+        ZeroBridgeWithdrawal,
+        /// HB-WD-01: EVM recipient address must not be the zero address.
+        /// HB-WD-01：EVM 收款地址不能为零地址。
+        InvalidEvmRecipient,
     }
 
     // ========================================================================
@@ -1801,6 +1840,240 @@ pub mod pallet {
                     withdrawn_amount: split.withdrawal,
                     repurchase_amount: split.repurchase,
                     bonus_amount: split.bonus,
+                });
+
+                Ok(())
+            })
+        }
+
+        /// Cross-chain commission withdrawal (HB-WD-01): bridge the `withdrawal`
+        /// part of a tiered withdrawal out to an EVM chain as native NEX, while the
+        /// `repurchase` + `bonus` parts stay on Nexus (credited to the shopping
+        /// balance, exactly as `withdraw_commission`). Reuses every local-withdrawal
+        /// guardrail (Entity Active / global+entity pause / cooldown / interval /
+        /// participation / solvency) and `calc_withdrawal_split`; only the
+        /// disposition of the withdrawal part changes (bridge burn + ISMP POST via
+        /// `CrossChainPayout` instead of a local transfer). On dispatch failure the
+        /// whole extrinsic rolls back (pending untouched); on bridge timeout the
+        /// bridge mints the NEX back to the Entity account (replenishing the solvency
+        /// pool). The promoter receives native NEX on the EVM chain and self-swaps to
+        /// a stablecoin.
+        /// 跨链佣金提现（HB-WD-01）：把分级提现的 `withdrawal` 部分作为原生 NEX 桥出到某
+        /// EVM 链，而 `repurchase` + `bonus` 仍留 Nexus（计入购物余额，与
+        /// `withdraw_commission` 完全一致）。复用本地提现的全部护栏（Entity Active /
+        /// 全局+entity 暂停 / cooldown / 频率 / 参与权 / 偿付）与 `calc_withdrawal_split`；
+        /// 仅改变 withdrawal 部分的去向（经 `CrossChainPayout` 桥 burn + ISMP POST，而非本地
+        /// 转账）。派发失败时整笔回滚（pending 不动）；桥超时则由桥把 NEX 铸回 Entity 账户
+        ///（回补偿付池）。推广员在 EVM 链收到原生 NEX，自行换稳定币。
+        ///
+        /// - `entity_id`: Entity ID
+        /// - `amount`: 提现金额（None = 全部 pending）
+        /// - `requested_repurchase_rate`: 会员请求的复购比率（万分比，MemberChoice 模式下使用）
+        /// - `evm_chain_id`: 目标 EVM 链 id（治理须已 `register_chain`）
+        /// - `recipient`: 推广员 EVM 收款地址（20 字节，不可为零地址）
+        #[pallet::call_index(40)]
+        #[pallet::weight(T::WeightInfo::withdraw_commission())]
+        pub fn withdraw_commission_to_evm(
+            origin: OriginFor<T>,
+            entity_id: u64,
+            amount: Option<BalanceOf<T>>,
+            requested_repurchase_rate: Option<u16>,
+            evm_chain_id: u32,
+            recipient: [u8; 20],
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            ensure!(recipient != [0u8; 20], Error::<T>::InvalidEvmRecipient);
+
+            // 与 withdraw_commission 一致的前置护栏
+            ensure!(
+                T::EntityProvider::is_entity_active(entity_id),
+                Error::<T>::EntityNotActive
+            );
+            ensure!(
+                !GlobalCommissionPaused::<T>::get(),
+                Error::<T>::GlobalCommissionPaused
+            );
+            ensure!(
+                !WithdrawalPaused::<T>::get(entity_id),
+                Error::<T>::WithdrawalPausedByOwner
+            );
+            ensure!(
+                T::ParticipationGuard::can_participate(entity_id, &who),
+                Error::<T>::ParticipationRequirementNotMet
+            );
+
+            MemberCommissionStats::<T>::try_mutate(entity_id, &who, |stats| -> DispatchResult {
+                let total_amount = amount.unwrap_or(stats.pending);
+                ensure!(
+                    stats.pending >= total_amount,
+                    Error::<T>::InsufficientCommission
+                );
+                ensure!(!total_amount.is_zero(), Error::<T>::ZeroWithdrawalAmount);
+
+                let withdrawal_config = WithdrawalConfigs::<T>::get(entity_id);
+                if let Some(ref wc) = withdrawal_config {
+                    ensure!(wc.enabled, Error::<T>::WithdrawalConfigNotEnabled);
+                }
+
+                // 冻结期检查
+                if let Some(config) = CommissionConfigs::<T>::get(entity_id) {
+                    if config.withdrawal_cooldown > 0 {
+                        let now = <frame_system::Pallet<T>>::block_number();
+                        let last_credited = MemberLastCredited::<T>::get(entity_id, &who);
+                        let cooldown: BlockNumberFor<T> = config.withdrawal_cooldown.into();
+                        let earliest = last_credited.saturating_add(cooldown);
+                        ensure!(now >= earliest, Error::<T>::WithdrawalCooldownNotMet);
+                    }
+                }
+
+                // 提现频率限制
+                let min_interval = MinWithdrawalInterval::<T>::get(entity_id);
+                if min_interval > 0 {
+                    let now = <frame_system::Pallet<T>>::block_number();
+                    let last_withdrawn = MemberLastWithdrawn::<T>::get(entity_id, &who);
+                    if !last_withdrawn.is_zero() {
+                        let interval: BlockNumberFor<T> = min_interval.into();
+                        ensure!(
+                            now >= last_withdrawn.saturating_add(interval),
+                            Error::<T>::WithdrawalIntervalNotMet
+                        );
+                    }
+                }
+
+                // 购物余额超出 USDT 阈值时阻止领奖
+                if let Some(ref rc) = RepurchaseConfigs::<T>::get(entity_id) {
+                    if rc.max_shopping_balance_usdt > 0 {
+                        let shopping_bal: u128 =
+                            T::Loyalty::shopping_balance(entity_id, &who).saturated_into();
+                        let nex_usdt_rate = T::PricingProvider::get_nex_usdt_price();
+                        let bal_usdt = pallet_commission_common::shopping_bal_to_usdt(
+                            shopping_bal,
+                            nex_usdt_rate,
+                        );
+                        ensure!(
+                            bal_usdt <= rc.max_shopping_balance_usdt,
+                            Error::<T>::ShoppingBalanceExceedsThreshold
+                        );
+                    }
+                }
+
+                // 计算提现/复购/奖励分配（与本地提现完全一致）
+                let split = Self::calc_withdrawal_split(
+                    entity_id,
+                    &who,
+                    total_amount,
+                    requested_repurchase_rate,
+                );
+
+                // 跨链提现必须有可桥出的 withdrawal 部分（全额复购时改用本地 withdraw_commission）
+                ensure!(
+                    !split.withdrawal.is_zero(),
+                    Error::<T>::ZeroBridgeWithdrawal
+                );
+
+                // 偿付安全检查（与 withdraw_commission 同：跨链 burn 与本地转账对 entity_balance
+                // 的影响相同，均为减少 withdrawal）
+                let entity_account = T::EntityProvider::entity_account(entity_id);
+                let entity_balance = T::Currency::free_balance(&entity_account);
+                let remaining_pending =
+                    ShopPendingTotal::<T>::get(entity_id).saturating_sub(total_amount);
+                let total_to_shopping = split.repurchase.saturating_add(split.bonus);
+                let new_shopping_total =
+                    T::Loyalty::shopping_total(entity_id).saturating_add(total_to_shopping);
+                let unallocated = UnallocatedPool::<T>::get(entity_id);
+                let pending_refund = PendingRefundTotal::<T>::get(entity_id);
+                let required_reserve = remaining_pending
+                    .saturating_add(new_shopping_total)
+                    .saturating_add(unallocated)
+                    .saturating_add(pending_refund);
+                let min_balance = T::Currency::minimum_balance();
+                let min_threshold: BalanceOf<T> =
+                    T::FundProtectionQuery::min_treasury_threshold(entity_id).saturated_into();
+                let required_balance = split
+                    .withdrawal
+                    .saturating_add(required_reserve)
+                    .saturating_add(min_balance)
+                    .saturating_add(min_threshold);
+                ensure!(
+                    entity_balance >= required_balance,
+                    Error::<T>::InsufficientEntityFunds
+                );
+
+                // withdrawal 部分：经 CrossChainPayout 从 entity_account burn 并派发 ISMP POST。
+                // 失败时返回错误 → extrinsic 事务层回滚（burn / pending / 购物余额全部回滚）。
+                let commitment = <T::CrossChainPayout as crate::CrossChainPayout<
+                    T::AccountId,
+                    BalanceOf<T>,
+                >>::payout_native(
+                    &entity_account, evm_chain_id, recipient, split.withdrawal
+                )
+                .map_err(|e| match e {
+                    DispatchError::Other("cross-chain payout not configured") => {
+                        Error::<T>::CrossChainPayoutNotConfigured
+                    }
+                    _ => Error::<T>::CrossChainPayoutFailed,
+                })?;
+
+                // repurchase + bonus 仍留 Nexus（计入购物余额，与本地提现一致）
+                if !total_to_shopping.is_zero() {
+                    T::Loyalty::credit_shopping_balance(entity_id, &who, total_to_shopping)?;
+                }
+
+                // 检查购物余额是否达到复购门槛
+                Self::check_repurchase_ready(entity_id, &who);
+
+                // 统计记在出资人名下
+                stats.pending = stats.pending.saturating_sub(total_amount);
+                stats.withdrawn = stats.withdrawn.saturating_add(split.withdrawal);
+                stats.repurchased = stats
+                    .repurchased
+                    .saturating_add(split.repurchase)
+                    .saturating_add(split.bonus);
+
+                // 释放 pending 锁定
+                ShopPendingTotal::<T>::mutate(entity_id, |total| {
+                    *total = total.saturating_sub(total_amount);
+                });
+
+                // 记录最后提现时间
+                let now = <frame_system::Pallet<T>>::block_number();
+                MemberLastWithdrawn::<T>::insert(entity_id, &who, now);
+
+                // 记录提现历史（满则丢弃最旧）
+                let mut truncated = false;
+                MemberWithdrawalHistory::<T>::mutate(entity_id, &who, |history| {
+                    let record = WithdrawalRecord {
+                        total_amount,
+                        withdrawn: split.withdrawal,
+                        repurchased: split.repurchase,
+                        bonus: split.bonus,
+                        block_number: now,
+                    };
+                    if history.try_push(record.clone()).is_err() {
+                        if !history.is_empty() {
+                            history.remove(0);
+                        }
+                        let _ = history.try_push(record);
+                        truncated = true;
+                    }
+                });
+                if truncated {
+                    Self::deposit_event(Event::WithdrawalHistoryTruncated {
+                        entity_id,
+                        who: who.clone(),
+                    });
+                }
+
+                Self::deposit_event(Event::CommissionBridgedOut {
+                    entity_id,
+                    account: who.clone(),
+                    evm_chain_id,
+                    recipient,
+                    withdrawn_amount: split.withdrawal,
+                    repurchase_amount: split.repurchase,
+                    bonus_amount: split.bonus,
+                    commitment,
                 });
 
                 Ok(())

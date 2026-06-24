@@ -69,6 +69,10 @@ thread_local! {
     static MOCK_NEX_USDT_RATE: RefCell<u64> = RefCell::new(1_000_000);
     /// Mock Token/USDT 价格: entity_id → Option<u64>（精度 10^6，None = 价格不可用）
     static MOCK_TOKEN_USDT_PRICE: RefCell<BTreeMap<u64, u64>> = RefCell::new(BTreeMap::new());
+    /// HB-WD-01 Mock 跨链派发模式: 0=成功(真 burn), 1=桥拒绝, 2=未接线
+    static PAYOUT_MODE: RefCell<u8> = RefCell::new(0);
+    /// HB-WD-01 Mock 跨链派发调用记录: (from, evm_chain_id, recipient, amount)
+    static PAYOUT_CALLS: RefCell<Vec<(u64, u32, [u8; 20], u128)>> = RefCell::new(Vec::new());
 }
 
 pub fn setup_default() {
@@ -139,6 +143,18 @@ pub fn clear_thread_locals() {
     REFERRER_BOUND_AT.with(|m| m.borrow_mut().clear());
     MOCK_PLATFORM_FEE_RATE.with(|r| *r.borrow_mut() = 100);
     MOCK_MIN_TREASURY_THRESHOLD.with(|m| m.borrow_mut().clear());
+    PAYOUT_MODE.with(|r| *r.borrow_mut() = 0);
+    PAYOUT_CALLS.with(|c| c.borrow_mut().clear());
+}
+
+/// HB-WD-01: 设置 Mock 跨链派发模式（0=成功并真 burn，1=桥拒绝，2=未接线）
+pub fn set_payout_mode(mode: u8) {
+    PAYOUT_MODE.with(|r| *r.borrow_mut() = mode);
+}
+
+/// HB-WD-01: 读取 Mock 跨链派发调用记录
+pub fn payout_calls() -> Vec<(u64, u32, [u8; 20], u128)> {
+    PAYOUT_CALLS.with(|c| c.borrow().clone())
 }
 
 /// 设置 Mock NEX 平台费率 (bps)
@@ -711,6 +727,7 @@ impl pallet_commission_core::Config for Test {
     type TokenPriceProvider = MockTokenPriceProvider;
     type AutoRepurchase = pallet_entity_common::NullAutoRepurchasePort;
     type MinShoppingBalanceTtlBlocks = ConstU32<0>; // 测试中不强制最小 TTL
+    type CrossChainPayout = MockCrossChainPayout;
 }
 
 // ============================================================================
@@ -733,6 +750,51 @@ pub fn block_participation(entity_id: u64, account: u64) {
 /// 解除参与限制
 pub fn unblock_participation(entity_id: u64, account: u64) {
     KYC_BLOCKED.with(|s| s.borrow_mut().remove(&(entity_id, account)));
+}
+
+// ============================================================================
+// Mock CrossChainPayout (HB-WD-01)
+// ============================================================================
+
+/// HB-WD-01 Mock 跨链派发端口。
+/// - mode 0：成功——真从 `from` burn `amount`（模拟桥 `do_outbound` 的 burn），记录调用，
+///   返回固定 commitment `[7u8; 32]`。
+/// - mode 1：返回通用错误（模拟桥护栏拒绝）→ extrinsic 映射为 `CrossChainPayoutFailed`。
+/// - mode 2：返回与 `()` 默认实现一致的 "cross-chain payout not configured" 错误
+///   → extrinsic 映射为 `CrossChainPayoutNotConfigured`。
+pub struct MockCrossChainPayout;
+
+impl crate::CrossChainPayout<u64, u128> for MockCrossChainPayout {
+    fn payout_native(
+        from: &u64,
+        evm_chain_id: u32,
+        recipient: [u8; 20],
+        amount: u128,
+    ) -> Result<[u8; 32], sp_runtime::DispatchError> {
+        match PAYOUT_MODE.with(|r| *r.borrow()) {
+            1 => return Err(sp_runtime::DispatchError::Other("bridge rejected")),
+            2 => {
+                return Err(sp_runtime::DispatchError::Other(
+                    "cross-chain payout not configured",
+                ))
+            }
+            _ => {}
+        }
+        // 模拟桥的真 burn：从 from 销毁 amount（KeepAlive），TotalIssuance↓
+        let negative = <pallet_balances::Pallet<Test> as frame_support::traits::Currency<u64>>::withdraw(
+            from,
+            amount,
+            frame_support::traits::WithdrawReasons::TRANSFER,
+            frame_support::traits::ExistenceRequirement::KeepAlive,
+        )
+        .map_err(|_| sp_runtime::DispatchError::Other("payout burn failed"))?;
+        drop(negative);
+        PAYOUT_CALLS.with(|c| {
+            c.borrow_mut()
+                .push((*from, evm_chain_id, recipient, amount))
+        });
+        Ok([7u8; 32])
+    }
 }
 
 // ============================================================================

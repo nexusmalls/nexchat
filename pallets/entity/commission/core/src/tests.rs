@@ -11372,3 +11372,285 @@ fn cancel_token_commission_does_not_refund_separate_owner_reward() {
         assert_eq!(owner_token_after, owner_token_before);
     });
 }
+
+// ============================================================================
+// HB-WD-01: 佣金跨链提现（withdraw_commission_to_evm）
+// ============================================================================
+
+const EVM_CHAIN: u32 = 56; // BSC
+const EVM_RCPT: [u8; 20] = [0xAB; 20];
+
+/// 直接给 (entity, account) 注入 pending 佣金并同步 ShopPendingTotal（满足 INV-1）。
+fn seed_pending(account: u64, amount: u128) {
+    MemberCommissionStats::<Test>::mutate(ENTITY_ID, &account, |s| {
+        s.pending = s.pending.saturating_add(amount);
+    });
+    ShopPendingTotal::<Test>::mutate(ENTITY_ID, |t| *t = t.saturating_add(amount));
+}
+
+// FullWithdrawal（无 WithdrawalConfig 默认即全额提现）：withdrawal 全额桥出
+#[test]
+fn bridge_withdrawal_full_works() {
+    new_test_ext().execute_with(|| {
+        let ea = entity_account(ENTITY_ID);
+        fund(ea, 100_000);
+        seed_pending(REFERRER, 10_000);
+
+        assert_ok!(CommissionCore::withdraw_commission_to_evm(
+            RuntimeOrigin::signed(REFERRER),
+            ENTITY_ID,
+            Some(10_000),
+            None,
+            EVM_CHAIN,
+            EVM_RCPT,
+        ));
+
+        // pending 清零，记 withdrawn
+        let stats = MemberCommissionStats::<Test>::get(ENTITY_ID, REFERRER);
+        assert_eq!(stats.pending, 0);
+        assert_eq!(stats.withdrawn, 10_000);
+        assert_eq!(stats.repurchased, 0);
+        assert_eq!(ShopPendingTotal::<Test>::get(ENTITY_ID), 0);
+
+        // entity_account 真 burn 10_000
+        assert_eq!(Balances::free_balance(ea), 90_000);
+
+        // 无 repurchase/bonus → 购物余额不变
+        assert_eq!(get_loyalty_shopping_balance(ENTITY_ID, REFERRER), 0);
+
+        // payout 被调用，参数正确（from=entity_account）
+        assert_eq!(payout_calls(), vec![(ea, EVM_CHAIN, EVM_RCPT, 10_000)]);
+
+        // 事件携带 commitment
+        System::assert_has_event(RuntimeEvent::CommissionCore(
+            crate::pallet::Event::CommissionBridgedOut {
+                entity_id: ENTITY_ID,
+                account: REFERRER,
+                evm_chain_id: EVM_CHAIN,
+                recipient: EVM_RCPT,
+                withdrawn_amount: 10_000,
+                repurchase_amount: 0,
+                bonus_amount: 0,
+                commitment: [7u8; 32],
+            },
+        ));
+    });
+}
+
+// FixedRate 30%：withdrawal 桥出，repurchase 留 Nexus（进购物余额）
+#[test]
+fn bridge_withdrawal_fixed_rate_splits_repurchase_stays() {
+    new_test_ext().execute_with(|| {
+        let ea = entity_account(ENTITY_ID);
+        fund(ea, 100_000);
+        seed_pending(REFERRER, 10_000);
+
+        assert_ok!(CommissionCore::set_withdrawal_config(
+            RuntimeOrigin::signed(SELLER),
+            ENTITY_ID,
+            WithdrawalMode::FixedRate {
+                repurchase_rate: 3000
+            },
+            WithdrawalTierConfig {
+                withdrawal_rate: 7000,
+                repurchase_rate: 3000
+            },
+            BoundedVec::default(),
+            0,
+            true,
+        ));
+
+        assert_ok!(CommissionCore::withdraw_commission_to_evm(
+            RuntimeOrigin::signed(REFERRER),
+            ENTITY_ID,
+            None,
+            None,
+            EVM_CHAIN,
+            EVM_RCPT,
+        ));
+
+        let stats = MemberCommissionStats::<Test>::get(ENTITY_ID, REFERRER);
+        assert_eq!(stats.withdrawn, 7_000); // 桥出
+        assert_eq!(stats.repurchased, 3_000); // 留 Nexus
+        assert_eq!(stats.pending, 0);
+
+        // 仅 withdrawal 部分被 burn
+        assert_eq!(Balances::free_balance(ea), 93_000);
+        // repurchase 进购物余额（留 Nexus）
+        assert_eq!(get_loyalty_shopping_balance(ENTITY_ID, REFERRER), 3_000);
+        // 桥出金额 = withdrawal
+        assert_eq!(payout_calls(), vec![(ea, EVM_CHAIN, EVM_RCPT, 7_000)]);
+    });
+}
+
+// 零收款地址被拒
+#[test]
+fn bridge_withdrawal_rejects_zero_recipient() {
+    new_test_ext().execute_with(|| {
+        fund(entity_account(ENTITY_ID), 100_000);
+        seed_pending(REFERRER, 10_000);
+        assert_noop!(
+            CommissionCore::withdraw_commission_to_evm(
+                RuntimeOrigin::signed(REFERRER),
+                ENTITY_ID,
+                Some(10_000),
+                None,
+                EVM_CHAIN,
+                [0u8; 20],
+            ),
+            Error::<Test>::InvalidEvmRecipient
+        );
+    });
+}
+
+// 全额复购（withdrawal=0）无可桥出 → ZeroBridgeWithdrawal
+#[test]
+fn bridge_withdrawal_rejects_zero_bridge_withdrawal() {
+    new_test_ext().execute_with(|| {
+        fund(entity_account(ENTITY_ID), 100_000);
+        seed_pending(REFERRER, 10_000);
+
+        assert_ok!(CommissionCore::set_withdrawal_config(
+            RuntimeOrigin::signed(SELLER),
+            ENTITY_ID,
+            WithdrawalMode::FixedRate {
+                repurchase_rate: 10000
+            },
+            WithdrawalTierConfig {
+                withdrawal_rate: 0,
+                repurchase_rate: 10000
+            },
+            BoundedVec::default(),
+            0,
+            true,
+        ));
+
+        assert_noop!(
+            CommissionCore::withdraw_commission_to_evm(
+                RuntimeOrigin::signed(REFERRER),
+                ENTITY_ID,
+                None,
+                None,
+                EVM_CHAIN,
+                EVM_RCPT,
+            ),
+            Error::<Test>::ZeroBridgeWithdrawal
+        );
+    });
+}
+
+// 桥派发失败 → 整笔回滚（pending 不动、未 burn、未记调用）
+#[test]
+fn bridge_withdrawal_payout_failure_rolls_back() {
+    new_test_ext().execute_with(|| {
+        let ea = entity_account(ENTITY_ID);
+        fund(ea, 100_000);
+        seed_pending(REFERRER, 10_000);
+        set_payout_mode(1); // 桥拒绝
+
+        assert_noop!(
+            CommissionCore::withdraw_commission_to_evm(
+                RuntimeOrigin::signed(REFERRER),
+                ENTITY_ID,
+                Some(10_000),
+                None,
+                EVM_CHAIN,
+                EVM_RCPT,
+            ),
+            Error::<Test>::CrossChainPayoutFailed
+        );
+
+        // 回滚：pending 不动、ea 未 burn、无调用记录
+        assert_eq!(
+            MemberCommissionStats::<Test>::get(ENTITY_ID, REFERRER).pending,
+            10_000
+        );
+        assert_eq!(ShopPendingTotal::<Test>::get(ENTITY_ID), 10_000);
+        assert_eq!(Balances::free_balance(ea), 100_000);
+        assert!(payout_calls().is_empty());
+    });
+}
+
+// 未接线（mode 2）→ CrossChainPayoutNotConfigured
+#[test]
+fn bridge_withdrawal_not_configured() {
+    new_test_ext().execute_with(|| {
+        fund(entity_account(ENTITY_ID), 100_000);
+        seed_pending(REFERRER, 10_000);
+        set_payout_mode(2);
+
+        assert_noop!(
+            CommissionCore::withdraw_commission_to_evm(
+                RuntimeOrigin::signed(REFERRER),
+                ENTITY_ID,
+                Some(10_000),
+                None,
+                EVM_CHAIN,
+                EVM_RCPT,
+            ),
+            Error::<Test>::CrossChainPayoutNotConfigured
+        );
+    });
+}
+
+// 全局暂停 → 拒绝且 pending 不动
+#[test]
+fn bridge_withdrawal_rejects_when_globally_paused() {
+    new_test_ext().execute_with(|| {
+        fund(entity_account(ENTITY_ID), 100_000);
+        seed_pending(REFERRER, 10_000);
+        GlobalCommissionPaused::<Test>::put(true);
+
+        assert_noop!(
+            CommissionCore::withdraw_commission_to_evm(
+                RuntimeOrigin::signed(REFERRER),
+                ENTITY_ID,
+                Some(10_000),
+                None,
+                EVM_CHAIN,
+                EVM_RCPT,
+            ),
+            Error::<Test>::GlobalCommissionPaused
+        );
+        assert!(payout_calls().is_empty());
+    });
+}
+
+// 偿付不足 → InsufficientEntityFunds（withdrawal 超过 entity_account 可用余额）
+#[test]
+fn bridge_withdrawal_rejects_insufficient_entity_funds() {
+    new_test_ext().execute_with(|| {
+        fund(entity_account(ENTITY_ID), 1_000); // 远不足以桥出 10_000
+        seed_pending(REFERRER, 10_000);
+
+        assert_noop!(
+            CommissionCore::withdraw_commission_to_evm(
+                RuntimeOrigin::signed(REFERRER),
+                ENTITY_ID,
+                Some(10_000),
+                None,
+                EVM_CHAIN,
+                EVM_RCPT,
+            ),
+            Error::<Test>::InsufficientEntityFunds
+        );
+        assert!(payout_calls().is_empty());
+    });
+}
+
+// 默认 `()` 实现：跨链提现关闭，返回 not-configured 错误
+#[test]
+fn cross_chain_payout_default_unit_returns_not_configured() {
+    let res = <() as crate::CrossChainPayout<u64, u128>>::payout_native(
+        &1u64,
+        EVM_CHAIN,
+        EVM_RCPT,
+        100,
+    );
+    assert_eq!(
+        res,
+        Err(sp_runtime::DispatchError::Other(
+            "cross-chain payout not configured"
+        ))
+    );
+}
