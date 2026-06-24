@@ -99,3 +99,97 @@ where
 /// Re-export for event payloads.
 /// 供事件负载复用。
 pub type Commitment = H256;
+
+/// Cross-chain order intent (HB-ENT-01), carried SCALE-encoded inside the
+/// vendored [`Message`]'s `data` field. `schema_version` allows forward-compatible
+/// evolution; `buyer_evm` / `referrer` are EVM `H160`s that are derived into local
+/// `AccountId`s via [`EvmToSubstrate`]. `nonce` complements the ISMP commitment as
+/// an application-level replay guard.
+/// 跨链下单意图（HB-ENT-01），以 SCALE 编码置于 vendor [`Message`] 的 `data` 字段内。
+/// `schema_version` 支持向前兼容演进；`buyer_evm` / `referrer` 为 EVM `H160`，经
+/// [`EvmToSubstrate`] 派生为本地 `AccountId`；`nonce` 配合 ISMP commitment 作应用层防重放。
+#[derive(Clone, Encode, Decode, TypeInfo, PartialEq, Eq, RuntimeDebug)]
+pub struct OrderIntent {
+	/// Payload schema version (for forward-compatible evolution). 负载版本号。
+	pub schema_version: u8,
+	/// Buyer's EVM address; derived into the local buyer account. 买家 EVM 地址（派生本地账户）。
+	pub buyer_evm: [u8; 20],
+	/// Target product id. 目标商品 id。
+	pub product_id: u64,
+	/// Order quantity. 下单数量。
+	pub quantity: u32,
+	/// NEX burned on the source EVM chain (EVM precision). 源 EVM 链销毁的 NEX（EVM 精度）。
+	pub amount_nex: u128,
+	/// Slippage cap on the NEX charged (EVM precision). NEX 扣费滑点上限（EVM 精度）。
+	pub max_nex_amount: u128,
+	/// Optional referrer EVM address (derived). 可选推荐人 EVM 地址（派生）。
+	pub referrer: Option<[u8; 20]>,
+	/// Application-level replay nonce. 应用层防重放 nonce。
+	pub nonce: u64,
+}
+
+/// Withdraw a derived account's NEX back to an EVM chain (HB-ENT-01 §7, G-B4).
+/// Authorisation is performed on the EVM side (the gateway checks
+/// `msg.sender == owner_evm`); on Nexus we trust the registered source contract
+/// (same allow-list as every inbound message) and move only the derived owner's funds.
+/// 将派生账户的 NEX 提回某 EVM 链（HB-ENT-01 §7，G-B4）。鉴权在 EVM 侧完成（网关校验
+/// `msg.sender == owner_evm`）；Nexus 侧信任已注册来源合约（与所有入站消息同一 allow-list），
+/// 且只动用该派生账户本人的资金。
+#[derive(Clone, Encode, Decode, TypeInfo, PartialEq, Eq, RuntimeDebug)]
+pub struct WithdrawRequest {
+	/// Payload schema version. 负载版本号。
+	pub schema_version: u8,
+	/// Derived owner's EVM address (whose Nexus account is debited). 派生持有人 EVM 地址（其 Nexus 账户被扣款）。
+	pub owner_evm: [u8; 20],
+	/// Amount to withdraw (EVM precision). 提款金额（EVM 精度）。
+	pub amount_nex: u128,
+	/// EVM recipient of the bridged-back NEX. 提回 NEX 的 EVM 收款人。
+	pub dest_recipient: [u8; 20],
+	/// Application-level replay nonce. 应用层防重放 nonce。
+	pub nonce: u64,
+}
+
+/// Discriminated operation carried in [`Message`]`.data`. An empty `data` means a
+/// plain asset transfer (Stage 2); a non-empty `data` SCALE-decodes to this enum.
+/// [`Message`]`.data` 携带的判别式操作。空 `data` 表示纯资产转账（Stage 2）；非空 `data`
+/// 按本枚举 SCALE 解码。
+#[derive(Clone, Encode, Decode, TypeInfo, PartialEq, Eq, RuntimeDebug)]
+pub enum InboundOp {
+	/// Cross-chain digital order (HB-ENT-01 Stage 3b). 跨链数字商品下单。
+	Order(OrderIntent),
+	/// Withdraw a derived account's NEX back to an EVM chain (HB-ENT-01 §7, Stage 3c).
+	/// 将派生账户的 NEX 提回某 EVM 链（HB-ENT-01 §7，Stage 3c）。
+	Withdraw(WithdrawRequest),
+}
+
+/// Bridge → business handler for authenticated cross-chain digital orders.
+/// Implemented by the runtime against `pallet-entity-order::do_cross_order`,
+/// keeping the low-level bridge decoupled from the high-level order pallet.
+/// Returns the created order id on success.
+/// 桥 → 业务的跨链数字下单处理器（经鉴权）。由 runtime 对接
+/// `pallet-entity-order::do_cross_order` 实现，使底层桥与上层订单 pallet 解耦；成功返回订单 id。
+pub trait CrossChainOrderHandler<AccountId, Balance> {
+	fn do_cross_order(
+		buyer: AccountId,
+		payer: AccountId,
+		product_id: u64,
+		quantity: u32,
+		max_nex_amount: Balance,
+		referrer: Option<AccountId>,
+	) -> Result<u64, sp_runtime::DispatchError>;
+}
+
+/// Default: no handler configured — every cross-order fails (and is credited).
+/// 默认：未配置处理器——所有跨链下单失败（并入账）。
+impl<AccountId, Balance> CrossChainOrderHandler<AccountId, Balance> for () {
+	fn do_cross_order(
+		_buyer: AccountId,
+		_payer: AccountId,
+		_product_id: u64,
+		_quantity: u32,
+		_max_nex_amount: Balance,
+		_referrer: Option<AccountId>,
+	) -> Result<u64, sp_runtime::DispatchError> {
+		Err(sp_runtime::DispatchError::Other("cross-order handler not configured"))
+	}
+}

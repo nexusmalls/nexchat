@@ -146,6 +146,13 @@ pub mod pallet {
 		/// 治理操作（暂停 / 限额 / 链注册）的特权来源。
 		type BridgeOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
+		/// Handler for authenticated cross-chain digital orders (HB-ENT-01). Wired
+		/// by the runtime to `pallet-entity-order::do_cross_order`. Defaults to `()`
+		/// (every cross-order fails and is credited to the derived buyer).
+		/// 经鉴权的跨链数字下单处理器（HB-ENT-01）。由 runtime 接到
+		/// `pallet-entity-order::do_cross_order`。默认 `()`（所有跨链下单失败并入账派生买家）。
+		type CrossOrderHandler: crate::types::CrossChainOrderHandler<Self::AccountId, BalanceOf<Self>>;
+
 		/// Weight information.
 		/// 权重信息。
 		type WeightInfo: WeightInfo;
@@ -217,6 +224,33 @@ pub mod pallet {
 		PausedSet { chain: Option<StateMachine>, paused: bool },
 		/// Limits changed. 限额已变更。
 		LimitsChanged { per_tx: BalanceOf<T>, daily: BalanceOf<T> },
+		/// A cross-chain digital order was placed (and instantly settled).
+		/// 跨链数字商品下单成功（并即时完成）。
+		CrossOrderPlaced {
+			order_id: u64,
+			buyer: T::AccountId,
+			source: StateMachine,
+			product_id: u64,
+		},
+		/// A cross-chain order failed; the minted NEX stays credited to the derived
+		/// buyer account (DerivedCredit) and can be withdrawn later. 跨链下单失败；
+		/// 已铸 NEX 留在派生买家账户（DerivedCredit），可后续提款。
+		CrossOrderFailed {
+			buyer: T::AccountId,
+			source: StateMachine,
+			amount: BalanceOf<T>,
+			error: sp_runtime::DispatchError,
+		},
+		/// A derived account withdrew NEX back to an EVM chain (HB-ENT-01 §7): NEX was
+		/// burned from the derived owner and an outbound POST dispatched. 派生账户将 NEX
+		/// 提回某 EVM 链（HB-ENT-01 §7）：从派生持有人销毁 NEX 并派发出站 POST。
+		DerivedWithdraw {
+			owner: T::AccountId,
+			dest: StateMachine,
+			recipient: H160,
+			amount: BalanceOf<T>,
+			commitment: H256,
+		},
 	}
 
 	#[pallet::error]
@@ -277,79 +311,7 @@ pub mod pallet {
 			relayer_fee: BalanceOf<T>,
 		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
-
-			// --- Guardrails (before burn) / 护栏（销毁前） ---
-			ensure!(!Paused::<T>::get(), Error::<T>::BridgePaused);
-			ensure!(!PausedChain::<T>::get(dest), Error::<T>::BridgePaused);
-			let cfg = Chains::<T>::get(dest).ok_or(Error::<T>::ChainNotRegistered)?;
-			ensure!(amount >= T::MinBridgeAmount::get(), Error::<T>::AmountBelowMin);
-
-			let limits = Limits::<T>::get();
-			ensure!(amount <= limits.per_tx, Error::<T>::PerTxLimitExceeded);
-
-			let now = frame_system::Pallet::<T>::block_number();
-			let (window_start, used) = DailyOut::<T>::get();
-			let (window_start, used) =
-				if now.saturating_sub(window_start) >= T::DailyLimitWindow::get() {
-					(now, Zero::zero())
-				} else {
-					(window_start, used)
-				};
-			let new_used = used.checked_add(&amount).ok_or(Error::<T>::Overflow)?;
-			ensure!(new_used <= limits.daily, Error::<T>::DailyLimitExceeded);
-
-			// --- Burn (real, respects locks + ED) / 销毁（真实，尊重 locks + ED） ---
-			let negative = T::NativeCurrency::withdraw(
-				&who,
-				amount,
-				WithdrawReasons::TRANSFER,
-				ExistenceRequirement::KeepAlive,
-			)
-			.map_err(|_| Error::<T>::InsufficientFreeBalance)?;
-			// Dropping the NegativeImbalance reduces TotalIssuance (the burn).
-			// 丢弃 NegativeImbalance 会减少 TotalIssuance（即销毁）。
-			drop(negative);
-
-			// --- Ledger / 账本 ---
-			BridgedOut::<T>::try_mutate(|b| -> DispatchResult {
-				*b = b.checked_add(&amount).ok_or(Error::<T>::Overflow)?;
-				Ok(())
-			})?;
-			BridgedOutByChain::<T>::try_mutate(dest, |b| -> DispatchResult {
-				*b = b.checked_add(&amount).ok_or(Error::<T>::Overflow)?;
-				Ok(())
-			})?;
-			DailyOut::<T>::put((window_start, new_used));
-
-			// --- Encode + dispatch ISMP POST / 编码并派发 ISMP POST ---
-			let sender: [u8; 32] = who.clone().into();
-			let erc20_amount =
-				impls::convert_to_erc20(amount.into(), cfg.erc_decimals, T::NativeDecimals::get());
-			let message = Message {
-				from: sender.to_vec().into(),
-				to: recipient.0.to_vec().into(),
-				amount: alloy_primitives::U256::from_be_bytes(erc20_amount.to_big_endian()),
-				data: Default::default(),
-			};
-
-			let post = DispatchPost {
-				dest,
-				from: module_id_bytes(),
-				to: cfg.contract.0.to_vec(),
-				timeout: T::RequestTimeout::get(),
-				body: {
-					use alloy_sol_types::SolValue;
-					Message::abi_encode(&message)
-				},
-			};
-			let fee = <<T as pallet_ismp::Config>::Balance as From<BalanceOf<T>>>::from(
-				relayer_fee,
-			);
-			let metadata = FeeMetadata { payer: who.clone(), fee };
-			let commitment = <T as Config>::Dispatcher::default()
-				.dispatch_request(DispatchRequest::Post(post), metadata)
-				.map_err(|_| Error::<T>::DispatchFailed)?;
-
+			let commitment = Self::do_outbound(&who, dest, recipient, amount, relayer_fee)?;
 			Self::deposit_event(Event::<T>::BridgedOut {
 				sender: who,
 				recipient,
@@ -452,6 +414,100 @@ pub mod pallet {
 				return Err("Σ BridgedOutByChain != BridgedOut");
 			}
 			Ok(())
+		}
+
+		/// Reusable outbound core, shared by the signed `bridge_out` extrinsic and the
+		/// derived-account withdraw path ([`InboundOp::Withdraw`](crate::types::InboundOp)).
+		/// Runs the outbound guardrails, really burns `amount` NEX from `who` (`KeepAlive`,
+		/// `TotalIssuance↓`), books the in-flight ledger, and dispatches the ISMP POST
+		/// carrying the vendored [`Message`] ABI; returns the request commitment. Callers
+		/// must run this inside a storage layer (extrinsics are auto-wrapped; the inbound
+		/// withdraw wraps it explicitly) so a dispatch failure rolls back burn + ledger.
+		/// 可复用的出站核心，由签名 `bridge_out` extrinsic 与派生账户提款路径
+		/// （[`InboundOp::Withdraw`](crate::types::InboundOp)）共用。执行出站护栏、对 `who`
+		/// 真销毁 `amount` NEX（`KeepAlive`、`TotalIssuance↓`）、记在途账本、派发携带 vendor
+		/// [`Message`] ABI 的 ISMP POST，并返回请求 commitment。调用方须在存储层内执行
+		///（extrinsic 自动包裹；入站提款显式包裹），以便派发失败时回滚销毁与账本。
+		pub(crate) fn do_outbound(
+			who: &T::AccountId,
+			dest: StateMachine,
+			recipient: H160,
+			amount: BalanceOf<T>,
+			relayer_fee: BalanceOf<T>,
+		) -> Result<crate::types::Commitment, sp_runtime::DispatchError>
+		where
+			T::AccountId: Into<[u8; 32]>,
+			BalanceOf<T>: Into<u128>,
+			<T as pallet_ismp::Config>::Balance: From<BalanceOf<T>>,
+		{
+			// --- Guardrails (before burn) / 护栏（销毁前） ---
+			ensure!(!Paused::<T>::get(), Error::<T>::BridgePaused);
+			ensure!(!PausedChain::<T>::get(dest), Error::<T>::BridgePaused);
+			let cfg = Chains::<T>::get(dest).ok_or(Error::<T>::ChainNotRegistered)?;
+			ensure!(amount >= T::MinBridgeAmount::get(), Error::<T>::AmountBelowMin);
+
+			let limits = Limits::<T>::get();
+			ensure!(amount <= limits.per_tx, Error::<T>::PerTxLimitExceeded);
+
+			let now = frame_system::Pallet::<T>::block_number();
+			let (window_start, used) = DailyOut::<T>::get();
+			let (window_start, used) =
+				if now.saturating_sub(window_start) >= T::DailyLimitWindow::get() {
+					(now, Zero::zero())
+				} else {
+					(window_start, used)
+				};
+			let new_used = used.checked_add(&amount).ok_or(Error::<T>::Overflow)?;
+			ensure!(new_used <= limits.daily, Error::<T>::DailyLimitExceeded);
+
+			// --- Burn (real, respects locks + ED) / 销毁（真实，尊重 locks + ED） ---
+			let negative = T::NativeCurrency::withdraw(
+				who,
+				amount,
+				WithdrawReasons::TRANSFER,
+				ExistenceRequirement::KeepAlive,
+			)
+			.map_err(|_| Error::<T>::InsufficientFreeBalance)?;
+			drop(negative);
+
+			// --- Ledger / 账本 ---
+			BridgedOut::<T>::try_mutate(|b| -> DispatchResult {
+				*b = b.checked_add(&amount).ok_or(Error::<T>::Overflow)?;
+				Ok(())
+			})?;
+			BridgedOutByChain::<T>::try_mutate(dest, |b| -> DispatchResult {
+				*b = b.checked_add(&amount).ok_or(Error::<T>::Overflow)?;
+				Ok(())
+			})?;
+			DailyOut::<T>::put((window_start, new_used));
+
+			// --- Encode + dispatch ISMP POST / 编码并派发 ISMP POST ---
+			let sender: [u8; 32] = who.clone().into();
+			let erc20_amount =
+				impls::convert_to_erc20(amount.into(), cfg.erc_decimals, T::NativeDecimals::get());
+			let message = Message {
+				from: sender.to_vec().into(),
+				to: recipient.0.to_vec().into(),
+				amount: alloy_primitives::U256::from_be_bytes(erc20_amount.to_big_endian()),
+				data: Default::default(),
+			};
+			let post = DispatchPost {
+				dest,
+				from: module_id_bytes(),
+				to: cfg.contract.0.to_vec(),
+				timeout: T::RequestTimeout::get(),
+				body: {
+					use alloy_sol_types::SolValue;
+					Message::abi_encode(&message)
+				},
+			};
+			let fee =
+				<<T as pallet_ismp::Config>::Balance as From<BalanceOf<T>>>::from(relayer_fee);
+			let metadata = FeeMetadata { payer: who.clone(), fee };
+			let commitment = <T as Config>::Dispatcher::default()
+				.dispatch_request(DispatchRequest::Post(post), metadata)
+				.map_err(|_| Error::<T>::DispatchFailed)?;
+			Ok(commitment)
 		}
 
 		/// Decodes a 20-byte (EVM) or 32-byte (Substrate) address into an `AccountId`.

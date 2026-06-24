@@ -6,10 +6,12 @@
 use crate::{
 	impls::convert_to_erc20,
 	mock::*,
-	pallet::{BridgedOut, BridgedOutByChain, Error},
+	pallet::{BridgedOut, BridgedOutByChain, Error, Event},
+	types::{InboundOp, OrderIntent, WithdrawRequest},
 	module_id_bytes, Message,
 };
 use alloy_sol_types::SolValue;
+use codec::Encode;
 use frame_support::{assert_noop, assert_ok};
 use ismp::{
 	module::IsmpModule,
@@ -290,5 +292,178 @@ fn on_timeout_refunds_sender() {
 		assert_eq!(Balances::free_balance(acc(1)), FUND); // fully refunded
 		assert_eq!(BridgedOut::<Test>::get(), 0);
 		assert_ok!(Bridge::check_ledger_invariant());
+	});
+}
+
+// --------------------------- Cross-order (HB-ENT-01) ---------------------------
+
+/// Builds an inbound [`Message`] whose `data` carries a SCALE [`OrderIntent`].
+fn order_body(buyer_evm: H160, local_amount: Balance, product_id: u64) -> Vec<u8> {
+	let erc = convert_to_erc20(local_amount, ERC_DECIMALS, 12);
+	let intent = OrderIntent {
+		schema_version: 1,
+		buyer_evm: buyer_evm.0,
+		product_id,
+		quantity: 1,
+		amount_nex: 0,
+		max_nex_amount: 0,
+		referrer: None,
+		nonce: 0,
+	};
+	let msg = Message {
+		from: [0u8; 32].to_vec().into(),
+		to: [0u8; 32].to_vec().into(),
+		amount: alloy_primitives::U256::from_be_bytes(erc.to_big_endian()),
+		data: InboundOp::Order(intent).encode().into(),
+	};
+	Message::abi_encode(&msg)
+}
+
+/// The buyer account derived from a 20-byte EVM address by the mock `EvmToSubstrate`
+/// (`()` zero-pad). The runtime wires a blake2 derivation instead.
+fn derived(buyer_evm: H160) -> AccountId {
+	let mut b = [0u8; 32];
+	b[12..].copy_from_slice(&buyer_evm.0);
+	AccountId::new(b)
+}
+
+fn has_event(pred: impl Fn(&Event<Test>) -> bool) -> bool {
+	System::events().iter().any(|r| match &r.event {
+		RuntimeEvent::Bridge(e) => pred(e),
+		_ => false,
+	})
+}
+
+#[test]
+fn on_accept_cross_order_success_mints_and_dispatches() {
+	new_test_ext(vec![(acc(1), FUND)]).execute_with(|| {
+		setup_chain();
+		// Bridge out first so there is in-flight supply to mint back.
+		assert_ok!(Bridge::bridge_out(RuntimeOrigin::signed(acc(1)), bsc(), recipient(), ONE_NEX, 0));
+		set_order_result(Ok(99));
+
+		let buyer_evm = H160::repeat_byte(0xB0);
+		let post = post_to_bridge(bsc(), contract().0.to_vec(), order_body(buyer_evm, ONE_NEX, 2));
+		assert_ok!(Bridge::default().on_accept(post));
+
+		// NEX minted to the derived buyer; ledger decremented.
+		assert_eq!(Balances::free_balance(derived(buyer_evm)), ONE_NEX);
+		assert_eq!(BridgedOut::<Test>::get(), 0);
+		assert_ok!(Bridge::check_ledger_invariant());
+		assert!(has_event(|e| matches!(
+			e,
+			Event::CrossOrderPlaced { order_id: 99, product_id: 2, .. }
+		)));
+	});
+}
+
+#[test]
+fn on_accept_cross_order_failure_credits_derived_buyer() {
+	new_test_ext(vec![(acc(1), FUND)]).execute_with(|| {
+		setup_chain();
+		assert_ok!(Bridge::bridge_out(RuntimeOrigin::signed(acc(1)), bsc(), recipient(), ONE_NEX, 0));
+		// Order dispatch fails → mint must be KEPT as DerivedCredit, on_accept still Ok.
+		set_order_result(Err(sp_runtime::DispatchError::Other("boom")));
+
+		let buyer_evm = H160::repeat_byte(0xB1);
+		let post = post_to_bridge(bsc(), contract().0.to_vec(), order_body(buyer_evm, ONE_NEX, 2));
+		assert_ok!(Bridge::default().on_accept(post));
+
+		assert_eq!(Balances::free_balance(derived(buyer_evm)), ONE_NEX); // credited
+		assert_eq!(BridgedOut::<Test>::get(), 0);
+		assert_ok!(Bridge::check_ledger_invariant());
+		assert!(has_event(|e| matches!(e, Event::CrossOrderFailed { amount, .. } if *amount == ONE_NEX)));
+	});
+}
+
+#[test]
+fn on_accept_cross_order_rejects_over_ledger() {
+	new_test_ext(vec![(acc(1), FUND)]).execute_with(|| {
+		setup_chain();
+		assert_ok!(Bridge::bridge_out(RuntimeOrigin::signed(acc(1)), bsc(), recipient(), ONE_NEX, 0));
+		// Minting more than the in-flight ledger must fail before any dispatch.
+		let post = post_to_bridge(bsc(), contract().0.to_vec(), order_body(H160::repeat_byte(0xB2), 2 * ONE_NEX, 2));
+		assert!(Bridge::default().on_accept(post).is_err());
+		assert_eq!(BridgedOut::<Test>::get(), ONE_NEX); // unchanged
+	});
+}
+
+// --------------------------- Derived withdraw (HB-ENT-01 §7) ---------------------------
+
+/// Builds an inbound [`Message`] whose `data` carries a SCALE [`WithdrawRequest`].
+fn withdraw_body(owner_evm: H160, local_amount: Balance, dest_recipient: H160) -> Vec<u8> {
+	// EVM precision = local * 10^(18-12); compute directly to avoid U256 juggling.
+	let req = WithdrawRequest {
+		schema_version: 1,
+		owner_evm: owner_evm.0,
+		amount_nex: local_amount * 1_000_000,
+		dest_recipient: dest_recipient.0,
+		nonce: 0,
+	};
+	let msg = Message {
+		from: [0u8; 32].to_vec().into(),
+		to: [0u8; 32].to_vec().into(),
+		amount: alloy_primitives::U256::ZERO,
+		data: InboundOp::Withdraw(req).encode().into(),
+	};
+	Message::abi_encode(&msg)
+}
+
+#[test]
+fn on_accept_withdraw_burns_derived_and_dispatches() {
+	let owner_evm = H160::repeat_byte(0xD0);
+	new_test_ext(vec![(derived(owner_evm), FUND)]).execute_with(|| {
+		setup_chain();
+		let issuance = Balances::total_issuance();
+
+		let post = post_to_bridge(
+			bsc(),
+			contract().0.to_vec(),
+			withdraw_body(owner_evm, ONE_NEX, recipient()),
+		);
+		assert_ok!(Bridge::default().on_accept(post));
+
+		assert_eq!(Balances::free_balance(derived(owner_evm)), FUND - ONE_NEX);
+		assert_eq!(Balances::total_issuance(), issuance - ONE_NEX); // really burned
+		assert_eq!(BridgedOut::<Test>::get(), ONE_NEX);
+		assert_eq!(BridgedOutByChain::<Test>::get(bsc()), ONE_NEX);
+		assert_ok!(Bridge::check_ledger_invariant());
+		assert!(has_event(|e| matches!(e, Event::DerivedWithdraw { amount, .. } if *amount == ONE_NEX)));
+	});
+}
+
+#[test]
+fn on_accept_withdraw_insufficient_balance_fails() {
+	let owner_evm = H160::repeat_byte(0xD1);
+	// Fund exactly ONE_NEX: KeepAlive cannot spend the whole balance (ED must remain).
+	new_test_ext(vec![(derived(owner_evm), ONE_NEX)]).execute_with(|| {
+		setup_chain();
+		let post = post_to_bridge(
+			bsc(),
+			contract().0.to_vec(),
+			withdraw_body(owner_evm, ONE_NEX, recipient()),
+		);
+		assert!(Bridge::default().on_accept(post).is_err());
+		assert_eq!(Balances::free_balance(derived(owner_evm)), ONE_NEX); // unchanged
+		assert_eq!(BridgedOut::<Test>::get(), 0); // nothing booked
+	});
+}
+
+#[test]
+fn on_accept_rejects_invalid_payload() {
+	new_test_ext(vec![(acc(1), FUND)]).execute_with(|| {
+		setup_chain();
+		assert_ok!(Bridge::bridge_out(RuntimeOrigin::signed(acc(1)), bsc(), recipient(), ONE_NEX, 0));
+		// Non-empty but undecodable `data` → InvalidPayload, nothing minted.
+		let erc = convert_to_erc20(ONE_NEX, ERC_DECIMALS, 12);
+		let msg = Message {
+			from: [0u8; 32].to_vec().into(),
+			to: [0u8; 32].to_vec().into(),
+			amount: alloy_primitives::U256::from_be_bytes(erc.to_big_endian()),
+			data: vec![0xFFu8; 3].into(),
+		};
+		let post = post_to_bridge(bsc(), contract().0.to_vec(), Message::abi_encode(&msg));
+		assert!(Bridge::default().on_accept(post).is_err());
+		assert_eq!(BridgedOut::<Test>::get(), ONE_NEX); // unchanged
 	});
 }

@@ -60,4 +60,8 @@ pub enum BridgeError {
 	/// 不支持 GET 请求超时（桥仅发送 POST）。
 	#[error("Unsupported timeout type")]
 	UnsupportedTimeoutType,
+	/// The non-empty `Message.data` failed to SCALE-decode into an `InboundOp`
+	/// (HB-ENT-01). 非空 `Message.data` 无法 SCALE 解码为 `InboundOp`（HB-ENT-01）。
+	#[error("Invalid inbound operation payload")]
+	InvalidPayload,
 }

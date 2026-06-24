@@ -101,6 +101,32 @@ impl IsmpRouter for MockRouter {
 	}
 }
 
+thread_local! {
+	static ORDER_RESULT: core::cell::RefCell<Result<u64, sp_runtime::DispatchError>> =
+		core::cell::RefCell::new(Ok(7));
+}
+
+/// Test control: set what the mock cross-order handler returns on its next call.
+pub fn set_order_result(r: Result<u64, sp_runtime::DispatchError>) {
+	ORDER_RESULT.with(|c| *c.borrow_mut() = r);
+}
+
+/// Mock cross-order handler: returns the configured result without touching state
+/// (the real handler is `pallet-entity-order::do_cross_order`, tested there).
+pub struct MockOrderHandler;
+impl pallet_bridge_ismp::types::CrossChainOrderHandler<AccountId, Balance> for MockOrderHandler {
+	fn do_cross_order(
+		_buyer: AccountId,
+		_payer: AccountId,
+		_product_id: u64,
+		_quantity: u32,
+		_max_nex_amount: Balance,
+		_referrer: Option<AccountId>,
+	) -> Result<u64, sp_runtime::DispatchError> {
+		ORDER_RESULT.with(|c| c.borrow().clone())
+	}
+}
+
 parameter_types! {
 	pub const NativeDecimals: u8 = 12;
 	pub const MinBridgeAmount: Balance = 1_000_000; // 10^6, so 18→12 never truncates to 0
@@ -117,6 +143,7 @@ impl pallet_bridge_ismp::Config for Test {
 	type DailyLimitWindow = ConstU64<100>;
 	type RequestTimeout = RequestTimeout;
 	type BridgeOrigin = EnsureRoot<AccountId>;
+	type CrossOrderHandler = MockOrderHandler;
 	type WeightInfo = ();
 }
 
@@ -127,7 +154,10 @@ pub fn new_test_ext(balances: Vec<(AccountId, Balance)>) -> sp_io::TestExternali
 		.assimilate_storage(&mut t)
 		.unwrap();
 	let mut ext = sp_io::TestExternalities::new(t);
-	ext.execute_with(|| System::set_block_number(1));
+	ext.execute_with(|| {
+		System::set_block_number(1);
+		set_order_result(Ok(7));
+	});
 	ext
 }
 
