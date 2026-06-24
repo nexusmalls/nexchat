@@ -195,6 +195,39 @@ impl pallet_bridge_ismp::types::CrossChainOrderHandler<AccountId, Balance> for N
     }
 }
 
+/// Bridges the `withdrawal` part of a tiered commission withdrawal (HB-WD-01) from
+/// `pallet-commission-core` into the bridge's outbound core
+/// (`pallet-bridge-ismp::do_outbound`: burn NEX from the Entity account → ISMP POST),
+/// keeping commission-core decoupled from the bridge crate (business→bridge, the dual
+/// of `NexusCrossOrderHandler`). The `u32` chain id maps to `StateMachine::Evm`; ERC20
+/// precision conversion (12→18) happens inside the bridge; `relayer_fee = 0` (entity
+/// prepays no ISMP fee in this baseline). All bridge guardrails (pause / per-tx / daily
+/// / chain registration / min / ED) apply automatically.
+/// 将分级佣金提现的 `withdrawal` 部分（HB-WD-01）从 `pallet-commission-core` 接到桥的
+/// 出站核心（`pallet-bridge-ismp::do_outbound`：从 Entity 账户 burn NEX → ISMP POST），
+/// 使 commission-core 与桥 crate 解耦（业务→桥，`NexusCrossOrderHandler` 的对偶）。`u32`
+/// 链 id 映射为 `StateMachine::Evm`；ERC20 精度换算（12→18）在桥内发生；`relayer_fee = 0`
+///（本底线下 entity 不预付 ISMP 费）。桥的全部护栏（暂停 / 单笔 / 单日 / 链注册 / 最小额 /
+/// ED）自动生效。
+pub struct NexusCommissionPayout;
+impl pallet_commission_core::CrossChainPayout<AccountId, Balance> for NexusCommissionPayout {
+    fn payout_native(
+        from: &AccountId,
+        evm_chain_id: u32,
+        recipient: [u8; 20],
+        amount: Balance,
+    ) -> Result<[u8; 32], sp_runtime::DispatchError> {
+        let commitment = pallet_bridge_ismp::Pallet::<Runtime>::do_outbound(
+            from,
+            StateMachine::Evm(evm_chain_id),
+            sp_core::H160(recipient),
+            amount,
+            0u128,
+        )?;
+        Ok(commitment.0)
+    }
+}
+
 /// `pallet-bridge-ismp` (Stage 2 / HB-ASSET-01): the self-built native-NEX asset
 /// bridge. It dispatches outbound requests through `pallet-hyperbridge` (per-byte
 /// fee + ISMP commit) and burns/mints native NEX directly via `Balances`. All

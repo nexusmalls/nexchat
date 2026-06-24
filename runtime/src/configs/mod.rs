@@ -2908,6 +2908,8 @@ impl pallet_commission_core::Config for Runtime {
     type AutoRepurchase = AutoRepurchaseBridge;
     /// 购物余额 TTL 最小值：100_800 ≈ 7 天（6 秒出块）
     type MinShoppingBalanceTtlBlocks = ConstU32<100_800>;
+    /// HB-WD-01: 跨链佣金提现端口（withdrawal 部分桥出为原生 NEX）
+    type CrossChainPayout = ismp::NexusCommissionPayout;
 }
 
 impl pallet_commission_referral::Config for Runtime {
