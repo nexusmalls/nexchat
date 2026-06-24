@@ -1,0 +1,67 @@
+[package]
+name = "pallet-bridge-ismp"
+version = "0.1.0"
+description = "Self-built ISMP asset bridge for native NEX (burn/mint), vendoring Hyper-Fungible-Token core logic (D3=(c))."
+license = "Apache-2.0"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "pallet_bridge_ismp"
+path = "src/lib.rs"
+
+[dependencies]
+codec = { workspace = true, features = ["derive"] }
+scale-info = { workspace = true, features = ["derive"] }
+log = { workspace = true }
+anyhow = { version = "1.0", default-features = false }
+thiserror = { version = "2", default-features = false }
+primitive-types = { version = "0.13.1", default-features = false }
+alloy-primitives = { version = "1.6.0", default-features = false }
+alloy-sol-macro = { version = "1.6.0" }
+alloy-sol-types = { version = "1.6.0", default-features = false }
+
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+sp-core = { workspace = true }
+sp-runtime = { workspace = true }
+
+ismp = { workspace = true }
+pallet-ismp = { workspace = true }
+
+[dev-dependencies]
+sp-io = { workspace = true, default-features = true }
+pallet-balances = { workspace = true, default-features = true }
+pallet-timestamp = { workspace = true, default-features = true }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"scale-info/std",
+	"log/std",
+	"anyhow/std",
+	"thiserror/std",
+	"primitive-types/std",
+	"alloy-primitives/std",
+	"alloy-sol-types/std",
+	"frame-support/std",
+	"frame-system/std",
+	"sp-core/std",
+	"sp-runtime/std",
+	"ismp/std",
+	"pallet-ismp/std",
+]
+try-runtime = [
+	"frame-support/try-runtime",
+	"frame-system/try-runtime",
+	"pallet-ismp/try-runtime",
+	"sp-runtime/try-runtime",
+]
+runtime-benchmarks = [
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+]

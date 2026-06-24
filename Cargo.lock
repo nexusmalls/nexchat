@@ -9513,6 +9513,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-bridge-ismp"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "frame-support",
+ "frame-system",
+ "ismp",
+ "log",
+ "pallet-balances",
+ "pallet-ismp",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "primitive-types 0.13.1",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "pallet-bridge-messages"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

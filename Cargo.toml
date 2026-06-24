@@ -71,6 +71,7 @@ members = [
     "pallets/inscription",
 # Bridge pallets (Hyperbridge / ISMP)
     "pallets/bridge/hyperbridge",
+    "pallets/bridge/ismp",
 ]
 resolver = "2"
 exclude = ["grouprobot"]
@@ -253,6 +254,13 @@ pallet-hyperbridge = { path = "./pallets/bridge/hyperbridge", default-features =
 # =2512.3.2 / grandpa-verifier 2512.1.0），故直接使用（无需 vendor）；其闭包为干净的
 # substrate/grandpa 代码。
 ismp-grandpa = { version = "2512.1.0", default-features = false }
+# `pallet-bridge-ismp` (Stage 2 / HB-ASSET-01): self-built native-NEX asset bridge.
+# D3=(c): vendors the audited HFT core (`Message` ABI, precision fns, on_accept /
+# on_timeout shape) and adapts it to a real burn/mint model for native NEX.
+# `pallet-bridge-ismp`（Stage 2 / HB-ASSET-01）：自建原生 NEX 资产桥。
+# D3=(c)：vendor HFT 已审计核心（`Message` ABI、精度函数、on_accept / on_timeout 形态），
+# 并改造为原生 NEX 的真 burn/mint 模型。
+pallet-bridge-ismp = { path = "./pallets/bridge/ismp", default-features = false }
 
 [patch.crates-io]
 ark-vrf = { git = "https://github.com/davxy/ark-vrf", tag = "v0.1.1" }
