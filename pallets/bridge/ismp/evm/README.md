@@ -58,6 +58,60 @@ above that floor. 精度：NEX 在 Nexus 为 12 位、EVM 为 18 位。pallet �
 18↔12 缩放；EVM 上低于 `10^(18-12)=10^6` 的 dust 会被截断，故 `MinBridgeAmount`
 远高于该下限。
 
+## Cross-order & withdraw payload (HB-ENT-01) / 跨链下单与提款负载
+
+For HB-ENT-01 the `Message.data` field is **non-empty** and carries a **SCALE-encoded**
+`InboundOp` (Substrate codec — *not* ABI). An empty `data` is still a plain asset
+transfer (Stage 2). `NexusDigitalOrderGateway.sol` shows the exact byte layout.
+
+HB-ENT-01 中 `Message.data` **非空**，携带 **SCALE 编码**的 `InboundOp`（Substrate codec，
+**非** ABI）。空 `data` 仍为纯资产转账（Stage 2）。`NexusDigitalOrderGateway.sol` 给出精确
+字节布局。
+
+SCALE rules used here: integers are **little-endian**, fixed arrays (`[u8; 20]`) have
+**no** length prefix, `Option<T>` is `0x00` (None) or `0x01 ++ T`, and an enum is a
+1-byte variant index followed by the variant body. SCALE 规则：整数**小端**，定长数组
+（`[u8; 20]`）**无**长度前缀，`Option<T>` 为 `0x00`（None）或 `0x01 ++ T`，枚举为 1 字节
+变体索引后接变体体。
+
+```text
+InboundOp = 0x00 ++ OrderIntent      // Order
+          | 0x01 ++ WithdrawRequest  // Withdraw
+
+OrderIntent (76 or 96 bytes):
+  schema_version : u8           (1)   // = 1
+  buyer_evm      : [u8;20]      (20)
+  product_id     : u64  LE      (8)
+  quantity       : u32  LE      (4)
+  amount_nex     : u128 LE      (16)  // = Message.amount in EVM precision
+  max_nex_amount : u128 LE      (16)  // slippage cap (EVM precision)
+  referrer       : Option<[u8;20]>    // 0x00 | 0x01 ++ 20 bytes
+  nonce          : u64  LE      (8)
+
+WithdrawRequest (65 bytes):
+  schema_version : u8           (1)   // = 1
+  owner_evm      : [u8;20]      (20)  // == msg.sender on the EVM gateway
+  amount_nex     : u128 LE      (16)  // EVM precision; Message.amount = 0
+  dest_recipient : [u8;20]      (20)
+  nonce          : u64  LE      (8)
+```
+
+Order: `Message.amount` = the NEX burned on the EVM side; the pallet mints to the
+derived buyer `blake2_256("nexus-evm" ++ buyer_evm)` and dispatches the digital order.
+Withdraw: `Message.amount` = 0; the pallet debits `blake2_256("nexus-evm" ++ owner_evm)`
+and POSTs the NEX back to `dest_recipient` (a plain transfer the NEX token contract mints).
+下单：`Message.amount` = EVM 侧销毁的 NEX；pallet 向派生买家
+`blake2_256("nexus-evm" ++ buyer_evm)` 铸造并派发数字下单。提款：`Message.amount` = 0；
+pallet 从 `blake2_256("nexus-evm" ++ owner_evm)` 扣款并将 NEX POST 回 `dest_recipient`
+（由 NEX 代币合约铸造的纯转账）。
+
+> **Authorisation / 鉴权**：a withdraw moves a derived account's funds, so the **EVM
+> gateway must enforce `msg.sender == owner_evm`** before dispatching. Nexus trusts the
+> registered source contract (the same allow-list as every inbound message) and only ever
+> debits the derived owner. 提款会动用派生账户资金，故 **EVM 网关须在派发前强制
+> `msg.sender == owner_evm`**。Nexus 信任已注册来源合约（与所有入站消息同一 allow-list），
+> 且只扣派生持有人本人。
+
 ## Peer identifiers (must match exactly) / 对端标识（必须完全一致）
 
 | Field / 字段 | Value / 取值 | Source / 来源 |

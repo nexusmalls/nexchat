@@ -94,6 +94,38 @@ Start conservative on testnet; raise after monitoring. Until set, all
 - Alert on `try_state` failure, on `BridgeRefunded` spikes (timeout/liveness), and
   on any inbound rejected for invariant violation.
 
+## Cross-chain digital ordering (HB-ENT-01) / 跨链数字下单
+
+On top of the asset bridge, an inbound message whose `Message.data` is **non-empty**
+carries a SCALE `InboundOp` (`src/types.rs`) instead of a plain transfer:
+
+资产桥之上，`Message.data` **非空**的入站消息携带 SCALE `InboundOp`（`src/types.rs`），
+而非纯转账：
+
+- **`InboundOp::Order(OrderIntent)`** — mints the bridged NEX to the derived buyer
+  `blake2_256("nexus-evm" ++ buyer_evm)` (within the in-flight ledger), then dispatches
+  `pallet-entity-order::do_cross_order` (Digital + Public only) in a nested storage
+  layer. On order failure the mint is **kept** as DerivedCredit and `on_accept` still
+  returns `Ok` (receipt persisted, no replay): "never burned without settlement".
+  向派生买家铸造已桥接 NEX，再在嵌套存储层内派发 `do_cross_order`（仅 Digital + Public）；
+  下单失败则保留铸造额为 DerivedCredit，且 `on_accept` 仍返回 `Ok`（持久化回执、不重放）。
+- **`InboundOp::Withdraw(WithdrawRequest)`** — debits the derived owner
+  `blake2_256("nexus-evm" ++ owner_evm)` and reuses the outbound core (`do_outbound`)
+  to POST the NEX back to the EVM `dest_recipient`. Authorisation is on the EVM gateway
+  (`msg.sender == owner_evm`) + the inbound source-contract allow-list.
+  从派生持有人扣款并复用出站核心将 NEX POST 回 EVM `dest_recipient`；鉴权在 EVM 网关
+  （`msg.sender == owner_evm`）+ 入站来源合约 allow-list。
+
+Wiring: `EvmToSubstrate = NexusEvmDerivation` (blake2) and `CrossOrderHandler =
+NexusCrossOrderHandler` (→ `pallet-entity-order`) in `runtime/src/configs/ismp.rs`.
+The exact `data` byte layout and the EVM `NexusDigitalOrderGateway` reference contract
+are in `./evm/README.md` and `./evm/NexusDigitalOrderGateway.sol`.
+
+> Sybil (G-ENT-1): the referrer is honoured if supplied, but the first phase
+> recommends `referrer = None` on the EVM side; level/commission rules are unchanged
+> (driven by real spend), so derived accounts gain nothing without paying. Sybil
+> 风控（G-ENT-1）：传入则采用 referrer，但首期建议 EVM 侧置空；等级/佣金规则不变。
+
 ## Weights / 权重
 
 `weights.rs` ships conservative DB-weight-based estimates in
@@ -117,5 +149,7 @@ cargo test -p pallet-bridge-ismp --features runtime-benchmarks  # + benchmark bo
 
 - **G-B3** canonical state-machine / coprocessor / EVM `Host` addresses.
 - **G-A1-2** tokenomics sign-off for `TotalIssuance` movement.
-- EVM `NEX` contract deployment + **independent security audit**.
+- EVM `NEX` contract deployment + **independent security audit** (now also covering
+  the HB-ENT-01 order/withdraw `data` path + EVM gateway).
 - Testnet Nexus↔BSC round-trip + off-chain reconciliation alerting.
+- **G-ENT-1/2** Sybil + pricing sign-off for cross-chain ordering.
