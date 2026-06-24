@@ -1082,6 +1082,64 @@ impl<AccountId> ParticipationGuard<AccountId> for () {
     }
 }
 
+// ============================================================================
+// CrossChainPayout — 原生 NEX 跨链派发端口 (HB-WD-01)
+// CrossChainPayout — cross-chain native-NEX payout port (HB-WD-01)
+// ============================================================================
+
+/// Cross-chain native-NEX payout port (HB-WD-01).
+/// 原生 NEX 跨链派发端口（HB-WD-01）。
+///
+/// `pallet-commission-core` calls this to bridge the *withdrawal* part of a
+/// promoter's NEX commission out to an EVM chain, where the promoter receives
+/// native NEX (and self-swaps to a stablecoin). The runtime wires it to the
+/// bridge's outbound core (`pallet-bridge-ismp::do_outbound`: burn NEX → ISMP
+/// POST), keeping commission-core decoupled from the bridge crate. This is the
+/// business→bridge counterpart of the bridge→business
+/// `CrossChainOrderHandler` used by HB-ENT-01.
+/// `pallet-commission-core` 经此把推广员 NEX 佣金的「withdrawal」部分桥到某 EVM 链，
+/// 推广员在该链收到原生 NEX（自行换稳定币）。runtime 将其对接桥的出站核心
+///（`pallet-bridge-ismp::do_outbound`：burn NEX → ISMP POST），使 commission-core
+/// 不直接依赖桥 crate。这是 HB-ENT-01 中 `CrossChainOrderHandler`（桥→业务）的对偶
+///（业务→桥）。
+///
+/// Amounts are passed in local NEX precision (`Balance`); ERC20 precision
+/// conversion (12→18) happens inside the bridge. On success returns the ISMP
+/// request commitment (32 bytes). Must be invoked inside a transactional layer
+/// (extrinsics auto-wrap) so a returned error rolls back the burn and the
+/// pending decrement together.
+/// 金额以本地 NEX 精度（`Balance`）传入；ERC20 精度换算（12→18）在桥内发生。
+/// 成功返回 ISMP 请求 commitment（32 字节）。须在事务层内调用（extrinsic 自动包裹），
+/// 以便返回错误时一并回滚 burn 与 pending 扣减。
+pub trait CrossChainPayout<AccountId, Balance> {
+    /// Bridge `amount` NEX out of `from`, minting native NEX to `recipient` on
+    /// the EVM chain identified by `evm_chain_id`.
+    /// 从 `from` 桥出 `amount` NEX，在 `evm_chain_id` 标识的 EVM 链向 `recipient`
+    /// 铸造原生 NEX。
+    fn payout_native(
+        from: &AccountId,
+        evm_chain_id: u32,
+        recipient: [u8; 20],
+        amount: Balance,
+    ) -> Result<[u8; 32], sp_runtime::DispatchError>;
+}
+
+/// Default `()`: cross-chain payout disabled — every attempt fails (and, because
+/// the caller runs in a transactional layer, leaves pending untouched).
+/// 默认 `()`：未接线即关闭跨链提现——所有尝试失败（且因调用方在事务层内，pending 不动）。
+impl<AccountId, Balance> CrossChainPayout<AccountId, Balance> for () {
+    fn payout_native(
+        _from: &AccountId,
+        _evm_chain_id: u32,
+        _recipient: [u8; 20],
+        _amount: Balance,
+    ) -> Result<[u8; 32], sp_runtime::DispatchError> {
+        Err(sp_runtime::DispatchError::Other(
+            "cross-chain payout not configured",
+        ))
+    }
+}
+
 /// 空 TokenCommissionProvider 实现
 pub struct NullTokenCommissionProvider;
 
