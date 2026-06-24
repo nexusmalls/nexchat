@@ -8589,6 +8589,7 @@ dependencies = [
  "pallet-authorship",
  "pallet-babe",
  "pallet-balances",
+ "pallet-bridge-ismp",
  "pallet-chat-common",
  "pallet-chat-core",
  "pallet-chat-group",

@@ -6,18 +6,20 @@
 //! vendored `pallet-hyperbridge` (host-param / fee module that receives governance
 //! updates from the Hyperbridge coprocessor) — vendored under D3=(c) because the
 //! published crate does not compile against the only available `ismp 2512.1.0` (the
-//! matching `ismp 2512.0.0` was yanked). One component is still deferred:
-//!   - `ismp-grandpa` — GRANDPA consensus client used to verify Hyperbridge proofs.
-//! Asset bridging (`pallet-bridge-ismp`, vendored from HFT per D3=(c)) is added in
-//! Stage 2. See `docs/HYPERBRIDGE_INTEGRATION.md` §13 for the supply-chain rationale.
+//! matching `ismp 2512.0.0` was yanked). Stage 1b-2 wires `ismp-grandpa` (the
+//! GRANDPA consensus client used to verify Hyperbridge proofs). Stage 2 wires
+//! `pallet-bridge-ismp` (the self-built native-NEX asset bridge, vendoring the HFT
+//! core per D3=(c)). See `docs/HYPERBRIDGE_INTEGRATION.md` §13 for the supply-chain
+//! rationale and `docs/HB_ASSET_01_NEX_HFT_DEV_SPEC.md` for the bridge design.
 //!
 //! Stage 1a 已接入 ISMP 核心引擎 `pallet-ismp`（请求/响应、host、dispatcher、共识状态
 //! 存储）及其 runtime API。Stage 1b 加入 vendor 的 `pallet-hyperbridge`（host-param / 费用
 //! 模块，接收 Hyperbridge 协处理器的治理更新）——按 D3=(c) vendor，因为已发布 crate 无法对
 //! 唯一可用的 `ismp 2512.1.0` 编译（对应的 `ismp 2512.0.0` 已被 yank）。仍暂缓一个组件：
-//!   - `ismp-grandpa`——用于验证 Hyperbridge 证明的 GRANDPA 共识客户端。
-//! 资产桥（`pallet-bridge-ismp`，按 D3=(c) 从 HFT vendor）在 Stage 2 引入。
-//! 供应链原因见 `docs/HYPERBRIDGE_INTEGRATION.md` §13。
+//! Stage 1b-2 接入 `ismp-grandpa`（用于验证 Hyperbridge 证明的 GRANDPA 共识客户端）。
+//! Stage 2 接入 `pallet-bridge-ismp`（自建原生 NEX 资产桥，按 D3=(c) vendor HFT 核心）。
+//! 供应链原因见 `docs/HYPERBRIDGE_INTEGRATION.md` §13，桥设计见
+//! `docs/HB_ASSET_01_NEX_HFT_DEV_SPEC.md`。
 
 use alloc::{boxed::Box, vec::Vec};
 
@@ -25,7 +27,9 @@ use frame_support::parameter_types;
 use frame_system::EnsureRoot;
 use ismp::{host::StateMachine, module::IsmpModule, router::IsmpRouter};
 
-use crate::{AccountId, Balance, Balances, Runtime, Timestamp};
+use crate::{
+	AccountId, Balance, Balances, BlockNumber, RuntimeEvent, Runtime, Timestamp, DAYS, MILLI_NEX,
+};
 
 parameter_types! {
     /// The state machine identifier for this host chain. Remote chains and the
@@ -66,10 +70,14 @@ pub struct Router;
 
 impl IsmpRouter for Router {
     fn module_for_id(&self, id: Vec<u8>) -> Result<Box<dyn IsmpModule>, anyhow::Error> {
-        match id.as_slice() {
-            pallet_hyperbridge::PALLET_HYPERBRIDGE_ID =>
-                Ok(Box::new(pallet_hyperbridge::Pallet::<Runtime>::default())),
-            _ => Err(anyhow::anyhow!("No ISMP module registered for id {:?}", id)),
+        if id.as_slice() == pallet_hyperbridge::PALLET_HYPERBRIDGE_ID {
+            Ok(Box::new(pallet_hyperbridge::Pallet::<Runtime>::default()))
+        } else if id == pallet_bridge_ismp::module_id_bytes() {
+            // Stage 2: route the NEX asset bridge's well-known module id to its pallet.
+            // Stage 2：将 NEX 资产桥的 well-known 模块 id 路由到其 pallet。
+            Ok(Box::new(pallet_bridge_ismp::Pallet::<Runtime>::default()))
+        } else {
+            Err(anyhow::anyhow!("No ISMP module registered for id {:?}", id))
         }
     }
 }
@@ -118,4 +126,47 @@ impl ismp_grandpa::Config for Runtime {
     type IsmpHost = pallet_ismp::Pallet<Runtime>;
     type WeightInfo = ();
     type RootOrigin = EnsureRoot<AccountId>;
+}
+
+parameter_types! {
+    /// Native NEX decimals (NEX = 10^12). Used for ERC↔local precision conversion.
+    /// 原生 NEX 精度（NEX = 10^12）。用于 ERC↔本地精度换算。
+    pub const BridgeNativeDecimals: u8 = 12;
+
+    /// Minimum bridge amount: `MILLI_NEX` (0.001 NEX = 10^9 planck). Comfortably
+    /// above the `10^(18-12) = 10^6` precision floor so inbound 18→12 conversion
+    /// never truncates to zero (HB-ASSET-01 §3A.5 / G-A1-1).
+    /// 最小桥接额：`MILLI_NEX`（0.001 NEX = 10^9 planck）。远高于 `10^(18-12)=10^6`
+    /// 精度下限，保证入站 18→12 换算不会被截断为 0（HB-ASSET-01 §3A.5 / G-A1-1）。
+    pub const BridgeMinAmount: Balance = MILLI_NEX;
+
+    /// Rolling daily-limit window length (one day in blocks).
+    /// 滚动单日限额窗口长度（一天的区块数）。
+    pub const BridgeDailyWindow: BlockNumber = DAYS;
+
+    /// Outbound ISMP request timeout in seconds (1 hour).
+    /// 出站 ISMP 请求超时（秒，1 小时）。
+    pub const BridgeRequestTimeout: u64 = 60 * 60;
+}
+
+/// `pallet-bridge-ismp` (Stage 2 / HB-ASSET-01): the self-built native-NEX asset
+/// bridge. It dispatches outbound requests through `pallet-hyperbridge` (per-byte
+/// fee + ISMP commit) and burns/mints native NEX directly via `Balances`. All
+/// limits start at zero and no chains are registered, so the bridge is inert until
+/// governance (`BridgeOrigin`) calls `register_chain` + `set_limits`.
+/// `pallet-bridge-ismp`（Stage 2 / HB-ASSET-01）：自建原生 NEX 资产桥。出站请求经
+/// `pallet-hyperbridge`（按字节费用 + ISMP 提交）派发，并直接经 `Balances` 对原生 NEX
+/// burn/mint。限额初始为 0 且未注册任何链，故在治理（`BridgeOrigin`）调用
+/// `register_chain` + `set_limits` 之前桥处于停用状态。
+impl pallet_bridge_ismp::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Dispatcher = pallet_hyperbridge::Pallet<Runtime>;
+    type NativeCurrency = Balances;
+    type EvmToSubstrate = ();
+    type NativeDecimals = BridgeNativeDecimals;
+    type MinBridgeAmount = BridgeMinAmount;
+    type DailyLimitWindow = BridgeDailyWindow;
+    type RequestTimeout = BridgeRequestTimeout;
+    type BridgeOrigin = EnsureRoot<AccountId>;
+    type WeightInfo = ();
 }

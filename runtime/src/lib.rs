@@ -478,4 +478,9 @@ mod runtime {
     // Stage 1b-2：`ismp-grandpa` GRANDPA 共识客户端（已发布 2512.1.0）。
     #[runtime::pallet_index(172)]
     pub type IsmpGrandpa = ismp_grandpa;
+
+    // Stage 2 / HB-ASSET-01: self-built native-NEX asset bridge (burn/mint, D3=(c)).
+    // Stage 2 / HB-ASSET-01：自建原生 NEX 资产桥（burn/mint，D3=(c)）。
+    #[runtime::pallet_index(173)]
+    pub type BridgeIsmp = pallet_bridge_ismp;
 }

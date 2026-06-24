@@ -115,6 +115,9 @@ pallet-hyperbridge = { workspace = true }
 # `ismp-grandpa` 2512.1.0: published against ismp 2512.1.0, used directly (no vendor).
 # `ismp-grandpa` 2512.1.0：按 ismp 2512.1.0 发布，直接使用（无需 vendor）。
 ismp-grandpa = { workspace = true }
+# Stage 2 / HB-ASSET-01: self-built native-NEX asset bridge (vendors HFT core, D3=(c)).
+# Stage 2 / HB-ASSET-01：自建原生 NEX 资产桥（vendor HFT 核心，D3=(c)）。
+pallet-bridge-ismp = { workspace = true }
 anyhow = { version = "1.0", default-features = false }
 scale-info = { features = ["derive", "serde"], workspace = true }
 serde_json = { workspace = true, default-features = false, features = ["alloc"] }
@@ -157,6 +160,7 @@ std = [
 	"pallet-ismp-runtime-api/std",
 	"pallet-hyperbridge/std",
 	"ismp-grandpa/std",
+	"pallet-bridge-ismp/std",
 	"anyhow/std",
 	"pallet-babe/std",
 	"pallet-balances/std",
