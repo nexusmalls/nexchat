@@ -428,7 +428,7 @@ pub mod pallet {
 		/// 真销毁 `amount` NEX（`KeepAlive`、`TotalIssuance↓`）、记在途账本、派发携带 vendor
 		/// [`Message`] ABI 的 ISMP POST，并返回请求 commitment。调用方须在存储层内执行
 		///（extrinsic 自动包裹；入站提款显式包裹），以便派发失败时回滚销毁与账本。
-		pub(crate) fn do_outbound(
+		pub fn do_outbound(
 			who: &T::AccountId,
 			dest: StateMachine,
 			recipient: H160,
