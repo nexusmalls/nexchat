@@ -55,6 +55,52 @@ fn place_order_digital_auto_completes() {
     });
 }
 
+// ==================== do_cross_order (HB-ENT-01) ====================
+
+#[test]
+fn do_cross_order_digital_public_completes() {
+    new_test_ext().execute_with(|| {
+        // Derived buyer (no funds); bridge-funded payer (PAYER). Product 2 =
+        // Digital + Public, so the order settles instantly.
+        let derived_buyer: u64 = 777;
+        assert_ok!(Transaction::do_cross_order(
+            derived_buyer,
+            PAYER,
+            2, // digital product
+            1, // quantity
+            u64::MAX, // max_nex_amount (slippage cap)
+            None,     // referrer
+        ));
+
+        let order = Transaction::orders(1).expect("order should exist");
+        assert_eq!(order.buyer, derived_buyer);
+        assert_eq!(order.status, OrderStatus::Completed);
+        assert_eq!(order.payment_asset, pallet_entity_common::PaymentAsset::Native);
+    });
+}
+
+#[test]
+fn do_cross_order_rejects_non_digital() {
+    new_test_ext().execute_with(|| {
+        // Product 1 = Physical → must be rejected before any payment.
+        assert_noop!(
+            Transaction::do_cross_order(777, PAYER, 1, 1, u64::MAX, None),
+            Error::<Test>::CrossOrderDigitalOnly
+        );
+    });
+}
+
+#[test]
+fn do_cross_order_rejects_non_public() {
+    new_test_ext().execute_with(|| {
+        set_product_visibility(2, pallet_entity_common::ProductVisibility::MembersOnly);
+        assert_noop!(
+            Transaction::do_cross_order(777, PAYER, 2, 1, u64::MAX, None),
+            Error::<Test>::CrossOrderPublicOnly
+        );
+    });
+}
+
 #[test]
 fn place_order_service_works() {
     new_test_ext().execute_with(|| {

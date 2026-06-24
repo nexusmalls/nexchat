@@ -662,6 +662,12 @@ pub mod pallet {
         ShopInactive,
         /// 代付人不能是卖家
         PayerCannotBeSeller,
+        /// Cross-chain order targets a non-Digital product (HB-ENT-01 first phase
+        /// only supports Digital). 跨链下单指向了非 Digital 商品（HB-ENT-01 首期仅支持 Digital）。
+        CrossOrderDigitalOnly,
+        /// Cross-chain order targets a non-Public product (HB-ENT-01 first phase
+        /// only supports Public). 跨链下单指向了非 Public 商品（HB-ENT-01 首期仅支持 Public）。
+        CrossOrderPublicOnly,
         /// 非订单参与者（buyer/payer）
         NotOrderParticipant,
         /// 代付人订单索引已满
@@ -1487,6 +1493,51 @@ pub mod pallet {
                 None,                                // referrer
                 None,                                // max_nex_amount
                 None,                                // max_token_amount
+            )?;
+            Ok(order_id)
+        }
+
+        /// Cross-chain Digital order entry (HB-ENT-01), callable only by the
+        /// bridge layer. Wraps [`do_place_order`] with a fixed Native payment
+        /// channel and a bridge-funded `payer`, and restricts the target to
+        /// `ProductCategory::Digital` + `ProductVisibility::Public` so the order
+        /// settles instantly with no buyer-confirmation / dispute lifecycle.
+        ///
+        /// 跨链 Digital 下单入口（HB-ENT-01），仅供桥层调用。以固定的 Native 支付通道与
+        /// 由桥出资的 `payer` 包装 [`do_place_order`]，并限定目标为
+        /// `ProductCategory::Digital` + `ProductVisibility::Public`，使订单即时完成、
+        /// 无需买家确认 / 争议生命周期。
+        pub fn do_cross_order(
+            buyer: T::AccountId,
+            payer: T::AccountId,
+            product_id: u64,
+            quantity: u32,
+            max_nex_amount: BalanceOf<T>,
+            referrer: Option<T::AccountId>,
+        ) -> Result<u64, sp_runtime::DispatchError> {
+            let product_info = T::ProductProvider::get_product_info(product_id)
+                .ok_or(Error::<T>::ProductNotFound)?;
+            ensure!(
+                product_info.category == ProductCategory::Digital,
+                Error::<T>::CrossOrderDigitalOnly
+            );
+            ensure!(
+                product_info.visibility == ProductVisibility::Public,
+                Error::<T>::CrossOrderPublicOnly
+            );
+            let order_id = NextOrderId::<T>::get();
+            Self::do_place_order(
+                buyer,
+                Some(payer),
+                product_id,
+                quantity,
+                None,                        // shipping_cid
+                None,                        // use_tokens
+                Some(PaymentAsset::Native),  // payment_asset
+                None,                        // note_cid
+                referrer,
+                Some(max_nex_amount),        // max_nex_amount (slippage cap)
+                None,                        // max_token_amount
             )?;
             Ok(order_id)
         }
