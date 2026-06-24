@@ -18,6 +18,7 @@ use super::*;
 use crate::types::AnchorId;
 use crate::Pallet as ChatSync;
 use frame_benchmarking::v2::*;
+use sp_runtime::Saturating;
 use frame_support::{
     traits::{Currency, Get},
     BoundedVec,

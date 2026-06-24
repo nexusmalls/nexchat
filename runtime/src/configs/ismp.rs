@@ -168,5 +168,5 @@ impl pallet_bridge_ismp::Config for Runtime {
     type DailyLimitWindow = BridgeDailyWindow;
     type RequestTimeout = BridgeRequestTimeout;
     type BridgeOrigin = EnsureRoot<AccountId>;
-    type WeightInfo = ();
+    type WeightInfo = pallet_bridge_ismp::weights::SubstrateWeight<Runtime>;
 }

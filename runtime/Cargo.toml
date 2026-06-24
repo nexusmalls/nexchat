@@ -326,6 +326,8 @@ runtime-benchmarks = [
 	"pallet-ads-core/runtime-benchmarks",
 	"pallet-ads-entity/runtime-benchmarks",
 	"pallet-ads-grouprobot/runtime-benchmarks",
+	# Bridge (Hyperbridge / ISMP)
+	"pallet-bridge-ismp/runtime-benchmarks",
 ]
 
 try-runtime = [
@@ -366,6 +368,8 @@ try-runtime = [
 	"pallet-chat-inbox/try-runtime",
 	"pallet-chat-sync/try-runtime",
 	"pallet-msg-identity/try-runtime",
+	# Bridge (Hyperbridge / ISMP): enables the `try_state` ledger invariant
+	"pallet-bridge-ismp/try-runtime",
 ]
 
 # Enable the metadata hash generation.

@@ -75,6 +75,9 @@ frame_benchmarking::define_benchmarks!(
     [pallet_ads_entity, AdsEntity]
     [pallet_ads_grouprobot, AdsGroupRobot]
 
+    // Bridge (Hyperbridge / ISMP)
+    [pallet_bridge_ismp, BridgeIsmp]
+
     // Chat
     [pallet_chat_group, ChatGroup]
     [pallet_chat_core, ChatCore]
