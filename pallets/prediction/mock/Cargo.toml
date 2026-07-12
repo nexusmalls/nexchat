@@ -1,0 +1,42 @@
+[package]
+name = "prediction-mock-runtime"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+license = "MIT-0"
+description = "Shared mock runtime for Nexus prediction pallet unit tests"
+
+[dependencies]
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+log = { workspace = true }
+orml-currencies = { workspace = true }
+orml-tokens = { workspace = true }
+orml-traits = { workspace = true }
+pallet-assets = { workspace = true }
+pallet-balances = { workspace = true }
+pallet-timestamp = { workspace = true }
+parity-scale-codec = { workspace = true, features = ["derive"] }
+scale-info = { workspace = true, features = ["derive"] }
+sp-io = { workspace = true }
+sp-runtime = { workspace = true }
+env_logger = { workspace = true }
+zeitgeist-primitives = { workspace = true, features = ["mock"] }
+
+[features]
+default = ["std"]
+std = [
+    "frame-support/std",
+    "frame-system/std",
+    "orml-currencies/std",
+    "orml-tokens/std",
+    "orml-traits/std",
+    "pallet-assets/std",
+    "pallet-balances/std",
+    "pallet-timestamp/std",
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "sp-io/std",
+    "sp-runtime/std",
+    "zeitgeist-primitives/std",
+]

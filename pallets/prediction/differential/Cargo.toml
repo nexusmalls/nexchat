@@ -1,0 +1,40 @@
+[package]
+name = "prediction-differential"
+version = "0.1.0"
+description = "Behavioral differential baseline harness for the Nexus prediction port"
+license = "MIT-0"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+frame-support = { workspace = true }
+orml-traits = { workspace = true }
+sp-arithmetic = { workspace = true }
+sp-runtime = { workspace = true }
+zeitgeist-primitives = { workspace = true, features = ["mock"] }
+zrml-authorized = { workspace = true }
+zrml-market-commons = { workspace = true }
+zrml-prediction-markets = { workspace = true, features = ["mock"] }
+
+[dev-dependencies]
+sp-io = { workspace = true, features = ["std"] }
+
+[features]
+default = ["std"]
+std = [
+    "frame-support/std",
+    "orml-traits/std",
+    "sp-arithmetic/std",
+    "sp-io/std",
+    "sp-runtime/std",
+    "zeitgeist-primitives/std",
+    "zrml-authorized/std",
+    "zrml-market-commons/std",
+    "zrml-prediction-markets/std",
+]

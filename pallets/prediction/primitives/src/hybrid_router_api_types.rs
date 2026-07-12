@@ -1,0 +1,69 @@
+// Copyright 2024-2025 Forecasting Technologies LTD.
+//
+// This file is part of Zeitgeist.
+//
+// Zeitgeist is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the
+// Free Software Foundation, either version 3 of the License, or (at
+// your option) any later version.
+//
+// Zeitgeist is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+// General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Zeitgeist. If not, see <https://www.gnu.org/licenses/>.
+
+use frame_support::pallet_prelude::*;
+use scale_info::TypeInfo;
+
+/// AMM trade amounts returned by the hybrid router.
+/// 混合路由返回的 AMM 成交数量。
+#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]
+pub struct AmmTrade<Balance> {
+    pub amount_in: Balance,
+    pub amount_out: Balance,
+    pub swap_fee_amount: Balance,
+    pub external_fee_amount: Balance,
+}
+
+/// External fee charged to an account during a routed trade.
+/// 路由成交期间向账户收取的外部费用。
+#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]
+pub struct ExternalFee<AccountId, Balance> {
+    pub account: AccountId,
+    pub amount: Balance,
+}
+
+/// Filled amounts and external fee returned by an orderbook trade.
+/// 订单簿成交返回的成交数量与外部费用。
+#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]
+pub struct OrderbookTrade<AccountId, Balance> {
+    pub filled_maker_amount: Balance,
+    pub filled_taker_amount: Balance,
+    pub external_fee: ExternalFee<AccountId, Balance>,
+}
+
+pub trait FailSoft {}
+
+#[derive(Debug)]
+pub enum AmmSoftFail {
+    Numerical,
+}
+
+impl FailSoft for AmmSoftFail {}
+
+#[derive(Debug)]
+pub enum OrderbookSoftFail {
+    BelowMinimumBalance,
+    PartialFillNearFullFillNotAllowed,
+}
+
+impl FailSoft for OrderbookSoftFail {}
+
+#[derive(Debug)]
+pub enum ApiError<S: FailSoft> {
+    SoftFailure(S),
+    HardFailure(DispatchError),
+}

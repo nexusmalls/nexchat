@@ -52,6 +52,40 @@ members = [
 # Common libraries (共享工具库，非 pallet)
     "common/crypto",
     "common/media",
+# Prediction Phase 0/1
+    "pallets/prediction/macros",
+    "pallets/prediction/primitives",
+    "pallets/prediction/control",
+    "pallets/prediction/collateral",
+    "pallets/prediction/market-commons",
+    "pallets/prediction/authorized",
+    "pallets/prediction/global-disputes",
+    "pallets/prediction/court",
+    "pallets/prediction/prediction-markets",
+    "pallets/prediction/prediction-markets/runtime-api",
+    "pallets/prediction/combinatorial-tokens",
+    "pallets/prediction/combinatorial-tokens/fuzz",
+    "pallets/prediction/orderbook",
+    "pallets/prediction/orderbook/fuzz",
+    "pallets/prediction/parimutuel",
+    "pallets/prediction/styx",
+    "pallets/prediction/neo-swaps",
+    "pallets/prediction/neo-swaps/fuzz",
+    "pallets/prediction/hybrid-router",
+    "pallets/prediction/swaps",
+    "pallets/prediction/swaps/runtime-api",
+    "pallets/prediction/swaps/rpc",
+    "pallets/prediction/swaps/fuzz",
+    "pallets/prediction/futarchy",
+    "pallets/prediction/futarchy/fuzz",
+    "pallets/prediction/mock",
+    "pallets/prediction/differential",
+    "pallets/prediction/smoke",
+    "pallets/prediction/vendor/orml/utilities",
+    "pallets/prediction/vendor/orml/traits",
+    "pallets/prediction/vendor/orml/tokens",
+    "pallets/prediction/vendor/orml/currencies",
+    "pallets/prediction/vendor/hydra-dx-math",
     "runtime",
 # Ads pallets (通用广告系统)
     "pallets/ads/primitives",
@@ -72,6 +106,8 @@ members = [
 # Bridge pallets (Hyperbridge / ISMP)
     "pallets/bridge/hyperbridge",
     "pallets/bridge/ismp",
+    "pallets/bridge/hft",
+    "pallets/bridge/usdx",
 ]
 resolver = "2"
 exclude = ["grouprobot"]
@@ -88,6 +124,39 @@ pallet-storage-service = { path = "./pallets/storage/service", default-features 
 # Common libraries (共享工具库，非 pallet)
 pallet-crypto-common = { path = "./common/crypto", default-features = false }
 media-utils = { path = "./common/media", default-features = false }
+# Prediction Phase 0/1
+zeitgeist-macros = { path = "./pallets/prediction/macros", default-features = false }
+zeitgeist-primitives = { path = "./pallets/prediction/primitives", default-features = false }
+pallet-prediction-control = { path = "./pallets/prediction/control", default-features = false }
+pallet-prediction-collateral = { path = "./pallets/prediction/collateral", default-features = false }
+zrml-market-commons = { path = "./pallets/prediction/market-commons", default-features = false }
+zrml-authorized = { path = "./pallets/prediction/authorized", default-features = false }
+zrml-global-disputes = { path = "./pallets/prediction/global-disputes", default-features = false }
+zrml-court = { path = "./pallets/prediction/court", default-features = false }
+zrml-prediction-markets = { path = "./pallets/prediction/prediction-markets", default-features = false }
+zrml-prediction-markets-runtime-api = { path = "./pallets/prediction/prediction-markets/runtime-api", default-features = false }
+zrml-combinatorial-tokens = { path = "./pallets/prediction/combinatorial-tokens", default-features = false }
+zrml-orderbook = { path = "./pallets/prediction/orderbook", default-features = false }
+zrml-parimutuel = { path = "./pallets/prediction/parimutuel", default-features = false }
+zrml-styx = { path = "./pallets/prediction/styx", default-features = false }
+zrml-neo-swaps = { path = "./pallets/prediction/neo-swaps", default-features = false }
+zrml-hybrid-router = { path = "./pallets/prediction/hybrid-router", default-features = false }
+zrml-swaps = { path = "./pallets/prediction/swaps", default-features = false }
+zrml-swaps-runtime-api = { path = "./pallets/prediction/swaps/runtime-api", default-features = false }
+# Host-only RPC crate; retain its std defaults like the upstream API/client convention.
+# 仅宿主侧 RPC crate；按上游 API/客户端惯例保留 std 默认特性。
+zrml-swaps-rpc = { path = "./pallets/prediction/swaps/rpc" }
+zrml-swaps-fuzz = { path = "./pallets/prediction/swaps/fuzz" }
+zrml-futarchy = { path = "./pallets/prediction/futarchy", default-features = false }
+zrml-futarchy-fuzz = { path = "./pallets/prediction/futarchy/fuzz" }
+prediction-mock-runtime = { path = "./pallets/prediction/mock", default-features = false }
+prediction-differential = { path = "./pallets/prediction/differential", default-features = false }
+prediction-phase0-smoke = { path = "./pallets/prediction/smoke", default-features = false }
+orml-utilities = { path = "./pallets/prediction/vendor/orml/utilities", default-features = false }
+orml-traits = { path = "./pallets/prediction/vendor/orml/traits", default-features = false }
+orml-tokens = { path = "./pallets/prediction/vendor/orml/tokens", default-features = false }
+orml-currencies = { path = "./pallets/prediction/vendor/orml/currencies", default-features = false }
+hydra-dx-math = { path = "./pallets/prediction/vendor/hydra-dx-math", default-features = false }
 # Evidence pallet
 pallet-dispute-evidence = { path = "./pallets/dispute/evidence", default-features = false }
 # Arbitration pallet
@@ -141,8 +210,32 @@ pallet-grouprobot-subscription = { path = "./pallets/grouprobot/subscription", d
 pallet-grouprobot-rewards = { path = "./pallets/grouprobot/rewards", default-features = false }
 # Inscription pallet (创世铭文)
 pallet-inscription = { path = "./pallets/inscription", default-features = false }
+# USDX PSM
+pallet-usdx = { path = "./pallets/bridge/usdx", default-features = false }
 # Additional dependencies
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
+arbitrary = { version = "1.3.2", default-features = false }
+approx = "0.5.1"
+ark-bn254 = { version = "0.5.0", default-features = false, features = ["curve"] }
+ark-ff = { version = "0.5.0", default-features = false }
+criterion = "0.5.1"
+env_logger = "0.11.8"
+fixed = { version = "=1.15.0", default-features = false, features = ["num-traits"] }
+hex-literal = { version = "0.4.1", default-features = false }
+impl-trait-for-tuples = "0.2.2"
+libfuzzer-sys = "0.4.7"
+more-asserts = "0.3.1"
+num-traits = { version = "0.2.18", default-features = false }
+paste = "1.0"
+primitive-types = { version = "0.13.1", default-features = false }
+proptest = "1.0.40"
+rstest = "0.25.0"
+rand = { version = "0.8.5", default-features = false }
+rand_chacha = { version = "0.3.1", default-features = false }
+rand_xoshiro = "0.6.0"
+rug = { version = "1.17.0", features = ["num-traits"] }
+test-case = "3.3.1"
+typenum = { version = "1.17.0", default-features = false }
 sp-application-crypto = { version = "44.0.0", default-features = false }
 clap = { version = "4.5.13" }
 frame-benchmarking-cli = { version = "53.0.0", default-features = false }
@@ -152,6 +245,7 @@ futures = { version = "0.3.31" }
 jsonrpsee = { version = "0.24.3" }
 pallet-transaction-payment = { version = "45.0.0", default-features = false }
 pallet-assets = { version = "48.1.0", default-features = false }
+pallet-elections-phragmen = { version = "46.0.0", default-features = false }
 pallet-insecure-randomness-collective-flip = { version = "33.0.0", default-features = false }
 pallet-transaction-payment-rpc = { version = "48.0.0", default-features = false }
 sc-basic-authorship = { version = "0.53.0", default-features = false }
@@ -186,6 +280,7 @@ sp-timestamp = { version = "40.0.0", default-features = false }
 substrate-frame-rpc-system = { version = "49.0.0", default-features = false }
 substrate-build-script-utils = { version = "11.0.0", default-features = false }
 codec = { version = "3.7.4", default-features = false, package = "parity-scale-codec" }
+parity-scale-codec = { version = "3.7.4", default-features = false }
 frame-benchmarking = { version = "45.0.3", default-features = false }
 frame-election-provider-support = { version = "45.0.0", default-features = false }
 frame-executive = { version = "45.0.1", default-features = false }
@@ -209,6 +304,7 @@ pallet-im-online = { version = "44.0.0", default-features = false }
 pallet-collective = { version = "45.0.0", default-features = false }
 pallet-collective-membership = { package = "pallet-membership", version = "45.0.0", default-features = false }
 pallet-timestamp = { version = "44.0.0", default-features = false }
+pallet-treasury = { version = "44.0.0", default-features = false }
 pallet-contracts = { version = "45.0.1", default-features = false }
 pallet-transaction-payment-rpc-runtime-api = { version = "45.0.0", default-features = false }
 scale-info = { version = "2.11.6", default-features = false }
@@ -222,6 +318,7 @@ sp-transaction-pool = { version = "40.0.0", default-features = false }
 sp-version = { version = "43.0.0", default-features = false }
 substrate-wasm-builder = { version = "31.1.0", default-features = false }
 sp-std = { version = "14.0.0", default-features = false }
+xcm = { package = "staging-xcm", version = "21.0.0", default-features = false }
 log = { version = "0.4.22", default-features = false }
 lite-json = { version = "0.2", default-features = false }
 serde = { version = "1.0.215", default-features = false, features = ["derive"] }
@@ -229,12 +326,17 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 # Hyperbridge / ISMP 协议层（D2 已对齐 stable2512）。
 # Hyperbridge / ISMP protocol layer (aligned to stable2512 via D2).
 # Stage 1a wires the available, coherent ISMP core: `ismp 2512.1.0` +
-# `pallet-ismp 2512.2.0` + `pallet-ismp-runtime-api 2512.1.0` (all on
-# polkadot-sdk =2512.3.2, matching the D2 downgrade).
-# Stage 1a 接入可用且自洽的 ISMP 核心：`ismp 2512.1.0` + `pallet-ismp 2512.2.0`
-# + `pallet-ismp-runtime-api 2512.1.0`（均基于 polkadot-sdk =2512.3.2，与 D2 对齐）。
+# vendored `pallet-ismp 2512.2.0` + `pallet-ismp-runtime-api 2512.1.0` (all on
+# polkadot-sdk =2512.3.2, matching the D2 downgrade). The pallet-ismp vendor only
+# removes its unused `polkadot-sdk/pallet-migrations` feature; see UPSTREAM.md.
+# Stage 1a 接入可用且自洽的 ISMP 核心：`ismp 2512.1.0` + vendor 的
+# `pallet-ismp 2512.2.0` + `pallet-ismp-runtime-api 2512.1.0`（均基于
+# polkadot-sdk =2512.3.2，与 D2 对齐）。pallet-ismp vendor 仅移除未使用的
+# `polkadot-sdk/pallet-migrations` feature；来源和差异见 UPSTREAM.md。
 ismp = { version = "2512.1.0", default-features = false }
-pallet-ismp = { version = "2512.2.0", default-features = false }
+pallet-ismp = { path = "./pallets/bridge/pallet-ismp", default-features = false }
+# Minimal audited fork of official 2512.0.0; provenance and local diff are in UPSTREAM.md.
+pallet-hyper-fungible-token = { path = "./pallets/bridge/hft", default-features = false }
 pallet-ismp-runtime-api = { version = "2512.1.0", default-features = false }
 # `pallet-ismp-rpc` is a node/client-side crate (depends on sc-*); used by `node` only.
 # `pallet-ismp-rpc` 为节点/客户端侧 crate（依赖 sc-*）；仅 `node` 使用。
@@ -264,6 +366,9 @@ pallet-bridge-ismp = { path = "./pallets/bridge/ismp", default-features = false 
 
 [patch.crates-io]
 ark-vrf = { git = "https://github.com/davxy/ark-vrf", tag = "v0.1.1" }
+# Keep transitive ISMP crates on the same no-std-safe local package.
+# 确保 ISMP 传递依赖也统一使用同一个 no-std-safe 本地 package。
+pallet-ismp = { path = "./pallets/bridge/pallet-ismp" }
 
 [profile.release]
 opt-level = 3

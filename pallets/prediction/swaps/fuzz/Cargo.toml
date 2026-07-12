@@ -1,0 +1,74 @@
+[[bin]]
+doc = false
+name = "create_pool"
+path = "create_pool.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "pool_join"
+path = "pool_join.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "pool_join_with_exact_pool_amount"
+path = "pool_join_with_exact_pool_amount.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "pool_join_with_exact_asset_amount"
+path = "pool_join_with_exact_asset_amount.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "swap_exact_amount_in"
+path = "swap_exact_amount_in.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "swap_exact_amount_out"
+path = "swap_exact_amount_out.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "pool_exit_with_exact_asset_amount"
+path = "pool_exit_with_exact_asset_amount.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "pool_exit_with_exact_pool_amount"
+path = "pool_exit_with_exact_pool_amount.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "pool_exit"
+path = "pool_exit.rs"
+test = false
+
+[dependencies]
+arbitrary = { workspace = true, features = ["derive"] }
+frame-support = { workspace = true, features = ["default"] }
+libfuzzer-sys = { workspace = true }
+orml-traits = { workspace = true, features = ["default"] }
+rand = { workspace = true, features = ["default"] }
+sp-runtime = { workspace = true, features = ["default"] }
+zeitgeist-primitives = { workspace = true, features = ["mock", "default"] }
+zrml-swaps = { workspace = true, features = ["mock", "default"] }
+
+[package]
+authors = ["Automatically generated"]
+edition.workspace = true
+license = "GPL-3.0-or-later"
+name = "zrml-swaps-fuzz"
+publish = false
+version = "0.6.1"
+
+[package.metadata]
+cargo-fuzz = true

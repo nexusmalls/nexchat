@@ -1,0 +1,32 @@
+[package]
+name = "prediction-phase0-smoke"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+orml-currencies = { workspace = true }
+orml-traits = { workspace = true }
+orml-tokens = { workspace = true }
+zeitgeist-primitives = { workspace = true }
+zrml-market-commons = { workspace = true }
+
+[dev-dependencies]
+frame-support = { workspace = true, features = ["std"] }
+frame-system = { workspace = true, features = ["std"] }
+pallet-assets = { workspace = true, features = ["std"] }
+pallet-balances = { workspace = true, features = ["std"] }
+parity-scale-codec = { workspace = true, features = ["std"] }
+scale-info = { workspace = true, features = ["std"] }
+sp-io = { workspace = true, features = ["std"] }
+sp-runtime = { workspace = true, features = ["std"] }
+
+[features]
+default = ["std"]
+std = [
+    "orml-currencies/std",
+    "orml-traits/std",
+    "orml-tokens/std",
+    "zeitgeist-primitives/std",
+    "zrml-market-commons/std",
+]
