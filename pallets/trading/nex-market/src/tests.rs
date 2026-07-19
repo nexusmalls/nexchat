@@ -67,7 +67,10 @@ fn setup_seed_price() {
 #[test]
 fn set_initial_price_accepts_governance_account() {
     new_test_ext().execute_with(|| {
-        assert_ok!(NexMarket::set_initial_price(RuntimeOrigin::signed(99), 500_000));
+        assert_ok!(NexMarket::set_initial_price(
+            RuntimeOrigin::signed(99),
+            500_000
+        ));
         assert_eq!(NexMarket::last_trade_price(), Some(500_000));
     });
 }

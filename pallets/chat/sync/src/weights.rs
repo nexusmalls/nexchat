@@ -47,7 +47,13 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 }
 
 impl WeightInfo for () {
-    fn publish_sync_anchor() -> Weight { Weight::from_parts(193_886_000, 0) }
-    fn clear_sync_anchor() -> Weight { Weight::from_parts(179_879_000, 0) }
-    fn force_clear_sync_anchor() -> Weight { Weight::from_parts(79_396_000, 0) }
+    fn publish_sync_anchor() -> Weight {
+        Weight::from_parts(193_886_000, 0)
+    }
+    fn clear_sync_anchor() -> Weight {
+        Weight::from_parts(179_879_000, 0)
+    }
+    fn force_clear_sync_anchor() -> Weight {
+        Weight::from_parts(79_396_000, 0)
+    }
 }

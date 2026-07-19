@@ -23,3 +23,7 @@ mod goldens;
 mod scenarios;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trading_goldens;
+#[cfg(test)]
+mod trading_scenarios;

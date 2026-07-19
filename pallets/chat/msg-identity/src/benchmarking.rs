@@ -51,7 +51,13 @@ mod benchmarks {
             .unwrap();
         let (spk, _) = ik_dev(3);
         #[extrinsic_call]
-        set_signed_prekey(RawOrigin::Signed(caller.clone()), dev, spk, [0u8; 64], 0u32.into());
+        set_signed_prekey(
+            RawOrigin::Signed(caller.clone()),
+            dev,
+            spk,
+            [0u8; 64],
+            0u32.into(),
+        );
         assert!(DeviceSignedPreKeys::<T>::contains_key(&caller, dev));
     }
 
@@ -76,7 +82,10 @@ mod benchmarks {
             .unwrap();
         #[extrinsic_call]
         bump_prekey_epoch(RawOrigin::Signed(caller.clone()), dev);
-        assert_eq!(Pallet::<T>::device_ik(&caller, dev).map(|(_, e)| e), Some(1));
+        assert_eq!(
+            Pallet::<T>::device_ik(&caller, dev).map(|(_, e)| e),
+            Some(1)
+        );
     }
 
     #[benchmark]

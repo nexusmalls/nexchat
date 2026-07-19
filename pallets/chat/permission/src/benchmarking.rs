@@ -32,12 +32,15 @@ mod benchmarks {
     #[benchmark]
     fn set_rejected_scene_types() {
         let caller: T::AccountId = whitelisted_caller();
-        let types: BoundedVec<SceneType, ConstU32<10>> =
-            vec![SceneType::Order, SceneType::Group].try_into().expect("within bound");
+        let types: BoundedVec<SceneType, ConstU32<10>> = vec![SceneType::Order, SceneType::Group]
+            .try_into()
+            .expect("within bound");
         #[extrinsic_call]
         set_rejected_scene_types(RawOrigin::Signed(caller.clone()), types);
         assert_eq!(
-            PrivacySettingsOf::<T>::get(&caller).rejected_scene_types.len(),
+            PrivacySettingsOf::<T>::get(&caller)
+                .rejected_scene_types
+                .len(),
             2
         );
     }
@@ -57,8 +60,8 @@ mod benchmarks {
     #[benchmark]
     fn force_mute_account() -> Result<(), BenchmarkError> {
         let target: T::AccountId = account("target", 0, 0);
-        let origin = T::GovernanceOrigin::try_successful_origin()
-            .map_err(|_| BenchmarkError::Weightless)?;
+        let origin =
+            T::GovernanceOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
         #[extrinsic_call]
         _(origin as T::RuntimeOrigin, target.clone(), None);
         assert!(MutedAccounts::<T>::contains_key(&target));
@@ -68,8 +71,8 @@ mod benchmarks {
     #[benchmark]
     fn force_unmute_account() -> Result<(), BenchmarkError> {
         let target: T::AccountId = account("target", 0, 0);
-        let origin = T::GovernanceOrigin::try_successful_origin()
-            .map_err(|_| BenchmarkError::Weightless)?;
+        let origin =
+            T::GovernanceOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
         ChatPermission::<T>::force_mute_account(origin.clone(), target.clone(), None)
             .expect("mute");
         #[extrinsic_call]
@@ -84,7 +87,11 @@ mod benchmarks {
         let target: T::AccountId = account("target", 0, 0);
         let cid = vec![b'c'; T::MaxReportCidLen::get() as usize];
         #[extrinsic_call]
-        report(RawOrigin::Signed(caller.clone()), ReportTarget::Account(target), cid);
+        report(
+            RawOrigin::Signed(caller.clone()),
+            ReportTarget::Account(target),
+            cid,
+        );
         assert!(Reports::<T>::contains_key(0));
     }
 
@@ -99,13 +106,17 @@ mod benchmarks {
             cid,
         )
         .expect("report");
-        let origin = T::GovernanceOrigin::try_successful_origin()
-            .map_err(|_| BenchmarkError::Weightless)?;
+        let origin =
+            T::GovernanceOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
         #[extrinsic_call]
         _(origin as T::RuntimeOrigin, 0, true);
         assert!(!Reports::<T>::contains_key(0));
         Ok(())
     }
 
-    impl_benchmark_test_suite!(ChatPermission, crate::mock::new_test_ext(), crate::mock::Test);
+    impl_benchmark_test_suite!(
+        ChatPermission,
+        crate::mock::new_test_ext(),
+        crate::mock::Test
+    );
 }

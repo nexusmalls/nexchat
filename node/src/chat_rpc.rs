@@ -59,16 +59,14 @@ use nexus_runtime::{AccountId, BlockNumber, Hash};
 use pallet_chat_common::runtime_api::{
     ChatViewApi as ChatViewRuntimeApi, ConversationKind, ConversationSummary,
 };
-use pallet_chat_group::runtime_api::{
-    ChatGroupApi as ChatGroupRuntimeApi, GroupMlsSnapshot,
-};
+use pallet_chat_group::runtime_api::{ChatGroupApi as ChatGroupRuntimeApi, GroupMlsSnapshot};
 use pallet_chat_inbox::runtime_api::ChatInboxApi as ChatInboxRuntimeApi;
-use pallet_chat_sync::runtime_api::ChatSyncApi as ChatSyncRuntimeApi;
 use pallet_chat_permission::runtime_api::ChatPermissionApi as ChatPermissionRuntimeApi;
 use pallet_chat_permission::{
     ChatPermissionLevel, PermissionResult, PrivacySettingsSummary, SceneAuthorizationInfo, SceneId,
     SceneType,
 };
+use pallet_chat_sync::runtime_api::ChatSyncApi as ChatSyncRuntimeApi;
 
 // ==================== node 本地 serde 响应类型 / node-local serde DTOs ====================
 
@@ -153,7 +151,11 @@ impl From<PermissionResult> for RpcPermissionResult {
             PermissionResult::DeniedClosed => ("closed", Vec::new()),
             PermissionResult::DeniedSenderMuted => ("senderMuted", Vec::new()),
         };
-        RpcPermissionResult { allowed, reason: reason.into(), scenes }
+        RpcPermissionResult {
+            allowed,
+            reason: reason.into(),
+            scenes,
+        }
     }
 }
 
@@ -170,13 +172,21 @@ pub struct RpcSceneId {
 impl From<SceneId> for RpcSceneId {
     fn from(id: SceneId) -> Self {
         match id {
-            SceneId::None => RpcSceneId { kind: "none".into(), numeric: None, hash: None },
-            SceneId::Numeric(n) => {
-                RpcSceneId { kind: "numeric".into(), numeric: Some(n), hash: None }
-            }
-            SceneId::Hash(h) => {
-                RpcSceneId { kind: "hash".into(), numeric: None, hash: Some(Hash::from(h)) }
-            }
+            SceneId::None => RpcSceneId {
+                kind: "none".into(),
+                numeric: None,
+                hash: None,
+            },
+            SceneId::Numeric(n) => RpcSceneId {
+                kind: "numeric".into(),
+                numeric: Some(n),
+                hash: None,
+            },
+            SceneId::Hash(h) => RpcSceneId {
+                kind: "hash".into(),
+                numeric: None,
+                hash: Some(Hash::from(h)),
+            },
         }
     }
 }
@@ -220,7 +230,11 @@ impl From<PrivacySettingsSummary> for RpcPrivacySummary {
         // Audit P1: on-chain block/whitelist removed; summary drops those counts.
         RpcPrivacySummary {
             permission_level: permission_level_label(p.permission_level).into(),
-            rejected_scene_types: p.rejected_scene_types.into_iter().map(scene_type_label).collect(),
+            rejected_scene_types: p
+                .rejected_scene_types
+                .into_iter()
+                .map(scene_type_label)
+                .collect(),
         }
     }
 }
@@ -391,7 +405,11 @@ pub trait ChatApi<BlockHash> {
     /// `{ updatedAt, ciphertext(hex) }`；未发布返回 `null`。密文不透明——仅派生该锚的
     /// 客户端可解密。
     #[method(name = "chat_syncAnchor")]
-    fn sync_anchor(&self, anchor_id: Hash, at: Option<BlockHash>) -> RpcResult<Option<RpcSyncAnchor>>;
+    fn sync_anchor(
+        &self,
+        anchor_id: Hash,
+        at: Option<BlockHash>,
+    ) -> RpcResult<Option<RpcSyncAnchor>>;
 
     /// EN: Pending Welcome bytes (hex) for `who` in `group_id`; `null` if none.
     /// Read-only — call before `claim_welcome`. CN: `who` 在群内的待领 Welcome
@@ -435,7 +453,10 @@ pub struct Chat<C, B> {
 impl<C, B> Chat<C, B> {
     /// Create a new handler. / 新建处理器。
     pub fn new(client: Arc<C>) -> Self {
-        Self { client, _marker: PhantomData }
+        Self {
+            client,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -483,7 +504,9 @@ where
     ) -> RpcResult<RpcPermissionResult> {
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        let res = api.check_chat_permission(at, sender, receiver).map_err(runtime_err)?;
+        let res = api
+            .check_chat_permission(at, sender, receiver)
+            .map_err(runtime_err)?;
         Ok(res.into())
     }
 
@@ -495,7 +518,9 @@ where
     ) -> RpcResult<Vec<RpcSceneAuth>> {
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        let scenes = api.get_active_scenes(at, user1, user2).map_err(runtime_err)?;
+        let scenes = api
+            .get_active_scenes(at, user1, user2)
+            .map_err(runtime_err)?;
         Ok(scenes.into_iter().map(RpcSceneAuth::from).collect())
     }
 
@@ -526,7 +551,9 @@ where
     ) -> RpcResult<RpcPrivacySummary> {
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        let summary = api.get_privacy_settings_summary(at, who).map_err(runtime_err)?;
+        let summary = api
+            .get_privacy_settings_summary(at, who)
+            .map_err(runtime_err)?;
         Ok(summary.into())
     }
 
@@ -548,14 +575,11 @@ where
     ) -> RpcResult<bool> {
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        api.is_tag_revoked(at, inbox_id.0, tag.0).map_err(runtime_err)
+        api.is_tag_revoked(at, inbox_id.0, tag.0)
+            .map_err(runtime_err)
     }
 
-    fn inbox_exists(
-        &self,
-        inbox_id: Hash,
-        at: Option<<Block as BlockT>::Hash>,
-    ) -> RpcResult<bool> {
+    fn inbox_exists(&self, inbox_id: Hash, at: Option<<Block as BlockT>::Hash>) -> RpcResult<bool> {
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
         api.inbox_exists(at, inbox_id.0).map_err(runtime_err)
@@ -583,7 +607,9 @@ where
     ) -> RpcResult<Option<String>> {
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        let bytes = api.pending_welcome(at, group_id, who).map_err(runtime_err)?;
+        let bytes = api
+            .pending_welcome(at, group_id, who)
+            .map_err(runtime_err)?;
         Ok(bytes.map(|b| bytes_to_hex(&b)))
     }
 
@@ -595,7 +621,9 @@ where
     ) -> RpcResult<Option<String>> {
         let api = self.client.runtime_api();
         let at = at.unwrap_or_else(|| self.client.info().best_hash);
-        let bytes = api.handshake_at_epoch(at, group_id, epoch).map_err(runtime_err)?;
+        let bytes = api
+            .handshake_at_epoch(at, group_id, epoch)
+            .map_err(runtime_err)?;
         Ok(bytes.map(|b| bytes_to_hex(&b)))
     }
 

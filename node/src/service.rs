@@ -115,17 +115,16 @@ pub fn new_partial(
     )?;
 
     // BABE import queue
-    let (import_queue, babe_worker_handle) =
-        sc_consensus_babe::import_queue(ImportQueueParams {
-            link: babe_link.clone(),
-            block_import: babe_block_import.clone(),
-            justification_import: Some(Box::new(grandpa_block_import)),
-            client: client.clone(),
-            slot_duration,
-            spawner: &task_manager.spawn_essential_handle(),
-            registry: config.prometheus_registry(),
-            telemetry: telemetry.as_ref().map(|x| x.handle()),
-        })?;
+    let (import_queue, babe_worker_handle) = sc_consensus_babe::import_queue(ImportQueueParams {
+        link: babe_link.clone(),
+        block_import: babe_block_import.clone(),
+        justification_import: Some(Box::new(grandpa_block_import)),
+        client: client.clone(),
+        slot_duration,
+        spawner: &task_manager.spawn_essential_handle(),
+        registry: config.prometheus_registry(),
+        telemetry: telemetry.as_ref().map(|x| x.handle()),
+    })?;
 
     Ok(sc_service::PartialComponents {
         client,
@@ -135,7 +134,13 @@ pub fn new_partial(
         keystore_container,
         select_chain,
         transaction_pool,
-        other: (babe_block_import, babe_link, babe_worker_handle, grandpa_link, telemetry),
+        other: (
+            babe_block_import,
+            babe_link,
+            babe_worker_handle,
+            grandpa_link,
+            telemetry,
+        ),
     })
 }
 
@@ -158,14 +163,12 @@ pub fn new_full<
 
     // Keep the BabeWorkerHandle alive for the node's entire lifetime.
     // Dropping it would close the channel to the babe-worker import queue task.
-    task_manager.spawn_handle().spawn(
-        "babe-worker-handle-keepalive",
-        None,
-        async move {
+    task_manager
+        .spawn_handle()
+        .spawn("babe-worker-handle-keepalive", None, async move {
             let _keep = babe_worker_handle;
             futures::future::pending::<()>().await;
-        },
-    );
+        });
 
     let mut net_config = sc_network::config::FullNetworkConfiguration::<
         Block,

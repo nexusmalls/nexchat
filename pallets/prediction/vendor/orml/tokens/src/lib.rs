@@ -90,7 +90,7 @@ mod weights;
 #[cfg(feature = "runtime-benchmarks")]
 pub use benchmarking::BenchmarkHelper;
 pub use impls::*;
-pub use weights::WeightInfo;
+pub use weights::{SubstrateWeight, WeightInfo};
 
 pub struct TransferDust<T, GetAccountId>(marker::PhantomData<(T, GetAccountId)>);
 impl<T, GetAccountId> OnDust<T::AccountId, T::CurrencyId, T::Balance>

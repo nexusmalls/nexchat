@@ -165,24 +165,64 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 }
 
 impl WeightInfo for () {
-    fn publish_key_package() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn revoke_key_package() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn create_group() -> Weight { Weight::from_parts(30_000_000, 0) }
-    fn commit(_a: u32, _r: u32) -> Weight { Weight::from_parts(40_000_000, 0) }
-    fn claim_welcome() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn disband_group() -> Weight { Weight::from_parts(40_000_000, 0) }
-    fn anchor_message_digest() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn request_join() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn cancel_join_request() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn approve_join() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn transfer_ownership() -> Weight { Weight::from_parts(25_000_000, 0) }
-    fn set_admin() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn set_group_profile() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn set_group_nickname() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn ban_member() -> Weight { Weight::from_parts(25_000_000, 0) }
-    fn unban_member() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn set_member_mute() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn set_group_mute_all() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn force_disband_group() -> Weight { Weight::from_parts(40_000_000, 0) }
-    fn set_group_frozen() -> Weight { Weight::from_parts(15_000_000, 0) }
+    fn publish_key_package() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn revoke_key_package() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn create_group() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+    }
+    fn commit(_a: u32, _r: u32) -> Weight {
+        Weight::from_parts(40_000_000, 0)
+    }
+    fn claim_welcome() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn disband_group() -> Weight {
+        Weight::from_parts(40_000_000, 0)
+    }
+    fn anchor_message_digest() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn request_join() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn cancel_join_request() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn approve_join() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn transfer_ownership() -> Weight {
+        Weight::from_parts(25_000_000, 0)
+    }
+    fn set_admin() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn set_group_profile() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn set_group_nickname() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn ban_member() -> Weight {
+        Weight::from_parts(25_000_000, 0)
+    }
+    fn unban_member() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn set_member_mute() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn set_group_mute_all() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn force_disband_group() -> Weight {
+        Weight::from_parts(40_000_000, 0)
+    }
+    fn set_group_frozen() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
 }

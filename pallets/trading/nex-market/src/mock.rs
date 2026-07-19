@@ -97,7 +97,10 @@ impl pallet_nex_market::Config for Test {
     type DepositForfeitRate = ConstU16<10000>; // 100%
     type TreasuryAccount = TreasuryAccountId;
     type SeedLiquidityAccount = SeedLiquidityAccountId;
-    type MarketAdminOrigin = frame_support::traits::EitherOfDiverse<frame_system::EnsureRoot<u64>, frame_system::EnsureSignedBy<MarketGovernanceMembers, u64>>;
+    type MarketAdminOrigin = frame_support::traits::EitherOfDiverse<
+        frame_system::EnsureRoot<u64>,
+        frame_system::EnsureSignedBy<MarketGovernanceMembers, u64>,
+    >;
     type FirstOrderTimeout = ConstU32<600>; // 1h (免保证金短超时)
     type MaxFirstOrderAmount = ConstU128<100_000_000_000_000>; // 100 NEX
     type MaxWaivedSeedOrders = ConstU32<10>;

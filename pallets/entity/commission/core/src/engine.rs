@@ -2115,9 +2115,13 @@ impl<T: Config> Pallet<T> {
         // 从独立的购物余额统计回滚 order_count（与 process_shopping_commission 对称）。
         if any_cancelled {
             if let Some(first) = records.first() {
-                MemberShoppingCommissionStats::<T>::mutate(first.entity_id, &first.buyer, |stats| {
-                    stats.order_count = stats.order_count.saturating_sub(1);
-                });
+                MemberShoppingCommissionStats::<T>::mutate(
+                    first.entity_id,
+                    &first.buyer,
+                    |stats| {
+                        stats.order_count = stats.order_count.saturating_sub(1);
+                    },
+                );
             }
         }
 

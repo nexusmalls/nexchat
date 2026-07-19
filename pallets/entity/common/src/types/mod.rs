@@ -3,8 +3,8 @@
 //! All types previously defined in lib.rs, now organized into this submodule.
 
 use codec::{Decode, Encode, MaxEncodedLen};
-use scale_info::TypeInfo;
 use core::fmt::Debug;
+use scale_info::TypeInfo;
 
 /// Pool reward cap behavior shared across governance/commission layers
 #[derive(
@@ -1141,9 +1141,7 @@ pub mod AdminPermission {
 ///
 /// 包含完成订单后所有副作用所需的上下文信息，
 /// 避免 Hook 实现方反向查询 Order 存储。
-#[derive(
-    Encode, Decode, codec::DecodeWithMemTracking, Clone, PartialEq, Eq, TypeInfo, Debug,
-)]
+#[derive(Encode, Decode, codec::DecodeWithMemTracking, Clone, PartialEq, Eq, TypeInfo, Debug)]
 pub struct OrderCompletionInfo<AccountId, Balance> {
     pub order_id: u64,
     pub entity_id: u64,
@@ -1178,9 +1176,7 @@ pub struct OrderCompletionInfo<AccountId, Balance> {
 }
 
 /// 订单取消信息（传递给 OnOrderCancelled Hook 链）
-#[derive(
-    Encode, Decode, codec::DecodeWithMemTracking, Clone, PartialEq, Eq, TypeInfo, Debug,
-)]
+#[derive(Encode, Decode, codec::DecodeWithMemTracking, Clone, PartialEq, Eq, TypeInfo, Debug)]
 pub struct OrderCancellationInfo {
     pub order_id: u64,
     pub entity_id: u64,

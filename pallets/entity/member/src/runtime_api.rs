@@ -9,8 +9,8 @@
 
 use codec::{Codec, Decode, Encode};
 use scale_info::TypeInfo;
-use Debug;
 use sp_std::vec::Vec;
+use Debug;
 
 /// 升级记录（Runtime API 返回用，区块号统一为 u64）
 #[derive(Encode, Decode, Clone, PartialEq, Eq, TypeInfo, Debug)]

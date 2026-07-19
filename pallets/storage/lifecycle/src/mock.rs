@@ -1,6 +1,9 @@
 use crate as pallet_storage_lifecycle;
 use crate::ArchiveLevel;
-use frame_support::{derive_impl, parameter_types, traits::{EitherOfDiverse, SortedMembers}};
+use frame_support::{
+    derive_impl, parameter_types,
+    traits::{EitherOfDiverse, SortedMembers},
+};
 use sp_runtime::BuildStorage;
 
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -218,7 +221,10 @@ impl pallet_storage_lifecycle::pallet::Config for Test {
     type StorageArchiver = MockStorageArchiver;
     type OnArchive = MockOnArchiveHandler;
     type DataOwnerProvider = ();
-    type GovernanceOrigin = EitherOfDiverse<frame_system::EnsureRoot<u64>, frame_system::EnsureSignedBy<GovernanceMembers, u64>>;
+    type GovernanceOrigin = EitherOfDiverse<
+        frame_system::EnsureRoot<u64>,
+        frame_system::EnsureSignedBy<GovernanceMembers, u64>,
+    >;
     type WeightInfo = pallet_storage_lifecycle::SubstrateWeight<Test>;
 }
 

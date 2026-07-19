@@ -27,11 +27,13 @@ fn cross_slashes_funds_and_stores_crossing() {
         frame_system::Pallet::<Runtime>::set_block_number(1);
         let burn_amount = crate::BurnAmount::<Runtime>::get();
         let original_balance = Balances::free_balance(ALICE);
+        let original_issuance = Balances::total_issuance();
         assert_ok!(Styx::cross(RuntimeOrigin::signed(ALICE)));
         let balance_after_crossing = Balances::free_balance(ALICE);
         let diff = original_balance - balance_after_crossing;
         assert!(Crossings::<Runtime>::contains_key(ALICE));
         assert_eq!(diff, burn_amount);
+        assert_eq!(Balances::total_issuance(), original_issuance - burn_amount);
     });
 }
 
@@ -58,6 +60,16 @@ fn should_set_burn_amount() {
 }
 
 #[test]
+fn root_should_set_burn_amount() {
+    ExtBuilder::default().build().execute_with(|| {
+        frame_system::Pallet::<Runtime>::set_block_number(1);
+        assert_ok!(Styx::set_burn_amount(RuntimeOrigin::root(), 233u128));
+        System::assert_last_event(Event::CrossingFeeChanged(233u128).into());
+        assert_eq!(crate::BurnAmount::<Runtime>::get(), 233u128);
+    });
+}
+
+#[test]
 fn set_burn_amount_should_fail_with_unathorized_caller() {
     ExtBuilder::default().build().execute_with(|| {
         frame_system::Pallet::<Runtime>::set_block_number(1);
@@ -77,6 +89,14 @@ fn account_should_not_cross_without_sufficient_funds() {
             Styx::cross(RuntimeOrigin::signed(ALICE)),
             Error::<Runtime>::FundDoesNotHaveEnoughFreeBalance
         );
+        assert!(!Crossings::<Runtime>::contains_key(ALICE));
+    });
+}
+
+#[test]
+fn default_burn_amount_uses_nex_precision() {
+    ExtBuilder::default().build().execute_with(|| {
+        assert_eq!(crate::BurnAmount::<Runtime>::get(), 200 * NEX);
     });
 }
 

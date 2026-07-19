@@ -49,9 +49,9 @@
 
 pub use pallet::*;
 
+pub mod runtime_api;
 mod traits;
 mod types;
-pub mod runtime_api;
 pub mod weights;
 
 #[cfg(test)]
@@ -62,9 +62,9 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+pub use runtime_api::*;
 pub use traits::*;
 pub use types::*;
-pub use runtime_api::*;
 pub use weights::WeightInfo;
 
 mod migration;
@@ -74,10 +74,10 @@ pub mod pallet {
     use super::*;
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
+    use pallet_chat_common::{bump_u32_epoch, min_blocks_elapsed};
     use sp_runtime::traits::Saturating;
     use sp_runtime::SaturatedConversion;
     use sp_std::vec::Vec;
-    use pallet_chat_common::{bump_u32_epoch, min_blocks_elapsed};
 
     /// EN: v1 = friend graph removed; privacy settings without on-chain lists.
     /// CN: v1 = 好友图谱已删；隐私设置不含链上名单。
@@ -133,13 +133,8 @@ pub mod pallet {
     /// 存储每个用户的聊天权限配置，包括权限级别、黑白名单等。
     #[pallet::storage]
     #[pallet::getter(fn privacy_settings)]
-    pub type PrivacySettingsOf<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        PrivacySettings<T>,
-        ValueQuery,
-    >;
+    pub type PrivacySettingsOf<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, PrivacySettings<T>, ValueQuery>;
 
     /// EN: Per-account chat-capability revocation epoch (a monotonic counter).
     /// The on-chain friend graph has been removed for privacy: contacts and the
@@ -228,9 +223,7 @@ pub mod pallet {
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// 隐私设置已更新
-        PrivacySettingsUpdated {
-            who: T::AccountId,
-        },
+        PrivacySettingsUpdated { who: T::AccountId },
 
         // NOTE / 注意（审计 P1）：`UserBlocked` / `UserUnblocked` /
         // `UserAddedToWhitelist` / `UserRemovedFromWhitelist` 事件已移除——它们会把
@@ -238,14 +231,10 @@ pub mod pallet {
         // 能力令牌承载，撤销以 `CapabilityEpochBumped` 表达。These events were removed
         // because they broadcast blocked/allowed counterparties in plaintext logs,
         // leaking relationships; blocking/allowing is off-chain (see CapabilityEpoch).
-
         /// EN: An account advanced its chat-capability revocation epoch, making all
         /// previously issued chat capability tokens (with the old epoch) stale.
         /// CN: 账户递增了聊天能力撤销纪元，使其此前签发的（旧纪元）能力令牌全部失效。
-        CapabilityEpochBumped {
-            who: T::AccountId,
-            new_epoch: u32,
-        },
+        CapabilityEpochBumped { who: T::AccountId, new_epoch: u32 },
 
         /// 场景授权已授予
         SceneAuthorizationGranted {
@@ -293,15 +282,10 @@ pub mod pallet {
         },
 
         /// EN: An account's platform mute was lifted by governance. CN: 账户的平台禁言被治理解除。
-        AccountUnmuted {
-            who: T::AccountId,
-        },
+        AccountUnmuted { who: T::AccountId },
 
         /// EN: A report was filed. CN: 已提交一条举报。
-        ReportFiled {
-            id: u64,
-            reporter: T::AccountId,
-        },
+        ReportFiled { id: u64, reporter: T::AccountId },
 
         /// EN: A report was resolved (and removed) by governance. CN: 举报被治理处理（并移除）。
         ReportResolved {
@@ -319,7 +303,6 @@ pub mod pallet {
         // `AlreadyBlocked`/`NotInBlockList`/`CannotAddSelf`/`AlreadyInWhitelist`/
         // `NotInWhitelist`）已随链上名单移除一并删除。
         // Block/whitelist errors were removed together with the on-chain lists.
-
         /// 场景授权数量已达上限
         TooManyScenes,
 
@@ -498,15 +481,24 @@ pub mod pallet {
             }
             // 全局未处理上限 / global open-report cap
             let open = OpenReportCount::<T>::get();
-            ensure!(open < T::MaxOpenReports::get(), Error::<T>::TooManyOpenReports);
+            ensure!(
+                open < T::MaxOpenReports::get(),
+                Error::<T>::TooManyOpenReports
+            );
 
-            let reason_cid: BoundedVec<u8, T::MaxReportCidLen> =
-                reason_cid.try_into().map_err(|_| Error::<T>::MetadataTooLong)?;
+            let reason_cid: BoundedVec<u8, T::MaxReportCidLen> = reason_cid
+                .try_into()
+                .map_err(|_| Error::<T>::MetadataTooLong)?;
 
             let id = NextReportId::<T>::get();
             Reports::<T>::insert(
                 id,
-                ReportRecord::<T> { reporter: who.clone(), target, reason_cid, filed_at: now },
+                ReportRecord::<T> {
+                    reporter: who.clone(),
+                    target,
+                    reason_cid,
+                    filed_at: now,
+                },
             );
             NextReportId::<T>::put(id.saturating_add(1));
             OpenReportCount::<T>::put(open.saturating_add(1));
@@ -526,10 +518,16 @@ pub mod pallet {
             upheld: bool,
         ) -> DispatchResult {
             T::GovernanceOrigin::ensure_origin(origin)?;
-            ensure!(Reports::<T>::contains_key(report_id), Error::<T>::ReportNotFound);
+            ensure!(
+                Reports::<T>::contains_key(report_id),
+                Error::<T>::ReportNotFound
+            );
             Reports::<T>::remove(report_id);
             OpenReportCount::<T>::mutate(|c| *c = c.saturating_sub(1));
-            Self::deposit_event(Event::ReportResolved { id: report_id, upheld });
+            Self::deposit_event(Event::ReportResolved {
+                id: report_id,
+                upheld,
+            });
             Ok(())
         }
     }
@@ -559,9 +557,7 @@ pub mod pallet {
         pub fn is_account_muted(who: &T::AccountId) -> bool {
             match MutedAccounts::<T>::get(who) {
                 Some(MuteStatus::Forever) => true,
-                Some(MuteStatus::Until(until)) => {
-                    frame_system::Pallet::<T>::block_number() < until
-                }
+                Some(MuteStatus::Until(until)) => frame_system::Pallet::<T>::block_number() < until,
                 None => false,
             }
         }
@@ -719,10 +715,7 @@ pub mod pallet {
             authorizations
                 .iter()
                 .map(|auth| {
-                    let is_expired = auth
-                        .expires_at
-                        .map(|e| current_block > e)
-                        .unwrap_or(false);
+                    let is_expired = auth.expires_at.map(|e| current_block > e).unwrap_or(false);
                     SceneAuthorizationInfo {
                         scene_type: auth.scene_type.clone(),
                         scene_id: auth.scene_id.clone(),
@@ -778,8 +771,9 @@ pub mod pallet {
             let expires_at = duration.map(|d| current_block.saturating_add(d));
             let (user1, user2) = Self::sorted_pair(from, to);
 
-            let bounded_metadata: BoundedVec<u8, ConstU32<128>> =
-                metadata.try_into().map_err(|_| Error::<T>::MetadataTooLong)?;
+            let bounded_metadata: BoundedVec<u8, ConstU32<128>> = metadata
+                .try_into()
+                .map_err(|_| Error::<T>::MetadataTooLong)?;
 
             let authorization = SceneAuthorization {
                 scene_type: scene_type.clone(),
@@ -943,11 +937,9 @@ pub mod pallet {
             let (user1, user2) = Self::sorted_pair(from, to);
             let authorizations = SceneAuthorizations::<T>::get(&user1, &user2);
 
-            authorizations.iter().any(|auth| {
-                auth.expires_at
-                    .map(|e| current_block <= e)
-                    .unwrap_or(true)
-            })
+            authorizations
+                .iter()
+                .any(|auth| auth.expires_at.map(|e| current_block <= e).unwrap_or(true))
         }
 
         /// 获取所有有效的场景授权

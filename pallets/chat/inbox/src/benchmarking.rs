@@ -85,8 +85,15 @@ mod benchmarks {
         ChatInbox::<T>::register_inbox(RawOrigin::Signed(caller.clone()).into(), id)
             .expect("register");
         #[extrinsic_call]
-        transfer_controller(RawOrigin::Signed(caller.clone()), id, new_controller.clone());
-        assert_eq!(Inboxes::<T>::get(id).map(|r| r.controller), Some(new_controller));
+        transfer_controller(
+            RawOrigin::Signed(caller.clone()),
+            id,
+            new_controller.clone(),
+        );
+        assert_eq!(
+            Inboxes::<T>::get(id).map(|r| r.controller),
+            Some(new_controller)
+        );
     }
 
     #[benchmark]
@@ -108,8 +115,8 @@ mod benchmarks {
         let id: InboxId = [7u8; 32];
         ChatInbox::<T>::register_inbox(RawOrigin::Signed(caller.clone()).into(), id)
             .expect("register");
-        let origin = T::ForceOrigin::try_successful_origin()
-            .map_err(|_| BenchmarkError::Weightless)?;
+        let origin =
+            T::ForceOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
         #[extrinsic_call]
         force_deregister_inbox(origin, id);
         assert!(!Inboxes::<T>::contains_key(id));

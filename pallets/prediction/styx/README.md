@@ -7,12 +7,12 @@ for off-chain use.
 
 ## Overview / 概览
 
-The pallet lets the signer burn native tokens, and lets governance update the
-price. In the Zeitgeist ecosystem this grants the ability to claim the avatar of
-the signer.
+The Nexus port lets the signer burn native NEX through `pallet-balances`, and
+lets governance update the price. The successful crossing is recorded for
+off-chain registry use.
 
-本 pallet 允许签名者销毁原生代币，并允许治理更新价格。在 Zeitgeist
-生态中，这会授予签名者申领其头像的资格。
+Nexus 移植版通过 `pallet-balances` 销毁签名者的原生 NEX，并允许治理更新价格；
+成功跨越会写入链上记录，供链下注册表使用。
 
 ## Interface / 接口
 
@@ -20,9 +20,8 @@ the signer.
 
 #### Public Dispatches / 公开调用
 
-- `cross` - Burns native chain tokens to cross, granting the ability to claim
-  your Zeitgeist avatar.
-- `cross` —— 销毁原生代币以完成跨越，并获得申领 Zeitgeist 头像的资格。
+- `cross` - Burns native NEX and records the account in the registry.
+- `cross` —— 销毁原生 NEX，并将账户写入注册表。
 
 #### Admin Dispatches / 管理调用
 
@@ -34,7 +33,8 @@ The administrative dispatches are used to perform admin functions on chain:
   called by governance.
 - `set_burn_amount` —— 设置新的跨越销毁价格，预期由治理调用。
 
-The origins from which the admin functions are called (`SetBurnAmountOrigin`)
-are mainly minimum vote proportions from council.
+`SetBurnAmountOrigin` is runtime-configurable. Nexus maps it to Root or the
+Treasury Council threshold during production runtime wiring.
 
-管理函数的调用来源（`SetBurnAmountOrigin`）主要是委员会的最低投票比例。
+`SetBurnAmountOrigin` 可由 runtime 配置；Nexus 在生产 runtime 接线时将其映射到
+Root 或 Treasury Council 门槛。

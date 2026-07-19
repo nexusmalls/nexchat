@@ -256,13 +256,35 @@ Phase 3 closes the isolated market and dispute core:
 Phase 3 differential baseline adds the first behavioral parity harness:
 
 - `TEST`: add Nexus-only `prediction-differential` with normalized snapshot
-  comparison for four native lifecycle scenarios pinned against upstream commit
-  `39ad8d60`.
+  comparison for five native lifecycle scenarios pinned against upstream commit
+  `39ad8d60`, including Court escalation through GlobalDisputes to automatic
+  resolution and appeal-bond cleanup.
 - `TEST`: add prediction-markets complete-set buy/sell roundtrip conservation
   property tests for native and USDX collateral.
-- `RUNTIME`: no production runtime wiring. Court/global-dispute differential
-  scenarios and upstream-side runner automation remain follow-up work before the
-  `Ztg -> Native` rename PR.
+- `RUNTIME`: no production runtime wiring. Upstream-side runner automation
+  remains follow-up work before the `Ztg -> Native` rename PR.
+
+Phase 6 wires the complete subsystem into the production runtime in an inert state:
+
+- `RUNTIME`: reserve and register pallet indices 176–192 without changing the
+  existing 0–175 assignments; keep the global mode `Disabled`, every module
+  disabled, and the collateral whitelist empty.
+- `RUNTIME`: add Nexus origins, sovereign accounts, ORML currency adapters,
+  conservative non-unit weight providers, BABE-backed Court randomness, the
+  runtime call filter, and a bounded upgrade marker that rejects unsafe initial
+  prediction storage.
+- `ASSET`: wire the live `pallet-assets` validator. USDX admission additionally
+  requires the canonical protocol asset, an unpaused PSM with a non-zero global
+  debt ceiling, and issuance equal to PSM debt; Phase 6 defaults therefore reject
+  USDX deposits.
+- `RUNTIME`: register all prediction pallets that currently expose FRAME
+  benchmarks. `control`, `collateral`, and `orml-currencies` have no benchmark
+  implementation yet; their Phase 7 benchmark work remains explicit.
+- `RUNTIME`: expose upstream `SwapsApi` and `PredictionMarketsApi`, plus the
+  Nexus-only bounded `PredictionViewApi`. Merge the upstream swaps RPC and
+  `prediction_*` read-only RPC methods into the node.
+- `RUNTIME`: imported and Phase 2 weights remain integration-only. No module may
+  be enabled before Phase 7 generates and reviews Nexus production weights.
 
 ## Future upstream sync order
 

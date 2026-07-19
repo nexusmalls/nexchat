@@ -972,18 +972,23 @@ mod pallet {
                     Error::<T>::InvalidPoolType
                 );
                 ensure!(pool.contains(&asset_out), Error::<T>::AssetNotFound);
-                T::MultiCurrency::transfer(
-                    pool.collateral,
-                    &who,
-                    &pool.account_id,
-                    amount_in,
-                    ExistenceRequirement::AllowDeath,
-                )?;
+                // Nexus: charge swap + ExternalFees from the trader (`who`) before moving
+                // collateral into the pool so USDX FeeAllowance Path A binds the signer, not the
+                // pool account (Zeitgeist upstream takes fees from the pool after transfer).
+                // Nexus：先从交易者扣 swap/ExternalFees，再把抵押品转入池账户，以便 USDX
+                // FeeAllowance 路径 A 绑定签名者而非池账户（上游是转入后再从池扣费）。
                 let FeeDistribution {
                     remaining: amount_in_minus_fees,
                     swap_fees: swap_fee_amount,
                     external_fees: external_fee_amount,
-                } = Self::distribute_fees(pool, &pool.account_id.clone(), amount_in)?;
+                } = Self::distribute_fees(pool, &who, amount_in)?;
+                T::MultiCurrency::transfer(
+                    pool.collateral,
+                    &who,
+                    &pool.account_id,
+                    amount_in_minus_fees,
+                    ExistenceRequirement::AllowDeath,
+                )?;
                 ensure!(
                     amount_in_minus_fees <= pool.calculate_numerical_threshold(),
                     Error::<T>::NumericalLimits(NumericalLimitsError::MaxAmountExceeded),
@@ -1005,7 +1010,7 @@ mod pallet {
                 ensure!(amount_out >= min_amount_out, Error::<T>::AmountOutBelowMin);
                 // Instead of letting `who` buy the complete sets and then transfer almost all of
                 // the outcomes to the pool account, we prevent `(n-1)` storage reads by using the
-                // pool account to buy. Note that the fees are already in the pool at this point.
+                // pool account to buy. Note that the fees are already settled from `who`.
                 let PoolType::Standard(market_id) = pool.pool_type else {
                     return Err(Error::<T>::Unexpected.into());
                 };
@@ -1091,9 +1096,10 @@ mod pallet {
                 // Instead of first executing a swap with `(n-1)` transfers from the pool account to
                 // `who` and then selling complete sets, we prevent `(n-1)` storage reads: 1)
                 // Transfer `amount_in` units of `asset_in` to the pool account, 2) sell
-                // `amount_out` complete sets using the pool account, 3) transfer
-                // `amount_out_minus_fees` units of collateral to `who`. The fees automatically end
-                // up in the pool.
+                // `amount_out` complete sets using the pool account, 3) move collateral to `who`,
+                // then take swap/ExternalFees from the trader so FeeAllowance Path A binds `who`.
+                // 先把 outcome 转入池并卖出完整集，再把抵押品转给交易者，最后从交易者扣费，
+                // 使 FeeAllowance 路径 A 绑定 `who`。
                 T::MultiCurrency::transfer(
                     asset_in,
                     &who,
@@ -1109,22 +1115,22 @@ mod pallet {
                     market_id,
                     amount_out,
                 )?;
-                let FeeDistribution {
-                    remaining: amount_out_minus_fees,
-                    swap_fees: swap_fee_amount,
-                    external_fees: external_fee_amount,
-                } = Self::distribute_fees(pool, &pool.account_id.clone(), amount_out)?;
-                ensure!(
-                    amount_out_minus_fees >= min_amount_out,
-                    Error::<T>::AmountOutBelowMin
-                );
                 T::MultiCurrency::transfer(
                     pool.collateral,
                     &pool.account_id,
                     &who,
-                    amount_out_minus_fees,
+                    amount_out,
                     ExistenceRequirement::AllowDeath,
                 )?;
+                let FeeDistribution {
+                    remaining: amount_out_minus_fees,
+                    swap_fees: swap_fee_amount,
+                    external_fees: external_fee_amount,
+                } = Self::distribute_fees(pool, &who, amount_out)?;
+                ensure!(
+                    amount_out_minus_fees >= min_amount_out,
+                    Error::<T>::AmountOutBelowMin
+                );
                 for asset in pool.assets().iter() {
                     if *asset == asset_in {
                         pool.increase_reserve(asset, &amount_in)?;
@@ -2102,7 +2108,11 @@ mod pallet {
             market_id: Self::MarketId,
             asset: Self::Asset,
         ) -> Result<Self::Balance, DispatchError> {
-            let pool = <Self as PoolStorage>::get(market_id)?;
+            // HybridRouter passes market_id; resolve the independent neo-swaps pool id.
+            // HybridRouter 传入的是 market_id，需解析为独立的 neo-swaps pool id。
+            let pool_id =
+                MarketIdToPoolId::<T>::get(market_id).ok_or(Error::<T>::PoolNotFound)?;
+            let pool = <Self as PoolStorage>::get(pool_id)?;
             pool.calculate_spot_price(asset)
         }
 
@@ -2111,7 +2121,9 @@ mod pallet {
             asset: Self::Asset,
             until: Self::Balance,
         ) -> Result<Self::Balance, DispatchError> {
-            let pool = <Self as PoolStorage>::get(market_id)?;
+            let pool_id =
+                MarketIdToPoolId::<T>::get(market_id).ok_or(Error::<T>::PoolNotFound)?;
+            let pool = <Self as PoolStorage>::get(pool_id)?;
             let buy_amount = pool.calculate_buy_amount_until(asset, until)?;
             let total_fee_fractional = Self::total_fee_fractional(
                 pool.swap_fee,
@@ -2129,7 +2141,10 @@ mod pallet {
             amount_in: Self::Balance,
             min_amount_out: Self::Balance,
         ) -> Result<AmmTradeOf<T>, ApiError<AmmSoftFail>> {
-            Self::do_buy(who, market_id, asset_out, amount_in, min_amount_out)
+            let pool_id = MarketIdToPoolId::<T>::get(market_id).ok_or_else(|| {
+                Self::match_failure(Error::<T>::PoolNotFound.into())
+            })?;
+            Self::do_buy(who, pool_id, asset_out, amount_in, min_amount_out)
                 .map_err(Self::match_failure)
         }
 
@@ -2138,7 +2153,9 @@ mod pallet {
             asset: Self::Asset,
             until: Self::Balance,
         ) -> Result<Self::Balance, DispatchError> {
-            let pool = <Self as PoolStorage>::get(market_id)?;
+            let pool_id =
+                MarketIdToPoolId::<T>::get(market_id).ok_or(Error::<T>::PoolNotFound)?;
+            let pool = <Self as PoolStorage>::get(pool_id)?;
             pool.calculate_sell_amount_until(asset, until)
         }
 
@@ -2149,7 +2166,10 @@ mod pallet {
             amount_in: Self::Balance,
             min_amount_out: Self::Balance,
         ) -> Result<AmmTradeOf<T>, ApiError<AmmSoftFail>> {
-            Self::do_sell(who, market_id, asset_out, amount_in, min_amount_out)
+            let pool_id = MarketIdToPoolId::<T>::get(market_id).ok_or_else(|| {
+                Self::match_failure(Error::<T>::PoolNotFound.into())
+            })?;
+            Self::do_sell(who, pool_id, asset_out, amount_in, min_amount_out)
                 .map_err(Self::match_failure)
         }
     }

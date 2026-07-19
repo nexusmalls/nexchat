@@ -19,11 +19,13 @@
 #![cfg(test)]
 
 use crate::{self as zrml_styx};
-use frame_support::{construct_runtime, derive_impl, ord_parameter_types};
-use frame_system::EnsureSignedBy;
+use frame_support::{
+    construct_runtime, derive_impl, ord_parameter_types, parameter_types, traits::EitherOfDiverse,
+};
+use frame_system::{EnsureRoot, EnsureSignedBy};
 use sp_runtime::BuildStorage;
 use zeitgeist_primitives::{
-    constants::mock::{BlockHashCount, ExistentialDeposit, MaxLocks, MaxReserves, BASE},
+    constants::mock::{BlockHashCount, ExistentialDeposit, MaxLocks, MaxReserves},
     types::Balance,
 };
 
@@ -33,9 +35,14 @@ pub const ALICE: AccountIdTest = 0;
 pub const BOB: AccountIdTest = 1;
 pub const CHARLIE: AccountIdTest = 2;
 pub const SUDO: AccountIdTest = 1337;
+pub const NEX: Balance = 1_000_000_000_000;
 
 ord_parameter_types! {
     pub const Sudo: AccountIdTest = SUDO;
+}
+
+parameter_types! {
+    pub const DefaultBurnAmount: Balance = 200 * NEX;
 }
 
 construct_runtime!(
@@ -48,7 +55,9 @@ construct_runtime!(
 
 impl crate::Config for Runtime {
     type Currency = Balances;
-    type SetBurnAmountOrigin = EnsureSignedBy<Sudo, AccountIdTest>;
+    type DefaultBurnAmount = DefaultBurnAmount;
+    type SetBurnAmountOrigin =
+        EitherOfDiverse<EnsureRoot<AccountIdTest>, EnsureSignedBy<Sudo, AccountIdTest>>;
     type WeightInfo = zrml_styx::weights::WeightInfo<Runtime>;
 }
 
@@ -78,9 +87,9 @@ impl Default for ExtBuilder {
     fn default() -> Self {
         Self {
             balances: vec![
-                (ALICE, 1_000 * BASE),
-                (BOB, 1_000 * BASE),
-                (CHARLIE, 1_000 * BASE),
+                (ALICE, 1_000 * NEX),
+                (BOB, 1_000 * NEX),
+                (CHARLIE, 1_000 * NEX),
             ],
         }
     }

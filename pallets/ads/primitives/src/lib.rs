@@ -17,8 +17,8 @@
 //! （GroupRobot 的 TEE 节点、Entity 的 Shop）分离，使核心广告引擎可跨适配层复用。
 
 use codec::{Decode, Encode, MaxEncodedLen};
-use scale_info::TypeInfo;
 use core::fmt::Debug;
+use scale_info::TypeInfo;
 
 // ============================================================================
 // Type Aliases

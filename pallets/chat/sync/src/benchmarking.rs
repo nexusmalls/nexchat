@@ -18,7 +18,6 @@ use super::*;
 use crate::types::AnchorId;
 use crate::Pallet as ChatSync;
 use frame_benchmarking::v2::*;
-use sp_runtime::Saturating;
 use frame_support::{
     traits::{Currency, Get},
     BoundedVec,
@@ -26,6 +25,7 @@ use frame_support::{
 use frame_system::RawOrigin;
 use sp_core::{ed25519, testing::ED25519};
 use sp_io::hashing::blake2_256;
+use sp_runtime::Saturating;
 use sp_std::vec;
 
 /// EN: Fresh anchor keypair in the keystore; returns the public key.
@@ -63,7 +63,9 @@ fn max_ciphertext<T: Config>() -> BoundedVec<u8, T::MaxAnchorLen> {
 /// 时间，下限取 1——使预置墓碑（`updated_at - 1`）在 `now == 0` 的 genesis 下仍
 /// 严格小于它；`MaxClockSkew` 上界依然满足。
 fn now_ms<T: Config>() -> u64 {
-    pallet_timestamp::Pallet::<T>::get().saturated_into::<u64>().max(1)
+    pallet_timestamp::Pallet::<T>::get()
+        .saturated_into::<u64>()
+        .max(1)
 }
 
 /// EN: Mock externalities + in-memory keystore for the std benchmark test suite.
@@ -99,7 +101,13 @@ mod benchmarks {
         // Currency::reserve + insert. 首次发布即最坏情况：ed25519 校验 + 墓碑
         // 检查 + 押金预留 + 写入。
         #[extrinsic_call]
-        publish_sync_anchor(RawOrigin::Signed(caller), anchor_pk, updated_at, ciphertext, sig);
+        publish_sync_anchor(
+            RawOrigin::Signed(caller),
+            anchor_pk,
+            updated_at,
+            ciphertext,
+            sig,
+        );
 
         assert!(SyncAnchors::<T>::contains_key(anchor_id));
     }

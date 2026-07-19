@@ -33,14 +33,7 @@ pub type ContactTag = [u8; 32];
 /// 当前撤销 `epoch` 与 `revoked_tags` 集合。Blind-RSA 公钥**不**存于此（由发送方携带、
 /// 经 `inbox_id = H(IPK)` 自验证），以保持注册表的账户不可关联性。
 #[derive(
-    CloneNoBound,
-    PartialEqNoBound,
-    EqNoBound,
-    Encode,
-    Decode,
-    TypeInfo,
-    MaxEncodedLen,
-    DebugNoBound,
+    CloneNoBound, PartialEqNoBound, EqNoBound, Encode, Decode, TypeInfo, MaxEncodedLen, DebugNoBound,
 )]
 #[scale_info(skip_type_params(MaxRevokedTags))]
 pub struct InboxRecord<

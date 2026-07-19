@@ -17,14 +17,16 @@
 
 use crate::{BalanceOf, Config};
 use frame_system::pallet_prelude::BlockNumberFor;
-use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
+use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::{traits::Zero, Saturating};
 use zeitgeist_primitives::math::fixed::FixedDiv;
 
 /// Records until the end of time.
 /// 按区块持续记录正向与负向结果的价格比较得分。
-#[derive(Clone, Debug, Decode, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo)]
+#[derive(
+    Clone, Debug, Decode, DecodeWithMemTracking, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo,
+)]
 pub struct DecisionMarketOracleScoreboard<T>
 where
     T: Config,

@@ -770,6 +770,7 @@ impl crate::CrossChainPayout<u64, u128> for MockCrossChainPayout {
         evm_chain_id: u32,
         recipient: [u8; 20],
         amount: u128,
+        _refund_ctx: &[u8],
     ) -> Result<[u8; 32], sp_runtime::DispatchError> {
         match PAYOUT_MODE.with(|r| *r.borrow()) {
             1 => return Err(sp_runtime::DispatchError::Other("bridge rejected")),
@@ -781,13 +782,14 @@ impl crate::CrossChainPayout<u64, u128> for MockCrossChainPayout {
             _ => {}
         }
         // 模拟桥的真 burn：从 from 销毁 amount（KeepAlive），TotalIssuance↓
-        let negative = <pallet_balances::Pallet<Test> as frame_support::traits::Currency<u64>>::withdraw(
-            from,
-            amount,
-            frame_support::traits::WithdrawReasons::TRANSFER,
-            frame_support::traits::ExistenceRequirement::KeepAlive,
-        )
-        .map_err(|_| sp_runtime::DispatchError::Other("payout burn failed"))?;
+        let negative =
+            <pallet_balances::Pallet<Test> as frame_support::traits::Currency<u64>>::withdraw(
+                from,
+                amount,
+                frame_support::traits::WithdrawReasons::TRANSFER,
+                frame_support::traits::ExistenceRequirement::KeepAlive,
+            )
+            .map_err(|_| sp_runtime::DispatchError::Other("payout burn failed"))?;
         drop(negative);
         PAYOUT_CALLS.with(|c| {
             c.borrow_mut()

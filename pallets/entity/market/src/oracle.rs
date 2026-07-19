@@ -105,9 +105,17 @@ impl<T: Config> Pallet<T> {
                 block_number: current_block,
             };
             let rotations: [(&mut PriceSnapshot, &mut PriceSnapshot, u32); 3] = [
-                (&mut acc.hour_prev, &mut acc.hour_curr, T::BlocksPerHour::get()),
+                (
+                    &mut acc.hour_prev,
+                    &mut acc.hour_curr,
+                    T::BlocksPerHour::get(),
+                ),
                 (&mut acc.day_prev, &mut acc.day_curr, T::BlocksPerDay::get()),
-                (&mut acc.week_prev, &mut acc.week_curr, T::BlocksPerWeek::get()),
+                (
+                    &mut acc.week_prev,
+                    &mut acc.week_curr,
+                    T::BlocksPerWeek::get(),
+                ),
             ];
             for (prev, curr, period) in rotations {
                 if current_block.saturating_sub(curr.block_number) >= period {

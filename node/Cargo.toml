@@ -60,6 +60,10 @@ sp-keyring = { default-features = true, workspace = true }
 sp-runtime = { default-features = true, workspace = true }
 sp-timestamp = { default-features = true, workspace = true }
 substrate-frame-rpc-system = { default-features = true, workspace = true }
+zeitgeist-primitives = { default-features = true, workspace = true }
+zrml-prediction-markets-runtime-api = { default-features = true, workspace = true }
+zrml-swaps-rpc = { default-features = true, workspace = true }
+zrml-swaps-runtime-api = { default-features = true, workspace = true }
 
 [build-dependencies]
 substrate-build-script-utils = { default-features = true, workspace = true }

@@ -3,8 +3,8 @@
 //! 测试 pallet-chat-permission 的所有核心功能。
 
 use crate::{
-    mock::*, ChatPermissionLevel, Error, Event, PermissionResult, PrivacySettingsOf,
-    SceneAuthorizationManager, SceneId, SceneType, ChatPermissionChecker,
+    mock::*, ChatPermissionChecker, ChatPermissionLevel, Error, Event, PermissionResult,
+    PrivacySettingsOf, SceneAuthorizationManager, SceneId, SceneType,
 };
 use frame_support::{assert_noop, assert_ok};
 
@@ -70,7 +70,9 @@ mod privacy_settings {
             ));
 
             let settings = PrivacySettingsOf::<Test>::get(ALICE);
-            assert!(settings.rejected_scene_types.contains(&SceneType::MarketMaker));
+            assert!(settings
+                .rejected_scene_types
+                .contains(&SceneType::MarketMaker));
         });
     }
 }
@@ -92,13 +94,21 @@ mod capability_epoch {
         new_test_ext().execute_with(|| {
             assert_eq!(ChatPermission::capability_epoch(ALICE), 0);
 
-            assert_ok!(ChatPermission::bump_capability_epoch(RuntimeOrigin::signed(ALICE)));
+            assert_ok!(ChatPermission::bump_capability_epoch(
+                RuntimeOrigin::signed(ALICE)
+            ));
             assert_eq!(ChatPermission::capability_epoch(ALICE), 1);
             System::assert_last_event(
-                Event::CapabilityEpochBumped { who: ALICE, new_epoch: 1 }.into(),
+                Event::CapabilityEpochBumped {
+                    who: ALICE,
+                    new_epoch: 1,
+                }
+                .into(),
             );
 
-            assert_ok!(ChatPermission::bump_capability_epoch(RuntimeOrigin::signed(ALICE)));
+            assert_ok!(ChatPermission::bump_capability_epoch(
+                RuntimeOrigin::signed(ALICE)
+            ));
             assert_eq!(ChatPermission::capability_epoch(ALICE), 2);
 
             // 各账户独立 / epochs are per-account independent.
@@ -541,7 +551,9 @@ mod helper_methods {
 
             let summary = ChatPermission::get_privacy_summary(&ALICE);
             assert_eq!(summary.permission_level, ChatPermissionLevel::FriendsOnly);
-            assert!(summary.rejected_scene_types.contains(&SceneType::MarketMaker));
+            assert!(summary
+                .rejected_scene_types
+                .contains(&SceneType::MarketMaker));
         });
     }
 
@@ -611,7 +623,11 @@ mod compliance {
             );
 
             // Root 无限期禁言 / Root mutes indefinitely
-            assert_ok!(ChatPermission::force_mute_account(RuntimeOrigin::root(), ALICE, None));
+            assert_ok!(ChatPermission::force_mute_account(
+                RuntimeOrigin::root(),
+                ALICE,
+                None
+            ));
             assert!(ChatPermission::is_account_muted(&ALICE));
             assert_eq!(
                 ChatPermission::check_permission(&ALICE, &BOB),
@@ -622,7 +638,10 @@ mod compliance {
             assert!(ChatPermission::can_send_message(&BOB, &ALICE));
 
             // 解除后恢复 / unmute restores
-            assert_ok!(ChatPermission::force_unmute_account(RuntimeOrigin::root(), ALICE));
+            assert_ok!(ChatPermission::force_unmute_account(
+                RuntimeOrigin::root(),
+                ALICE
+            ));
             assert!(!ChatPermission::is_account_muted(&ALICE));
             assert!(ChatPermission::can_send_message(&ALICE, &BOB));
         });
@@ -633,7 +652,11 @@ mod compliance {
     #[test]
     fn timed_mute_expires() {
         new_test_ext().execute_with(|| {
-            assert_ok!(ChatPermission::force_mute_account(RuntimeOrigin::root(), ALICE, Some(10)));
+            assert_ok!(ChatPermission::force_mute_account(
+                RuntimeOrigin::root(),
+                ALICE,
+                Some(10)
+            ));
             assert!(ChatPermission::is_account_muted(&ALICE));
             run_to_block(10);
             // until 为不含上界 / `until` is exclusive
@@ -680,7 +703,11 @@ mod compliance {
                 ChatPermission::resolve_report(RuntimeOrigin::signed(BOB), 0, true),
                 sp_runtime::DispatchError::BadOrigin
             );
-            assert_ok!(ChatPermission::resolve_report(RuntimeOrigin::root(), 0, true));
+            assert_ok!(ChatPermission::resolve_report(
+                RuntimeOrigin::root(),
+                0,
+                true
+            ));
             assert_eq!(crate::OpenReportCount::<Test>::get(), 0);
             assert!(!crate::Reports::<Test>::contains_key(0));
             assert_noop!(

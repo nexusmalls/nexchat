@@ -1070,7 +1070,6 @@ fn operator_can_claim_rewards() {
 /// 函数级中文注释：测试19 - 紧急暂停/恢复扣费
 #[test]
 fn emergency_pause_and_resume_billing() {
-
     new_test_ext().execute_with(|| {
         // 暂停扣费
         assert_ok!(crate::Pallet::<Test>::emergency_pause_billing(
@@ -1216,7 +1215,6 @@ fn on_finalize_billing_cursor_skips_already_processed_blocks() {
 /// 回归测试：PendingUnregistrations 宽限期到期后自动清理
 #[test]
 fn on_finalize_processes_expired_pending_unregistrations() {
-
     new_test_ext().execute_with(|| {
         let operator: AccountId = 42;
         let grace_expires_at: u64 = 50;
@@ -1264,7 +1262,6 @@ fn on_finalize_processes_expired_pending_unregistrations() {
 /// P0: on_finalize 清理 PinBilling state=2 的过期CID及所有关联存储
 #[test]
 fn p0_on_finalize_cleans_expired_cids() {
-
     new_test_ext().execute_with(|| {
         let cid_hash = H256::from_low_u64_be(999);
         let operator: AccountId = 10;
@@ -1330,7 +1327,6 @@ fn p0_on_finalize_cleans_expired_cids() {
 /// P0: ExpiredCidPending=false 时 on_finalize 不扫描 PinBilling
 #[test]
 fn p0_no_scan_when_expired_cid_pending_false() {
-
     new_test_ext().execute_with(|| {
         let cid_hash = H256::from_low_u64_be(888);
         // state=2 但 flag=false → 不清理
@@ -1348,7 +1344,6 @@ fn p0_no_scan_when_expired_cid_pending_false() {
 /// P0: on_finalize 批量限制（每块最多清理5个）
 #[test]
 fn p0_cleanup_respects_rate_limit() {
-
     new_test_ext().execute_with(|| {
         for i in 1u64..=7 {
             let cid = H256::from_low_u64_be(i);

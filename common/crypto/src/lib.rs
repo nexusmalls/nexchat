@@ -30,12 +30,12 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
+use core::fmt::Debug;
 use frame_support::{
     pallet_prelude::*, BoundedVec, CloneNoBound, DebugNoBound, EqNoBound, PartialEqNoBound,
 };
 use scale_info::TypeInfo;
 use sp_core::{ConstU32, H256};
-use core::fmt::Debug;
 
 // ============================================================
 // EncryptionMethod — 替代原始 u8
@@ -412,15 +412,7 @@ pub struct UserPublicKey<
 /// 当加密内容的对称密钥需要更换时（如用户被撤销访问权限后），
 /// 记录每次轮换的元数据，便于审计和追踪。
 #[derive(
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct KeyRotationRecord<AccountId, BlockNumber> {
     /// 内容ID

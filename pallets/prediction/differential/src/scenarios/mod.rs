@@ -3,11 +3,13 @@
 
 mod authorized_dispute;
 mod capture;
+mod court_global_dispute;
 mod permissionless_resolve;
 mod scalar_lifecycle;
 mod trusted_market;
 
 pub use authorized_dispute::authorized_dispute_native;
+pub use court_global_dispute::court_global_dispute_native;
 pub use permissionless_resolve::permissionless_resolve_native;
 pub use scalar_lifecycle::scalar_lifecycle_native;
 pub use trusted_market::trusted_market_native;
@@ -34,6 +36,10 @@ pub fn scenario_catalog() -> &'static [ScenarioEntry] {
         ScenarioEntry {
             name: authorized_dispute::NAME,
             run: authorized_dispute_native,
+        },
+        ScenarioEntry {
+            name: court_global_dispute::NAME,
+            run: court_global_dispute_native,
         },
         ScenarioEntry {
             name: trusted_market::NAME,

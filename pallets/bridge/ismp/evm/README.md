@@ -27,12 +27,35 @@ surface that decision **D3=(c)** removed on the Rust side.
 无需自写 Solidity（也不增加审计面）。自写代币合约会重新引入 D3=(c) 在 Rust 侧已
 消除的审计面。
 
-`NexHyperFungibleToken.sol` in this folder is a **reference** implementation for
-teams that need a standalone, self-custodied token. It is **not** compiled in CI
-and is **not** a substitute for an audit.
+`src/NexHyperFungibleToken.sol` in this folder is an **upgraded reference**
+implementation for teams that need a standalone, self-custodied token. It is
+**not** compiled in this Rust repo's CI and is **not** a substitute for an audit.
+It is byte- and interface-compatible with the official contract:
 
-本目录的 `NexHyperFungibleToken.sol` 是给需要独立自托管代币的团队的**参考**实现，
-**不**纳入 CI，**不**替代审计。
+- implements `IHyperFungibleToken` (ERC165 interface id `0x7200c457`) so the
+  `@hyperbridge/sdk` auto-detects it;
+- exposes `SendParams` + `quote()` (fee-token and native paths) matching the
+  official API;
+- supports both native-token and fee-token fee payment;
+- inherits OpenZeppelin `Pausable` so `pause()` freezes `send`, `onAccept`,
+  `onPostRequestTimeout`, and ERC20 `transfer`/`transferFrom` together;
+- uses the correct `onPostRequestTimeout(PostRequestTimeout memory)` signature
+  aligned with `ismp-solidity`'s `IApp`;
+- ships a UUPS-upgradeable variant `src/NexHyperFungibleTokenUpgradeable.sol`
+  for proxy deployments.
+
+本目录的 `src/NexHyperFungibleToken.sol` 是给需要独立自托管代币的团队的**升级版
+参考**实现，**不**纳入本 Rust 仓 CI，**不**替代审计。它与官方合约逐字节且接口兼容：
+
+- 实现 `IHyperFungibleToken`（ERC165 接口 id `0x7200c457`），`@hyperbridge/sdk`
+  可自动识别；
+- 暴露 `SendParams` + `quote()`（fee-token 与原生两条路径），与官方 API 一致；
+- 同时支持原生代币与 fee token 两种费用支付；
+- 继承 OpenZeppelin `Pausable`，`pause()` 一并冻结 `send`、`onAccept`、
+  `onPostRequestTimeout` 与 ERC20 `transfer`/`transferFrom`；
+- 采用与 `ismp-solidity` 的 `IApp` 对齐的 `onPostRequestTimeout(PostRequestTimeout
+  memory)` 签名；
+- 附带 UUPS 可升级变体 `src/NexHyperFungibleTokenUpgradeable.sol` 供代理部署。
 
 ## Canonical wire format / 规范 wire 格式
 
@@ -78,23 +101,28 @@ SCALE rules used here: integers are **little-endian**, fixed arrays (`[u8; 20]`)
 InboundOp = 0x00 ++ OrderIntent      // Order
           | 0x01 ++ WithdrawRequest  // Withdraw
 
-OrderIntent (76 or 96 bytes):
-  schema_version : u8           (1)   // = 1
+OrderIntent (34 or 54 bytes):
+  schema_version : u8           (1)   // = 1 (== PAYLOAD_SCHEMA_VERSION)
   buyer_evm      : [u8;20]      (20)
   product_id     : u64  LE      (8)
   quantity       : u32  LE      (4)
-  amount_nex     : u128 LE      (16)  // = Message.amount in EVM precision
-  max_nex_amount : u128 LE      (16)  // slippage cap (EVM precision)
   referrer       : Option<[u8;20]>    // 0x00 | 0x01 ++ 20 bytes
-  nonce          : u64  LE      (8)
 
-WithdrawRequest (65 bytes):
-  schema_version : u8           (1)   // = 1
+WithdrawRequest (57 bytes):
+  schema_version : u8           (1)   // = 1 (== PAYLOAD_SCHEMA_VERSION)
   owner_evm      : [u8;20]      (20)  // == msg.sender on the EVM gateway
   amount_nex     : u128 LE      (16)  // EVM precision; Message.amount = 0
   dest_recipient : [u8;20]      (20)
-  nonce          : u64  LE      (8)
 ```
+
+The order amount is **not** in the payload: it is carried only as `Message.amount`
+(single source of truth) and used by the pallet as both the buyer's budget and the
+slippage cap. Replay protection is the ISMP request commitment + receipt, so no
+application-level nonce is sent. `schema_version` must equal `PAYLOAD_SCHEMA_VERSION`
+(currently `1`) or `on_accept` rejects the message.
+下单金额**不**在负载里：它仅由 `Message.amount` 携带（唯一真相来源），由 pallet 同时用作买家
+预算与滑点上限。重放保护为 ISMP 请求 commitment + receipt，故不发送应用层 nonce。
+`schema_version` 须等于 `PAYLOAD_SCHEMA_VERSION`（当前 `1`），否则 `on_accept` 拒绝该消息。
 
 Order: `Message.amount` = the NEX burned on the EVM side; the pallet mints to the
 derived buyer `blake2_256("nexus-evm" ++ buyer_evm)` and dispatches the digital order.
@@ -118,26 +146,50 @@ pallet 从 `blake2_256("nexus-evm" ++ owner_evm)` 扣款并将 NEX POST 回 `des
 | --- | --- | --- |
 | Nexus state-machine id | `SUBSTRATE-NEXS` *(placeholder, G-B3)* | `runtime/src/configs/ismp.rs` `HostStateMachine` |
 | Nexus module id (`to`/`from`) | 8 bytes `"nexbridg"` = `0x6e65786272696467` | `pallet_bridge_ismp::PALLET_ID` (`ModuleId::Pallet`) |
-| EVM state-machine id | e.g. `EVM-56` (BSC) | `StateMachine.evm(56)` |
-| EVM module id (`to`/`from`) | the 20-byte NEX contract address | deployment |
+| EVM state-machine id (BSC) | `EVM-56` | `StateMachine.evm(56)` |
+| EVM state-machine id (Polygon) | `EVM-137` | `StateMachine.evm(137)` |
+| EVM module id (`to`/`from`) | the 20-byte NEX contract address on that chain | deployment |
 
 `ModuleId::Pallet(PalletId(*b"nexbridg")).to_bytes()` returns the **raw 8 bytes**
 `nexbridg` (verified against `pallet-ismp 2512.2.0`), so the EVM peer's
 `moduleId` is exactly those 8 bytes — not a 20/32-byte padded value.
 
+> Each EVM chain gets its **own** NEX contract deployment (its own 20-byte
+> address) and is registered on Nexus as a separate lane via
+> `register_chain(StateMachine::Evm(<id>), <contract>, 18)`. Per-chain ledgers
+> (`BridgedOutByChain`) are independent, and each lane can be paused/deregistered
+> without affecting the others.
+> 每条 EVM 链各自部署 NEX 合约（各自的 20 字节地址），在 Nexus 上作为独立 lane 通过
+> `register_chain(StateMachine::Evm(<id>), <contract>, 18)` 注册。按链账本
+> （`BridgedOutByChain`）相互独立，每条 lane 可单独暂停/注销而不影响其他 lane。
+
 ## End-to-end configuration / 端到端配置
 
+The steps below are **per connected EVM chain**. Repeat for each chain (BSC,
+Polygon, …) with that chain's `IsmpHost` address and NEX contract address.
+Hyperbridge is live on Polygon mainnet and the Amoy testnet, so the same flow
+works for both BSC and Polygon.
+
+以下步骤**按每条接入的 EVM 链**执行。对每条链（BSC、Polygon……）用该链的
+`IsmpHost` 地址与 NEX 合约地址重复一遍。Hyperbridge 已在 Polygon 主网和 Amoy
+测试网上线，故 BSC 与 Polygon 走同一套流程。
+
 1. **Deploy** the chosen EVM contract, passing the ISMP `Host` address for that
-   chain (BSC mainnet/testnet host address: confirm with Polytope Labs, G-B3).
+   chain (BSC mainnet/testnet or Polygon mainnet/Amoy `IsmpHost` address: confirm
+   with Polytope Labs, G-B3).
 2. **EVM → register Nexus as a peer**:
    - official `HyperFungibleToken`: `addChain(bytes("SUBSTRATE-NEXS"), bytes("nexbridg"))`
    - reference contract: `setPeer(bytes("SUBSTRATE-NEXS"), hex"6e65786272696467", true)`
 3. **Nexus → register the EVM chain** (root / `BridgeOrigin`):
-   `pallet_bridge_ismp::register_chain(StateMachine::Evm(56), <NEX EVM address>, 18)`
+   - BSC: `pallet_bridge_ismp::register_chain(StateMachine::Evm(56), <NEX BSC address>, 18)`
+   - Polygon: `pallet_bridge_ismp::register_chain(StateMachine::Evm(137), <NEX Polygon address>, 18)`
 4. **Nexus → set limits** (root): `set_limits(per_tx, daily)` — until then the
-   bridge is inert (limits default to 0).
+   bridge is inert (limits default to 0). Limits are global across lanes; per-lane
+   pause/deregister provides lane-level isolation.
 5. **Init consensus state** on both sides so proofs verify (see the pallet
-   `README.md` runbook → "Consensus state").
+   `README.md` runbook → "Consensus state"). The Hyperbridge coprocessor verifies
+   each EVM chain's consensus (BSC consensus client / Polygon Heimdall-based
+   client); Nexus only verifies the coprocessor's GRANDPA consensus.
 
 See `../README.md` for the full operational runbook (consensus-state init,
 register/limits, monitoring). 完整运维手册（共识状态初始化、注册/限额、监控）见
@@ -145,11 +197,48 @@ register/limits, monitoring). 完整运维手册（共识状态初始化、注�
 
 ## Dependencies (reference contract) / 依赖（参考合约）
 
-- `@polytope-labs/ismp-solidity-abi` — `BaseIsmpModule`, `IDispatcher`, ISMP
-  structs. Pin the version that matches the deployed `Host`. 与部署的 `Host`
-  对应的版本须锁定。
-- `@openzeppelin/contracts` — `ERC20`, `Ownable`.
+- `@polytope-labs/ismp-solidity-abi` — `BaseIsmpModule`, `IDispatcher`,
+  `DispatchPost`, `PostRequestTimeout`, ISMP structs. Pin the version that
+  matches the deployed `Host`. 与部署的 `Host` 对应的版本须锁定。
+- `@openzeppelin/contracts` — `ERC20`, `Ownable`, `Pausable`, `ERC165`,
+  `SafeERC20`, `ERC1967Proxy`.
+- `@openzeppelin/contracts-upgradeable` — upgradeable variants for the UUPS
+  version. UUPS 版所需的对应可升级变体。
+- `forge-std` — Foundry test stdlib. Foundry 测试标准库。
 
-Compile/test with Foundry or Hardhat in your EVM workspace; this Rust repo does
-not build Solidity. 在 EVM 工作区用 Foundry/Hardhat 编译测试；本 Rust 仓库不构建
-Solidity。
+Compile/test with Foundry in the `evm/` workspace; this Rust repo does not build
+Solidity. 在 `evm/` 工作区用 Foundry 编译测试；本 Rust 仓库不构建 Solidity。
+
+## Build & test / 构建与测试
+
+```bash
+cd pallets/bridge/ismp/evm
+./script/bootstrap.sh   # forge install openzeppelin + ismp-solidity + upgradeable
+forge build
+forge test -vv
+forge test --match-contract BridgeIntegration -vvv   # Substrate↔EVM round-trip
+forge coverage
+```
+
+> The default `foundry.toml` remapping for `@polytope-labs/ismp-solidity-abi/`
+> points to `test/mocks/ismp-solidity-abi/` so `forge test` runs offline against
+> local mocks. For production deployment, flip the remapping back to
+> `lib/ismp-solidity/` (installed by `bootstrap.sh`) and recompile.
+>
+> 默认 `foundry.toml` 的 `@polytope-labs/ismp-solidity-abi/` remapping 指向
+> `test/mocks/ismp-solidity-abi/`，使 `forge test` 离线跑本地 mock。生产部署请改回
+> `lib/ismp-solidity/`（由 `bootstrap.sh` 安装）后重新编译。
+
+### Test layout / 测试布局
+
+- `test/NexHyperFungibleToken.t.sol` — unit tests: ERC165 detection, chain
+  registry, send/burn, pause on every state-mutating path, quote, timeout
+  refund, source authentication, host config.
+- `test/NexHyperFungibleTokenUpgradeable.t.sol` — `initialize` once, upgrade
+  auth restricted to owner, behaviour parity.
+- `test/BridgeIntegration.t.sol` — `Message` ABI encoding matches a
+  hand-computed reference; `nexbridg` is exactly 8 bytes; full Substrate→EVM
+  inbound mint, EVM→Substrate outbound burn, and timeout refund reconcile
+  against the mock host ledger.
+- `test/mocks/MockIsmpHost.sol` — `IDispatcher` + inbound/timeout driver,
+  records every dispatch so tests can assert against the ledger.

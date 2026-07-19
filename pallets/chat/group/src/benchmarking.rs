@@ -165,7 +165,14 @@ mod benchmarks {
         fund::<T>(&caller);
         let gid = NextGroupId::<T>::get();
         #[extrinsic_call]
-        create_group(RawOrigin::Signed(caller), b"cid".to_vec(), 1, true, [0u8; 32], [0u8; 32]);
+        create_group(
+            RawOrigin::Signed(caller),
+            b"cid".to_vec(),
+            1,
+            true,
+            [0u8; 32],
+            [0u8; 32],
+        );
         assert!(GroupMls::<T>::contains_key(gid));
     }
 
@@ -296,7 +303,8 @@ mod benchmarks {
         let owner: T::AccountId = account("owner", 0, 0);
         let gid = new_group::<T>(&owner, false);
         let caller: T::AccountId = whitelisted_caller();
-        ChatGroup::<T>::request_join(RawOrigin::Signed(caller.clone()).into(), gid).expect("request");
+        ChatGroup::<T>::request_join(RawOrigin::Signed(caller.clone()).into(), gid)
+            .expect("request");
         #[extrinsic_call]
         cancel_join_request(RawOrigin::Signed(caller.clone()), gid);
         assert!(!JoinRequests::<T>::contains_key(gid, &caller));
@@ -333,7 +341,10 @@ mod benchmarks {
         add_member::<T>(&owner, gid, &member);
         #[extrinsic_call]
         set_admin(RawOrigin::Signed(owner), gid, member.clone(), true);
-        assert_eq!(GroupMembers::<T>::get(gid, &member).unwrap().role, MemberRole::Admin);
+        assert_eq!(
+            GroupMembers::<T>::get(gid, &member).unwrap().role,
+            MemberRole::Admin
+        );
     }
 
     #[benchmark]
@@ -347,7 +358,13 @@ mod benchmarks {
         let mut cid = Vec::new();
         cid.resize(T::MaxCidLen::get() as usize, b'z');
         #[extrinsic_call]
-        set_group_profile(RawOrigin::Signed(owner), gid, Some(name), Some(cid), Some(ann));
+        set_group_profile(
+            RawOrigin::Signed(owner),
+            gid,
+            Some(name),
+            Some(cid),
+            Some(ann),
+        );
         assert!(GroupProfiles::<T>::contains_key(gid));
     }
 
@@ -411,8 +428,8 @@ mod benchmarks {
     fn force_disband_group() -> Result<(), BenchmarkError> {
         let owner: T::AccountId = account("owner", 0, 0);
         let gid = new_group::<T>(&owner, true);
-        let origin = T::GovernanceOrigin::try_successful_origin()
-            .map_err(|_| BenchmarkError::Weightless)?;
+        let origin =
+            T::GovernanceOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
         #[extrinsic_call]
         _(origin as T::RuntimeOrigin, gid);
         assert!(!GroupMls::<T>::contains_key(gid));
@@ -423,8 +440,8 @@ mod benchmarks {
     fn set_group_frozen() -> Result<(), BenchmarkError> {
         let owner: T::AccountId = account("owner", 0, 0);
         let gid = new_group::<T>(&owner, true);
-        let origin = T::GovernanceOrigin::try_successful_origin()
-            .map_err(|_| BenchmarkError::Weightless)?;
+        let origin =
+            T::GovernanceOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
         #[extrinsic_call]
         _(origin as T::RuntimeOrigin, gid, true);
         assert!(GroupFrozen::<T>::contains_key(gid));

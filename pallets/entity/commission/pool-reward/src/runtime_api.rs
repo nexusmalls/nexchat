@@ -6,8 +6,8 @@
 
 use codec::{Codec, Decode, Encode};
 use scale_info::TypeInfo;
-use Debug;
 use sp_std::vec::Vec;
+use Debug;
 
 // ============================================================================
 // 共享 DTO

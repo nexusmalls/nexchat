@@ -2846,7 +2846,11 @@ pub mod pallet {
 
             let current_block: u32 = <frame_system::Pallet<T>>::block_number().saturated_into();
             // on_idle 需要 trade_count > 0 才刷新 current_block
-            TwapAccumulatorStore::<T>::put(TwapAccumulator::new_at(current_block, initial_price, 1));
+            TwapAccumulatorStore::<T>::put(TwapAccumulator::new_at(
+                current_block,
+                initial_price,
+                1,
+            ));
 
             LastTradePrice::<T>::put(initial_price);
 

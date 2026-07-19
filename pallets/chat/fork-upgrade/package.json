@@ -1,0 +1,16 @@
+{
+  "name": "nexus-fork-upgrade-v103",
+  "private": true,
+  "type": "module",
+  "description": "Chopsticks fork helpers: set_code v103 + verify (ws://127.0.0.1:8000)",
+  "scripts": {
+    "set-code": "node set-code-v103.mjs",
+    "verify": "bash verify-v103.sh"
+  },
+  "dependencies": {
+    "@polkadot/api": "^16.1.1",
+    "@polkadot/keyring": "^14.0.1",
+    "@polkadot/util": "^14.0.1",
+    "@polkadot/util-crypto": "^14.0.1"
+  }
+}

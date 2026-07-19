@@ -144,7 +144,10 @@ impl pallet_dispute_evidence::pallet::Config for Test {
     type PrivateContentDepositUsd = ConstU64<500_000>;
     type DepositCalculator = ();
     type AccessRequestTtlBlocks = ConstU64<200>;
-    type GovernanceOrigin = EitherOfDiverse<frame_system::EnsureRoot<u64>, frame_system::EnsureSignedBy<GovernanceMembers, u64>>;
+    type GovernanceOrigin = EitherOfDiverse<
+        frame_system::EnsureRoot<u64>,
+        frame_system::EnsureSignedBy<GovernanceMembers, u64>,
+    >;
     type MaxReasonLen = ConstU32<256>;
 }
 

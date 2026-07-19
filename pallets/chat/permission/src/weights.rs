@@ -44,13 +44,11 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     }
     /// Storage: MutedAccounts (r:0 w:1).
     fn force_mute_account() -> Weight {
-        Weight::from_parts(25_062_000, 0)
-            .saturating_add(T::DbWeight::get().writes(1))
+        Weight::from_parts(25_062_000, 0).saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: MutedAccounts (r:0 w:1).
     fn force_unmute_account() -> Weight {
-        Weight::from_parts(24_242_000, 0)
-            .saturating_add(T::DbWeight::get().writes(1))
+        Weight::from_parts(24_242_000, 0).saturating_add(T::DbWeight::get().writes(1))
     }
     /// Storage: LastReportAt, OpenReportCount, NextReportId (r:3 w:4 incl. Reports).
     fn report() -> Weight {
@@ -67,11 +65,25 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 }
 
 impl WeightInfo for () {
-    fn set_permission_level() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn set_rejected_scene_types() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn bump_capability_epoch() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn force_mute_account() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn force_unmute_account() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn report() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn resolve_report() -> Weight { Weight::from_parts(15_000_000, 0) }
+    fn set_permission_level() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn set_rejected_scene_types() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn bump_capability_epoch() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn force_mute_account() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn force_unmute_account() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn report() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn resolve_report() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
 }

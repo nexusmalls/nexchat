@@ -14,6 +14,8 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
 pub mod weights;
 
 #[cfg(test)]
@@ -46,7 +48,7 @@ pub mod pallet {
         ensure,
         pallet_prelude::*,
         traits::{
-            fungibles::{Inspect, Mutate},
+            fungibles::{Create, Inspect, Mutate},
             tokens::Preservation,
             EnsureOrigin, ExistenceRequirement, Get,
         },
@@ -71,7 +73,8 @@ pub mod pallet {
         /// Canonical `pallet-assets` ledger (`AssetId = u64`, `Balance = u128`).
         /// 标准 `pallet-assets` 账本（`AssetId = u64`、`Balance = u128`）。
         type Assets: Inspect<Self::AccountId, AssetId = u64, Balance = u128>
-            + Mutate<Self::AccountId>;
+            + Mutate<Self::AccountId>
+            + Create<Self::AccountId>;
 
         /// ORML prediction ledger with an explicit `Asset<u128>` market-id domain.
         /// 使用显式 `Asset<u128>` 市场 ID 域的 ORML 预测账本。

@@ -1,0 +1,49 @@
+[package]
+name = "pallet-hyper-fungible-token"
+version = "2512.0.0-nexus.1"
+edition = "2021"
+description = "Nexus-audited minimal fork of Hyperbridge's hyper-fungible-token pallet"
+authors = ["Polytope Labs <hello@polytope.technology>", "Nexus contributors"]
+license = "Apache-2.0"
+repository = "https://github.com/polytope-labs/hyperbridge"
+
+[dependencies]
+primitive-types = { version = "0.13.1", default-features = false }
+log = { version = "0.4", default-features = false }
+codec = { package = "parity-scale-codec", version = "3.7", default-features = false, features = ["derive"] }
+scale-info = { version = "2.11.6", default-features = false, features = ["derive"] }
+anyhow = { version = "1.0", default-features = false }
+thiserror = { version = "2", default-features = false }
+alloy-primitives = { version = "1.5.7", default-features = false, features = ["rlp"] }
+alloy-sol-macro = { version = "1.5.7", features = ["json"] }
+alloy-sol-types = { version = "1.5.7", default-features = false }
+ismp = { workspace = true }
+pallet-ismp = { workspace = true }
+
+[dependencies.polkadot-sdk]
+version = "=2512.3.2"
+default-features = false
+features = ["frame-support", "frame-system", "sp-runtime", "sp-core", "sp-io"]
+
+[dev-dependencies]
+pallet-assets = { workspace = true, features = ["std"] }
+pallet-balances = { workspace = true, features = ["std"] }
+pallet-timestamp = { workspace = true, features = ["std"] }
+
+[features]
+default = ["std"]
+std = [
+    "polkadot-sdk/std",
+    "primitive-types/std",
+    "ismp/std",
+    "pallet-ismp/std",
+    "log/std",
+    "scale-info/std",
+    "anyhow/std",
+    "alloy-primitives/std",
+]
+runtime-benchmarks = [
+    "polkadot-sdk/frame-benchmarking",
+    "polkadot-sdk/runtime-benchmarks",
+]
+try-runtime = ["polkadot-sdk/try-runtime"]

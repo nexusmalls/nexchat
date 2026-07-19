@@ -4,4 +4,5 @@
 
 mod buy;
 mod claim;
+mod collateral;
 mod refund;

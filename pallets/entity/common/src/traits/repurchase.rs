@@ -43,10 +43,7 @@ pub trait AutoRepurchasePort<AccountId> {
     /// cross-entity product reference attacks.
     /// 在 `set_repurchase_config` 中 `auto_order=true` 时调用，
     /// 防止跨 Entity 商品引用攻击。
-    fn validate_repurchase_product(
-        entity_id: u64,
-        product_id: u64,
-    ) -> Result<(), DispatchError>;
+    fn validate_repurchase_product(entity_id: u64, product_id: u64) -> Result<(), DispatchError>;
 }
 
 /// Null implementation — used in test environments or when auto-repurchase is not configured.
@@ -62,10 +59,7 @@ impl<AccountId> AutoRepurchasePort<AccountId> for NullAutoRepurchasePort {
         Err(DispatchError::Other("auto repurchase not configured"))
     }
 
-    fn validate_repurchase_product(
-        _entity_id: u64,
-        _product_id: u64,
-    ) -> Result<(), DispatchError> {
+    fn validate_repurchase_product(_entity_id: u64, _product_id: u64) -> Result<(), DispatchError> {
         Ok(())
     }
 }

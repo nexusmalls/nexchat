@@ -26,16 +26,18 @@
 // ISMP / Hyperbridge protocol-layer config (Stage 1).
 // ISMP / Hyperbridge 协议层配置（Stage 1）。
 pub mod ismp;
+pub mod prediction;
 
 // Substrate and Polkadot dependencies
 use crate::{
     CommissionCore, CommissionSingleLine, EntityGovernance, EntityLoyalty, EntityMarket,
     OriginCaller, Preimage, SessionKeys, UncheckedExtrinsic,
 };
+use frame_election_provider_support::{onchain, SequentialPhragmen};
 use frame_support::{
     derive_impl, parameter_types,
     traits::{
-        ConstBool, ConstU128, ConstU16, ConstU32, ConstU64, ConstU8, LinearStoragePrice,
+        ConstBool, ConstU128, ConstU16, ConstU32, ConstU64, ConstU8, Contains, LinearStoragePrice,
         VariantCountOf,
     },
     weights::{
@@ -47,7 +49,6 @@ use frame_system::{
     limits::{BlockLength, BlockWeights},
     EnsureRoot,
 };
-use frame_election_provider_support::{onchain, SequentialPhragmen};
 use pallet_transaction_payment::{FungibleAdapter, Multiplier, TargetedFeeAdjustment};
 use sp_runtime::{generic, traits::AccountIdConversion};
 use sp_runtime::{transaction_validity::TransactionPriority, FixedPointNumber, Perbill};
@@ -64,6 +65,8 @@ use super::{
     Balances,
     Block,
     BlockNumber,
+    ChatCore,
+    ChatPermission,
     ContentCommittee,
     EntityDisclosure,
     EntityKyc,
@@ -74,8 +77,6 @@ use super::{
     EntityTokenSale,
     EntityTransaction,
     Escrow,
-    ChatCore,
-    ChatPermission,
     Hash,
     Historical,
     Nonce,
@@ -128,11 +129,43 @@ parameter_types! {
     pub const SS58Prefix: u16 = 273;
 }
 
+/// Phase-1 HFT filter for the Polygon Amoy runtime.
+/// Polygon Amoy runtime 的 Phase 1 HFT 调用过滤器。
+///
+/// It permits audited-fork registry governance and outbound sends only when
+/// optional calldata is absent; all future HFT call variants remain denied by
+/// default. Empty registry and zero USDX limits keep the lane economically inert
+/// until explicit governance activation.
+///
+/// 仅允许已修复 fork 的 registry 治理和不携带可选 calldata 的出站发送；未来新增 HFT
+/// 调用默认拒绝。空 registry 与零 USDX 限额使通道在治理显式激活前保持经济惰性。
+pub struct NexusBaseCallFilter;
+
+impl Contains<RuntimeCall> for NexusBaseCallFilter {
+    fn contains(call: &RuntimeCall) -> bool {
+        if let Some(allowed) = prediction::prediction_call_allowed(call) {
+            return allowed;
+        }
+        match call {
+            RuntimeCall::HyperFungibleToken(pallet_hyper_fungible_token::Call::send { params }) => {
+                params.call_data.is_none()
+            }
+            RuntimeCall::HyperFungibleToken(
+                pallet_hyper_fungible_token::Call::register_token { .. }
+                | pallet_hyper_fungible_token::Call::update_token { .. },
+            ) => true,
+            RuntimeCall::HyperFungibleToken(_) => false,
+            _ => true,
+        }
+    }
+}
+
 /// The default types are being injected by [`derive_impl`](`frame_support::derive_impl`) from
 /// [`SoloChainDefaultConfig`](`struct@frame_system::config_preludes::SolochainDefaultConfig`),
 /// but overridden as needed.
 #[derive_impl(frame_system::config_preludes::SolochainDefaultConfig)]
 impl frame_system::Config for Runtime {
+    type BaseCallFilter = NexusBaseCallFilter;
     /// The block type for the runtime.
     type Block = Block;
     /// Block & extrinsics weights: base values and limits.
@@ -195,12 +228,8 @@ impl pallet_babe::Config for Runtime {
     type MaxAuthorities = MaxAuthorities;
     type MaxNominators = MaxNominators;
     type KeyOwnerProof = sp_session::MembershipProof;
-    type EquivocationReportSystem = pallet_babe::EquivocationReportSystem<
-        Self,
-        Offences,
-        Historical,
-        ReportLongevity,
-    >;
+    type EquivocationReportSystem =
+        pallet_babe::EquivocationReportSystem<Self, Offences, Historical, ReportLongevity>;
 }
 
 parameter_types! {
@@ -231,8 +260,11 @@ impl pallet_session::SessionManager<AccountId> for NexusSessionManager {
     }
 }
 
-impl pallet_session::historical::SessionManager<AccountId, pallet_staking::Exposure<AccountId, Balance>>
-    for NexusSessionManager
+impl
+    pallet_session::historical::SessionManager<
+        AccountId,
+        pallet_staking::Exposure<AccountId, Balance>,
+    > for NexusSessionManager
 {
     fn new_session(
         new_index: u32,
@@ -304,12 +336,8 @@ impl pallet_grandpa::Config for Runtime {
     type MaxSetIdSessionEntries = MaxSetIdSessionEntries;
 
     type KeyOwnerProof = sp_session::MembershipProof;
-    type EquivocationReportSystem = pallet_grandpa::EquivocationReportSystem<
-        Self,
-        Offences,
-        Historical,
-        ReportLongevity,
-    >;
+    type EquivocationReportSystem =
+        pallet_grandpa::EquivocationReportSystem<Self, Offences, Historical, ReportLongevity>;
 }
 
 // ============================================================================
@@ -366,20 +394,20 @@ impl pallet_staking::EraPayout<Balance> for FixedAnnualInflation {
 /// 分配: remainder 的 75% → 国库（总通胀 15%），25% → 奖励池（总通胀 5%）。
 pub struct InflationSplitter;
 
-impl frame_support::traits::OnUnbalanced<
-    frame_support::traits::fungible::Credit<AccountId, Balances>,
-> for InflationSplitter
+impl
+    frame_support::traits::OnUnbalanced<
+        frame_support::traits::fungible::Credit<AccountId, Balances>,
+    > for InflationSplitter
 {
-    fn on_nonzero_unbalanced(
-        amount: frame_support::traits::fungible::Credit<AccountId, Balances>,
-    ) {
+    fn on_nonzero_unbalanced(amount: frame_support::traits::fungible::Credit<AccountId, Balances>) {
         use frame_support::traits::{fungible::Balanced, tokens::imbalance::Imbalance};
         // 75% of remainder → Treasury, 25% → RewardPool
         let treasury_share = amount.peek() * 3 / 4;
 
         // Split the credit: first resolve treasury portion, then reward pool portion
         let (treasury_part, reward_pool_part) = amount.split(treasury_share);
-        let _ = <Balances as Balanced<AccountId>>::resolve(&TreasuryAccountId::get(), treasury_part);
+        let _ =
+            <Balances as Balanced<AccountId>>::resolve(&TreasuryAccountId::get(), treasury_part);
         let _ = <Balances as Balanced<AccountId>>::resolve(
             &RewardPoolAccountId::get(),
             reward_pool_part,
@@ -1216,8 +1244,7 @@ impl pallet_chat_core::Config for Runtime {
     // 防止任意用户伪造系统通知。人类聊天走链下 MLS，不经此入口。
     // System channel is governance-only (Root), sender = derived system account
     // (audit B2): prevents forged system notifications. Human chat is off-chain.
-    type SystemMessageOrigin =
-        frame_system::EnsureRootWithSuccess<AccountId, ChatSystemMessenger>;
+    type SystemMessageOrigin = frame_system::EnsureRootWithSuccess<AccountId, ChatSystemMessenger>;
     // 程序化系统通知（SystemNotifier::notify）的发信账户，复用同一派生系统账户，
     // 使 extrinsic 路径与 trait 路径落同一 sender（审计 2.3 接线）。
     // Same derived system account for the programmatic notify path (audit 2.3),
@@ -2154,10 +2181,7 @@ impl pallet_entity_commission::MemberProvider<AccountId> for MemberProviderBridg
             .and_then(|m| m.referrer)
     }
 
-    fn get_member_stats(
-        entity_id: u64,
-        account: &AccountId,
-    ) -> pallet_entity_common::MemberStats {
+    fn get_member_stats(entity_id: u64, account: &AccountId) -> pallet_entity_common::MemberStats {
         pallet_entity_member::EntityMembers::<Runtime>::get(entity_id, account)
             .map(|m| pallet_entity_common::MemberStats {
                 direct_referrals: m.direct_referrals,
@@ -2722,9 +2746,8 @@ impl pallet_entity_common::AutoRepurchasePort<AccountId> for AutoRepurchaseBridg
         use pallet_entity_common::{ProductProvider, ShopProvider};
         let shop_id = <EntityProduct as ProductProvider<AccountId>>::product_shop_id(product_id)
             .ok_or(sp_runtime::DispatchError::Other("ProductNotFound"))?;
-        let product_entity =
-            <EntityShop as ShopProvider<AccountId>>::shop_entity_id(shop_id)
-                .ok_or(sp_runtime::DispatchError::Other("ShopNotFound"))?;
+        let product_entity = <EntityShop as ShopProvider<AccountId>>::shop_entity_id(shop_id)
+            .ok_or(sp_runtime::DispatchError::Other("ShopNotFound"))?;
         frame_support::ensure!(
             product_entity == entity_id,
             sp_runtime::DispatchError::Other("ProductNotInEntity")

@@ -97,10 +97,22 @@ parameter_types! {
     pub const GetNativeCurrencyId: CurrencyId = NATIVE_CURRENCY_ID;
 }
 
+#[cfg(feature = "runtime-benchmarks")]
+pub struct MockBenchmarkHelper;
+
+#[cfg(feature = "runtime-benchmarks")]
+impl crate::BenchmarkHelper<CurrencyId, Balance, i64> for MockBenchmarkHelper {
+    fn get_currency_id_and_amounts() -> Option<(CurrencyId, Balance, i64, i64)> {
+        Some((X_TOKEN_ID, 100, 100, -100))
+    }
+}
+
 impl Config for Runtime {
     type MultiCurrency = Tokens;
     type NativeCurrency = AdaptedBasicCurrency;
     type GetNativeCurrencyId = GetNativeCurrencyId;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = MockBenchmarkHelper;
     type WeightInfo = ();
 }
 pub type NativeCurrency = NativeCurrencyOf<Runtime>;

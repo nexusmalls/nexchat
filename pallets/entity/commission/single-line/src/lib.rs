@@ -1351,14 +1351,12 @@ pub mod pallet {
                         // 仅受益人的下线层数决定是否分佣。
                         let (_, ben_base_down) =
                             Self::effective_base_levels(entity_id, upline, config);
-                        let ben_stats =
-                            T::StatsProvider::get_member_stats(entity_id, upline);
+                        let ben_stats = T::StatsProvider::get_member_stats(entity_id, upline);
                         let ben_extra = Self::calc_extra_levels(
                             config.level_increment_threshold,
                             ben_stats.total_earned,
                         );
-                        let ben_effective_down =
-                            ben_base_down.saturating_add(ben_extra) as u32;
+                        let ben_effective_down = ben_base_down.saturating_add(ben_extra) as u32;
                         if i > ben_effective_down {
                             continue;
                         }
@@ -1369,15 +1367,15 @@ pub mod pallet {
                         if i > buyer_effective_up {
                             let (_, ben_base_down) =
                                 Self::effective_base_levels(entity_id, upline, config);
-                            let ben_stats =
-                                T::StatsProvider::get_member_stats(entity_id, upline);
+                            let ben_stats = T::StatsProvider::get_member_stats(entity_id, upline);
                             let ben_extra = Self::calc_extra_levels(
                                 config.level_increment_threshold,
                                 ben_stats.total_earned,
                             );
                             let ben_effective_down = ben_base_down
                                 .saturating_add(ben_extra)
-                                .min(config.max_downline_levels) as u32;
+                                .min(config.max_downline_levels)
+                                as u32;
                             if i > ben_effective_down {
                                 continue;
                             }
@@ -1473,14 +1471,12 @@ pub mod pallet {
                         // 仅受益人的上线层数决定是否分佣。
                         let (ben_base_up, _) =
                             Self::effective_base_levels(entity_id, downline, config);
-                        let ben_stats =
-                            T::StatsProvider::get_member_stats(entity_id, downline);
+                        let ben_stats = T::StatsProvider::get_member_stats(entity_id, downline);
                         let ben_extra = Self::calc_extra_levels(
                             config.level_increment_threshold,
                             ben_stats.total_earned,
                         );
-                        let ben_effective_up =
-                            ben_base_up.saturating_add(ben_extra) as u32;
+                        let ben_effective_up = ben_base_up.saturating_add(ben_extra) as u32;
                         if i > ben_effective_up {
                             continue;
                         }
@@ -1491,15 +1487,15 @@ pub mod pallet {
                         if i > buyer_effective_down {
                             let (ben_base_up, _) =
                                 Self::effective_base_levels(entity_id, downline, config);
-                            let ben_stats =
-                                T::StatsProvider::get_member_stats(entity_id, downline);
+                            let ben_stats = T::StatsProvider::get_member_stats(entity_id, downline);
                             let ben_extra = Self::calc_extra_levels(
                                 config.level_increment_threshold,
                                 ben_stats.total_earned,
                             );
                             let ben_effective_up = ben_base_up
                                 .saturating_add(ben_extra)
-                                .min(config.max_upline_levels) as u32;
+                                .min(config.max_upline_levels)
+                                as u32;
                             if i > ben_effective_up {
                                 continue;
                             }

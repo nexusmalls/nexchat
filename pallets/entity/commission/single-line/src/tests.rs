@@ -2393,8 +2393,7 @@ fn plan_writer_set_config_works() {
 
         assert_ok!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 200, 300, 5, 10, 2000, 50, 100,
-                0u8,
+                1, 200, 300, 5, 10, 2000, 50, 100, 0u8,
             )
         );
         let config = pallet::SingleLineConfigs::<Test>::get(1).unwrap();
@@ -2428,8 +2427,7 @@ fn plan_writer_set_config_rejects_invalid_rate() {
 
         assert!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 1001, 100, 5, 10, 2000, 50, 100,
-                0u8,
+                1, 1001, 100, 5, 10, 2000, 50, 100, 0u8,
             )
             .is_err()
         );
@@ -2443,8 +2441,7 @@ fn plan_writer_set_config_rejects_base_exceeds_max() {
 
         assert!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 100, 100, 20, 10, 2000, 10, 100,
-                0u8,
+                1, 100, 100, 20, 10, 2000, 10, 100, 0u8,
             )
             .is_err()
         );
@@ -2458,8 +2455,7 @@ fn plan_writer_clear_config_works() {
 
         assert_ok!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 100, 100, 5, 10, 2000, 50, 100,
-                0u8,
+                1, 100, 100, 5, 10, 2000, 50, 100, 0u8,
             )
         );
         assert!(pallet::SingleLineConfigs::<Test>::get(1).is_some());
@@ -2995,8 +2991,7 @@ fn f10_plan_writer_set_level_based_levels() {
         set_custom_level_count(1, 10);
         assert_ok!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 100, 100, 5, 10, 2000, 50, 100,
-                0u8,
+                1, 100, 100, 5, 10, 2000, 50, 100, 0u8,
             )
         );
         assert_ok!(<SingleLine as SingleLinePlanWriter>::set_level_based_levels(1, 3, 8, 12));
@@ -3029,8 +3024,7 @@ fn f10_plan_writer_clear_level_overrides() {
         set_custom_level_count(1, 10);
         assert_ok!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 100, 100, 5, 10, 2000, 50, 100,
-                0u8,
+                1, 100, 100, 5, 10, 2000, 50, 100, 0u8,
             )
         );
         assert_ok!(<SingleLine as SingleLinePlanWriter>::set_level_based_levels(1, 3, 8, 12));
@@ -3136,8 +3130,7 @@ fn f12_plan_writer_clear_config_cascades() {
         set_custom_level_count(1, 10);
         assert_ok!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 100, 100, 5, 10, 2000, 50, 100,
-                0u8,
+                1, 100, 100, 5, 10, 2000, 50, 100, 0u8,
             )
         );
         assert_ok!(<SingleLine as SingleLinePlanWriter>::set_level_based_levels(1, 1, 5, 5));
@@ -4302,8 +4295,7 @@ fn r5_plan_writer_rejects_rates_too_high() {
         use pallet_commission_common::SingleLinePlanWriter;
         assert!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 1000, 1000, 100, 100, 0, 200, 200,
-                0u8,
+                1, 1000, 1000, 100, 100, 0, 200, 200, 0u8,
             )
             .is_err()
         );
@@ -4389,8 +4381,7 @@ fn plan_writer_set_level_rejects_nonexistent_level_id() {
         set_custom_level_count(1, 2);
         assert_ok!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 100, 100, 5, 5, 0, 50, 50,
-                0u8,
+                1, 100, 100, 5, 5, 0, 50, 50, 0u8,
             )
         );
         // level_id=3 不存在
@@ -4518,8 +4509,7 @@ fn plan_writer_set_level_rejects_exceeds_max() {
         // max_upline=10, max_downline=15
         assert_ok!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 100, 100, 5, 5, 0, 10, 15,
-                0u8,
+                1, 100, 100, 5, 5, 0, 10, 15, 0u8,
             )
         );
         // upline=11 超过 max_upline=10
@@ -4691,8 +4681,7 @@ fn clamp_overrides_on_governance_set_config() {
 
         assert_ok!(
             <SingleLine as SingleLineGovernancePort>::governance_set_single_line_config(
-                1, 100, 100, 3, 3, 7, 7,
-                0u8,
+                1, 100, 100, 3, 3, 7, 7, 0u8,
             )
         );
         let o = pallet::SingleLineCustomLevelOverrides::<Test>::get(1, 1).unwrap();
@@ -4708,8 +4697,7 @@ fn clamp_overrides_on_plan_writer_set_config() {
         set_custom_level_count(1, 10);
         assert_ok!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 100, 100, 5, 5, 0, 50, 50,
-                0u8,
+                1, 100, 100, 5, 5, 0, 50, 50, 0u8,
             )
         );
         assert_ok!(<SingleLine as SingleLinePlanWriter>::set_level_based_levels(1, 1, 30, 30));
@@ -4717,8 +4705,7 @@ fn clamp_overrides_on_plan_writer_set_config() {
         // 降低 max 到 9/9
         assert_ok!(
             <SingleLine as SingleLinePlanWriter>::set_single_line_config(
-                1, 100, 100, 5, 5, 0, 9, 9,
-                0u8,
+                1, 100, 100, 5, 5, 0, 9, 9, 0u8,
             )
         );
         let o = pallet::SingleLineCustomLevelOverrides::<Test>::get(1, 1).unwrap();
@@ -4845,8 +4832,7 @@ fn governance_set_config_preserves_existing_threshold() {
         // governance 修改费率和层级，不应丢失 threshold
         assert_ok!(
             <SingleLine as SingleLineGovernancePort>::governance_set_single_line_config(
-                1, 200, 200, 5, 5, 50, 50,
-                0u8,
+                1, 200, 200, 5, 5, 50, 50, 0u8,
             )
         );
         let after = pallet::SingleLineConfigs::<Test>::get(1).unwrap();
@@ -4862,8 +4848,7 @@ fn governance_set_config_uses_zero_when_no_existing_config() {
         // 无已有 config → threshold 默认 zero
         assert_ok!(
             <SingleLine as SingleLineGovernancePort>::governance_set_single_line_config(
-                1, 100, 100, 3, 3, 10, 10,
-                0u8,
+                1, 100, 100, 3, 3, 10, 10, 0u8,
             )
         );
         let config = pallet::SingleLineConfigs::<Test>::get(1).unwrap();
@@ -5762,7 +5747,11 @@ fn bidirectional_upline_beneficiary_reaches_down() {
         // A(10) 等级 6，覆盖 down=8
         set_custom_level(entity_id, 10, 6);
         assert_ok!(SingleLine::set_level_based_levels(
-            RuntimeOrigin::signed(OWNER), entity_id, 6, 2, 8,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            6,
+            2,
+            8,
         ));
 
         // G(70) 等级 1，使用基础 base_up=2
@@ -5775,7 +5764,13 @@ fn bidirectional_upline_beneficiary_reaches_down() {
         assert_eq!(base_up, 2); // buyer G 使用基础值
 
         SingleLine::process_upline(
-            entity_id, &70, 1_000_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &70,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // 预期: F(60) L1, E(50) L2 (buyer reach), A(10) L6 (A's down reach)
@@ -5812,7 +5807,11 @@ fn bidirectional_downline_beneficiary_reaches_up() {
         // G(70) 等级 6，覆盖 up=8
         set_custom_level(entity_id, 70, 6);
         assert_ok!(SingleLine::set_level_based_levels(
-            RuntimeOrigin::signed(OWNER), entity_id, 6, 8, 2,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            6,
+            8,
+            2,
         ));
 
         // A(10) 等级 1，使用基础 base_down=2
@@ -5825,7 +5824,13 @@ fn bidirectional_downline_beneficiary_reaches_up() {
         assert_eq!(base_down, 2);
 
         SingleLine::process_downline(
-            entity_id, &10, 1_000_000, &mut remaining, &config, base_down, &mut outputs,
+            entity_id,
+            &10,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_down,
+            &mut outputs,
         );
 
         // 预期: B(20) L1, C(30) L2 (buyer reach), G(70) L6 (G's upline reach)
@@ -5852,8 +5857,15 @@ fn bidirectional_neither_side_reaches() {
         let entity_id = 1u64;
         setup_entity(entity_id);
         assert_ok!(SingleLine::set_single_line_config(
-            RuntimeOrigin::signed(OWNER), entity_id,
-            100, 100, 1, 1, 0, 5, 5,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            100,
+            100,
+            1,
+            1,
+            0,
+            5,
+            5,
             ReachMode::Bidirectional,
         ));
         setup_single_line(entity_id, &[10, 20, 30, 40, 50]);
@@ -5865,7 +5877,13 @@ fn bidirectional_neither_side_reaches() {
         assert_eq!(base_up, 1);
 
         SingleLine::process_upline(
-            entity_id, &50, 1_000_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &50,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // 只有 D(40) 在 buyer reach 范围内
@@ -5889,8 +5907,15 @@ fn bidirectional_with_extra_levels_on_beneficiary() {
         let entity_id = 1u64;
         setup_entity(entity_id);
         assert_ok!(SingleLine::set_single_line_config(
-            RuntimeOrigin::signed(OWNER), entity_id,
-            100, 100, 1, 1, 1000, 5, 5,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            100,
+            100,
+            1,
+            1,
+            1000,
+            5,
+            5,
             ReachMode::Bidirectional,
         ));
         setup_single_line(entity_id, &[10, 20, 30, 40]);
@@ -5905,7 +5930,13 @@ fn bidirectional_with_extra_levels_on_beneficiary() {
         assert_eq!(base_up, 1);
 
         SingleLine::process_upline(
-            entity_id, &40, 1_000_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &40,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // C(30) L1 (buyer reach), A(10) L3 (A's down=1+extra=2=3)
@@ -5930,8 +5961,15 @@ fn bidirectional_skipped_member_no_extra_lookup() {
         let entity_id = 1u64;
         setup_entity(entity_id);
         assert_ok!(SingleLine::set_single_line_config(
-            RuntimeOrigin::signed(OWNER), entity_id,
-            100, 100, 1, 1, 0, 5, 5,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            100,
+            100,
+            1,
+            1,
+            0,
+            5,
+            5,
             ReachMode::Bidirectional,
         ));
         setup_single_line(entity_id, &[10, 20, 30, 40]);
@@ -5939,7 +5977,11 @@ fn bidirectional_skipped_member_no_extra_lookup() {
         // A(10) Lv6 覆盖 down=4
         set_custom_level(entity_id, 10, 6);
         assert_ok!(SingleLine::set_level_based_levels(
-            RuntimeOrigin::signed(OWNER), entity_id, 6, 1, 4,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            6,
+            1,
+            4,
         ));
 
         // B(20) 被 ban
@@ -5951,7 +5993,13 @@ fn bidirectional_skipped_member_no_extra_lookup() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &40, &config);
 
         SingleLine::process_upline(
-            entity_id, &40, 1_000_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &40,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // C(30) L1 (buyer reach), B(20) skipped, A(10) L3 (bidirectional)
@@ -5975,8 +6023,15 @@ fn bidirectional_buyer_extra_levels_extend_condition_a() {
         let entity_id = 1u64;
         setup_entity(entity_id);
         assert_ok!(SingleLine::set_single_line_config(
-            RuntimeOrigin::signed(OWNER), entity_id,
-            100, 100, 1, 1, 1000, 5, 5,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            100,
+            100,
+            1,
+            1,
+            1000,
+            5,
+            5,
             ReachMode::Bidirectional,
         ));
         setup_single_line(entity_id, &[10, 20, 30, 40, 50]);
@@ -5991,7 +6046,13 @@ fn bidirectional_buyer_extra_levels_extend_condition_a() {
         assert_eq!(base_up, 1);
 
         SingleLine::process_upline(
-            entity_id, &50, 1_000_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &50,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // D(40) L1, C(30) L2, B(20) L3 — all within buyer_effective=3
@@ -6018,8 +6079,15 @@ fn bidirectional_both_buyer_and_beneficiary_extra_levels() {
         let entity_id = 1u64;
         setup_entity(entity_id);
         assert_ok!(SingleLine::set_single_line_config(
-            RuntimeOrigin::signed(OWNER), entity_id,
-            100, 100, 1, 1, 1000, 10, 10,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            100,
+            100,
+            1,
+            1,
+            1000,
+            10,
+            10,
             ReachMode::Bidirectional,
         ));
         setup_single_line(entity_id, &[10, 20, 30, 40, 50, 60]);
@@ -6035,7 +6103,13 @@ fn bidirectional_both_buyer_and_beneficiary_extra_levels() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &60, &config);
 
         SingleLine::process_upline(
-            entity_id, &60, 1_000_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &60,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // E(50) L1 (A), D(40) L2 (A), B(20) L4 (B's reverse reach=4)
@@ -6065,8 +6139,15 @@ fn bidirectional_exact_boundary_both_conditions() {
         let entity_id = 1u64;
         setup_entity(entity_id);
         assert_ok!(SingleLine::set_single_line_config(
-            RuntimeOrigin::signed(OWNER), entity_id,
-            100, 100, 2, 2, 1000, 5, 5,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            100,
+            100,
+            2,
+            2,
+            1000,
+            5,
+            5,
             ReachMode::Bidirectional,
         ));
         setup_single_line(entity_id, &[10, 20, 30, 40]);
@@ -6081,7 +6162,13 @@ fn bidirectional_exact_boundary_both_conditions() {
         assert_eq!(base_up, 2);
 
         SingleLine::process_upline(
-            entity_id, &40, 1_000_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &40,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 2); // C(30) L1, B(20) L2 — buyer boundary exact
@@ -6097,7 +6184,13 @@ fn bidirectional_exact_boundary_both_conditions() {
         remaining = 1_000_000;
         outputs.clear();
         SingleLine::process_upline(
-            entity_id, &40, 1_000_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &40,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 3); // C(30) L1, B(20) L2, A(10) L3
@@ -6123,15 +6216,25 @@ fn bidirectional_downline_mixed_extra_and_override() {
         let entity_id = 1u64;
         setup_entity(entity_id);
         assert_ok!(SingleLine::set_single_line_config(
-            RuntimeOrigin::signed(OWNER), entity_id,
-            100, 100, 1, 1, 1000, 10, 10,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            100,
+            100,
+            1,
+            1,
+            1000,
+            10,
+            10,
             ReachMode::Bidirectional,
         ));
 
         // E(50) level override: level 4 → up=6
         assert_ok!(SingleLine::set_level_based_levels(
-            RuntimeOrigin::signed(OWNER), entity_id,
-            4, 6, 1,
+            RuntimeOrigin::signed(OWNER),
+            entity_id,
+            4,
+            6,
+            1,
         ));
 
         setup_single_line(entity_id, &[10, 20, 30, 40, 50, 60, 70]);
@@ -6150,7 +6253,13 @@ fn bidirectional_downline_mixed_extra_and_override() {
         assert_eq!(base_down, 1);
 
         SingleLine::process_downline(
-            entity_id, &10, 1_000_000, &mut remaining, &config, base_down, &mut outputs,
+            entity_id,
+            &10,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_down,
+            &mut outputs,
         );
 
         // B(20) L1 (A), C(30) L2 (A), E(50) L4 (B override), F(60) L5 (B extra)
@@ -6182,8 +6291,8 @@ fn setup_buyer_only_config(
     assert_ok!(SingleLine::set_single_line_config(
         RuntimeOrigin::signed(OWNER),
         entity_id,
-        100,       // upline_rate 1%
-        100,       // downline_rate 1%
+        100, // upline_rate 1%
+        100, // downline_rate 1%
         base_up,
         base_down,
         threshold,
@@ -6209,7 +6318,13 @@ fn buyer_only_upline_basic() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &5, &config);
 
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 3);
@@ -6235,7 +6350,13 @@ fn buyer_only_downline_basic() {
         let (_, base_down) = SingleLine::effective_base_levels(entity_id, &1, &config);
 
         SingleLine::process_downline(
-            entity_id, &1, 100_000, &mut remaining, &config, base_down, &mut outputs,
+            entity_id,
+            &1,
+            100_000,
+            &mut remaining,
+            &config,
+            base_down,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 3);
@@ -6259,12 +6380,24 @@ fn buyer_only_zero_reach_no_commission() {
         let mut outputs = Vec::new();
 
         SingleLine::process_upline(
-            entity_id, &3, 100_000, &mut remaining, &config, 0, &mut outputs,
+            entity_id,
+            &3,
+            100_000,
+            &mut remaining,
+            &config,
+            0,
+            &mut outputs,
         );
         assert_eq!(outputs.len(), 0);
 
         SingleLine::process_downline(
-            entity_id, &3, 100_000, &mut remaining, &config, 0, &mut outputs,
+            entity_id,
+            &3,
+            100_000,
+            &mut remaining,
+            &config,
+            0,
+            &mut outputs,
         );
         assert_eq!(outputs.len(), 0);
     });
@@ -6287,7 +6420,13 @@ fn buyer_only_extra_levels_from_spending() {
         let mut outputs = Vec::new();
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &5, &config);
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
         assert_eq!(outputs.len(), 1); // only account 4
 
@@ -6298,7 +6437,13 @@ fn buyer_only_extra_levels_from_spending() {
         outputs.clear();
         // base_up unchanged (from override/config), extra calculated inside process_upline
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
         assert_eq!(outputs.len(), 3); // 4(L1), 3(L2), 2(L3)
         assert_eq!(outputs[0].beneficiary, 4);
@@ -6320,8 +6465,8 @@ fn buyer_only_level_override_extends_reach() {
             RuntimeOrigin::signed(OWNER),
             entity_id,
             2,
-            5,  // upline_levels
-            1,  // downline_levels
+            5, // upline_levels
+            1, // downline_levels
         ));
 
         setup_single_line(entity_id, &[1, 2, 3, 4, 5]);
@@ -6334,7 +6479,13 @@ fn buyer_only_level_override_extends_reach() {
         assert_eq!(base_up, 1); // no custom level yet
 
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
         assert_eq!(outputs.len(), 1);
 
@@ -6346,7 +6497,13 @@ fn buyer_only_level_override_extends_reach() {
         assert_eq!(base_up, 5);
 
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
         // 4 accounts above buyer (4,3,2,1), all within reach=5
         assert_eq!(outputs.len(), 4);
@@ -6371,8 +6528,8 @@ fn buyer_only_beneficiary_levels_irrelevant() {
             RuntimeOrigin::signed(OWNER),
             entity_id,
             3,
-            10,  // upline
-            10,  // downline
+            10, // upline
+            10, // downline
         ));
 
         setup_single_line(entity_id, &[1, 2, 3, 4, 5]);
@@ -6389,7 +6546,13 @@ fn buyer_only_beneficiary_levels_irrelevant() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &5, &config);
 
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // Despite all beneficiaries having huge reach, buyer can only see 1 layer
@@ -6417,7 +6580,13 @@ fn buyer_only_skipped_members_consume_layers() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &5, &config);
 
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // 4(L1) banned skip, 3(L2) frozen skip, 2(L3) ok. 1(L4) out of range.
@@ -6445,13 +6614,19 @@ fn buyer_only_effective_clamped_by_max() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &12, &config);
 
         SingleLine::process_upline(
-            entity_id, &12, 1_000_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &12,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // Effective=min(5+10, 8)=8. Accounts 11,10,9,8,7,6,5,4 → 8 outputs
         assert_eq!(outputs.len(), 8);
         assert_eq!(outputs[0].beneficiary, 11); // L1
-        assert_eq!(outputs[7].beneficiary, 4);  // L8
+        assert_eq!(outputs[7].beneficiary, 4); // L8
     });
 }
 
@@ -6470,7 +6645,13 @@ fn buyer_only_downline_with_fewer_members_than_reach() {
         let (_, base_down) = SingleLine::effective_base_levels(entity_id, &1, &config);
 
         SingleLine::process_downline(
-            entity_id, &1, 100_000, &mut remaining, &config, base_down, &mut outputs,
+            entity_id,
+            &1,
+            100_000,
+            &mut remaining,
+            &config,
+            base_down,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 2);
@@ -6493,7 +6674,13 @@ fn buyer_only_buyer_at_head_no_upline() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &1, &config);
 
         SingleLine::process_upline(
-            entity_id, &1, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &1,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 0);
@@ -6514,7 +6701,13 @@ fn buyer_only_buyer_at_tail_no_downline() {
         let (_, base_down) = SingleLine::effective_base_levels(entity_id, &5, &config);
 
         SingleLine::process_downline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_down, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_down,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 0);
@@ -6540,8 +6733,8 @@ fn setup_beneficiary_only_config(
     assert_ok!(SingleLine::set_single_line_config(
         RuntimeOrigin::signed(OWNER),
         entity_id,
-        100,       // upline_rate 1%
-        100,       // downline_rate 1%
+        100, // upline_rate 1%
+        100, // downline_rate 1%
         base_up,
         base_down,
         threshold,
@@ -6570,14 +6763,20 @@ fn beneficiary_only_upline_basic() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &5, &config);
 
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 3);
         assert_eq!(outputs[0].beneficiary, 4); // L1
         assert_eq!(outputs[1].beneficiary, 3); // L2
         assert_eq!(outputs[2].beneficiary, 2); // L3
-        // Account 1 (L4) is out of range — not included
+                                               // Account 1 (L4) is out of range — not included
     });
 }
 
@@ -6600,7 +6799,13 @@ fn beneficiary_only_downline_basic() {
         let (_, base_down) = SingleLine::effective_base_levels(entity_id, &1, &config);
 
         SingleLine::process_downline(
-            entity_id, &1, 100_000, &mut remaining, &config, base_down, &mut outputs,
+            entity_id,
+            &1,
+            100_000,
+            &mut remaining,
+            &config,
+            base_down,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 3);
@@ -6627,7 +6832,13 @@ fn beneficiary_only_out_of_range_gets_nothing() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &3, &config);
 
         SingleLine::process_upline(
-            entity_id, &3, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &3,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         assert_eq!(outputs.len(), 1);
@@ -6648,9 +6859,9 @@ fn beneficiary_only_all_zero_reach_no_commission() {
             entity_id,
             100,
             100,
-            0,    // base_upline_levels
-            0,    // base_downline_levels
-            0,    // threshold=0 → calc_extra_levels returns 0
+            0, // base_upline_levels
+            0, // base_downline_levels
+            0, // threshold=0 → calc_extra_levels returns 0
             10,
             10,
             ReachMode::BeneficiaryOnly,
@@ -6662,12 +6873,24 @@ fn beneficiary_only_all_zero_reach_no_commission() {
         let mut outputs = Vec::new();
 
         SingleLine::process_upline(
-            entity_id, &3, 100_000, &mut remaining, &config, 0, &mut outputs,
+            entity_id,
+            &3,
+            100_000,
+            &mut remaining,
+            &config,
+            0,
+            &mut outputs,
         );
         assert_eq!(outputs.len(), 0);
 
         SingleLine::process_downline(
-            entity_id, &1, 100_000, &mut remaining, &config, 0, &mut outputs,
+            entity_id,
+            &1,
+            100_000,
+            &mut remaining,
+            &config,
+            0,
+            &mut outputs,
         );
         assert_eq!(outputs.len(), 0);
     });
@@ -6693,7 +6916,13 @@ fn beneficiary_only_extra_levels_from_spending() {
         let mut outputs = Vec::new();
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &5, &config);
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
         assert_eq!(outputs.len(), 1); // only account 4
 
@@ -6703,7 +6932,13 @@ fn beneficiary_only_extra_levels_from_spending() {
         remaining = 100_000;
         outputs.clear();
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
         // Now: 4 (L1, reach=1, ok), 3 (L2, reach=1+2=3, ok), 2 (L3, reach=1, skip), 1 (L4, reach=1, skip)
         assert_eq!(outputs.len(), 2);
@@ -6726,9 +6961,9 @@ fn beneficiary_only_level_override_extends_reach() {
         assert_ok!(SingleLine::set_level_based_levels(
             RuntimeOrigin::signed(OWNER),
             entity_id,
-            2,  // level_id
-            1,  // upline_levels
-            5,  // downline_levels
+            2, // level_id
+            1, // upline_levels
+            5, // downline_levels
         ));
 
         setup_single_line(entity_id, &[1, 2, 3, 4, 5]);
@@ -6742,7 +6977,13 @@ fn beneficiary_only_level_override_extends_reach() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &5, &config);
 
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // 4 (L1): base down=1, 1<=1 ok
@@ -6771,9 +7012,9 @@ fn beneficiary_only_buyer_level_is_irrelevant() {
         assert_ok!(SingleLine::set_level_based_levels(
             RuntimeOrigin::signed(OWNER),
             entity_id,
-            3,   // level_id
-            10,  // upline_levels
-            10,  // downline_levels
+            3,  // level_id
+            10, // upline_levels
+            10, // downline_levels
         ));
 
         setup_single_line(entity_id, &[1, 2, 3, 4, 5]);
@@ -6790,7 +7031,13 @@ fn beneficiary_only_buyer_level_is_irrelevant() {
         // base_up = 10 (from override), but this is the BUYER's reach — irrelevant in BeneficiaryOnly
 
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // Despite buyer having reach=10, each beneficiary only has base_down=1:
@@ -6821,9 +7068,9 @@ fn beneficiary_only_downline_with_mixed_reach() {
         assert_ok!(SingleLine::set_level_based_levels(
             RuntimeOrigin::signed(OWNER),
             entity_id,
-            5,  // level_id
-            6,  // upline_levels
-            1,  // downline_levels
+            5, // level_id
+            6, // upline_levels
+            1, // downline_levels
         ));
 
         setup_single_line(entity_id, &[1, 2, 3, 4, 5, 6]);
@@ -6839,7 +7086,13 @@ fn beneficiary_only_downline_with_mixed_reach() {
         let (_, base_down) = SingleLine::effective_base_levels(entity_id, &1, &config);
 
         SingleLine::process_downline(
-            entity_id, &1, 1_000_000, &mut remaining, &config, base_down, &mut outputs,
+            entity_id,
+            &1,
+            1_000_000,
+            &mut remaining,
+            &config,
+            base_down,
+            &mut outputs,
         );
 
         // 2 (L1): up=2, ok
@@ -6876,7 +7129,13 @@ fn beneficiary_only_skipped_members_not_counted() {
         let (base_up, _) = SingleLine::effective_base_levels(entity_id, &5, &config);
 
         SingleLine::process_upline(
-            entity_id, &5, 100_000, &mut remaining, &config, base_up, &mut outputs,
+            entity_id,
+            &5,
+            100_000,
+            &mut remaining,
+            &config,
+            base_up,
+            &mut outputs,
         );
 
         // 4 (L1) frozen → skip, 3 (L2) banned → skip, 2 (L3) ok, 1 (L4) ok

@@ -18,7 +18,12 @@ zrml-market-commons = { workspace = true }
 env_logger = { workspace = true, optional = true }
 orml-currencies = { workspace = true, optional = true }
 orml-tokens = { workspace = true, optional = true }
+pallet-assets = { workspace = true, optional = true }
 pallet-balances = { workspace = true, optional = true }
+pallet-prediction-collateral = { workspace = true, optional = true }
+pallet-prediction-control = { workspace = true, optional = true }
+pallet-preimage = { workspace = true, optional = true }
+pallet-scheduler = { workspace = true, optional = true }
 pallet-timestamp = { workspace = true, optional = true }
 pallet-treasury = { workspace = true, optional = true }
 prediction-mock-runtime = { workspace = true, optional = true }
@@ -30,6 +35,7 @@ zrml-authorized = { workspace = true, optional = true }
 zrml-combinatorial-tokens = { workspace = true, optional = true }
 zrml-court = { workspace = true, optional = true }
 zrml-global-disputes = { workspace = true, optional = true }
+zrml-futarchy = { workspace = true, optional = true }
 zrml-prediction-markets = { workspace = true, optional = true }
 zrml-prediction-markets-runtime-api = { workspace = true, optional = true }
 
@@ -43,7 +49,12 @@ default = ["std"]
 mock = [
     "orml-currencies/default",
     "orml-tokens/default",
+    "pallet-assets/default",
     "pallet-balances",
+    "pallet-prediction-collateral/default",
+    "pallet-prediction-control/default",
+    "pallet-preimage/default",
+    "pallet-scheduler/default",
     "pallet-timestamp/default",
     "pallet-treasury/default",
     "prediction-mock-runtime/default",
@@ -58,6 +69,7 @@ mock = [
     "zrml-court/std",
     "zrml-authorized/std",
     "zrml-global-disputes/std",
+    "zrml-futarchy/std",
     "zrml-prediction-markets/std",
     "zrml-prediction-markets/mock",
     "zrml-prediction-markets/default",
@@ -77,11 +89,17 @@ std = [
     "frame-support/std",
     "frame-system/std",
     "orml-traits/std",
+    "pallet-assets?/std",
+    "pallet-prediction-collateral?/std",
+    "pallet-prediction-control?/std",
+    "pallet-preimage?/std",
+    "pallet-scheduler?/std",
     "parity-scale-codec/std",
     "scale-info/std",
     "sp-runtime/std",
     "zeitgeist-primitives/std",
     "zrml-market-commons/std",
+    "zrml-futarchy?/std",
 ]
 try-runtime = [
     "frame-support/try-runtime",

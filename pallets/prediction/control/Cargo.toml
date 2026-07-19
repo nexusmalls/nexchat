@@ -15,6 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 codec = { workspace = true, features = ["derive", "max-encoded-len"] }
+frame-benchmarking = { workspace = true, optional = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
 scale-info = { workspace = true, features = ["derive"] }
@@ -27,6 +28,7 @@ sp-runtime = { workspace = true }
 default = ["std"]
 std = [
     "codec/std",
+    "frame-benchmarking?/std",
     "frame-support/std",
     "frame-system/std",
     "scale-info/std",
@@ -34,6 +36,7 @@ std = [
     "sp-runtime/std",
 ]
 runtime-benchmarks = [
+    "dep:frame-benchmarking",
     "frame-support/runtime-benchmarks",
     "frame-system/runtime-benchmarks",
 ]

@@ -1191,9 +1191,10 @@ fn f1_referrer_guard_min_spent_passes() {
         );
 
         let modes = CommissionModes(CommissionModes::DIRECT_REWARD);
-        let (outputs, remaining) = <pallet::Pallet<Test> as CommissionPlugin<u64, Balance>>::calculate(
-            1, &50, 10000, 10000, modes, false, 0, 0,
-        );
+        let (outputs, remaining) =
+            <pallet::Pallet<Test> as CommissionPlugin<u64, Balance>>::calculate(
+                1, &50, 10000, 10000, modes, false, 0, 0,
+            );
         assert!(outputs.is_empty());
         assert_eq!(remaining, 10000);
     });

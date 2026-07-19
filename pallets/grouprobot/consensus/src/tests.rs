@@ -368,7 +368,10 @@ fn era_end_non_tee_gets_base_weight() {
         // Non-TEE node has base weight, gets full inflation (sole active node)
         let rewards = get_distributed_rewards();
         assert!(!rewards.is_empty(), "Non-TEE node should receive rewards");
-        assert_eq!(rewards[0].1, 1_000_000_000, "Sole node gets full RewardPool balance");
+        assert_eq!(
+            rewards[0].1, 1_000_000_000,
+            "Sole node gets full RewardPool balance"
+        );
     });
 }
 

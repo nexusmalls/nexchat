@@ -60,6 +60,11 @@ fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::Runt
 
 const LIQUIDITY: u128 = 100 * BASE;
 
+fn set_benchmark_timestamp<T: Config + pallet_timestamp::Config>(moment: u64) {
+    let moment: <T as pallet_timestamp::Config>::Moment = moment.saturated_into();
+    pallet_timestamp::Now::<T>::put(moment);
+}
+
 // Get default values for market creation. Also spawns an account with maximum
 // amount of native currency
 fn create_market_common_parameters<T: Config>(
@@ -74,7 +79,12 @@ fn create_market_common_parameters<T: Config>(
     &'static str,
 > {
     let caller: T::AccountId = whitelisted_caller();
-    T::AssetManager::deposit(Asset::Ztg, &caller, (100u128 * LIQUIDITY).saturated_into()).unwrap();
+    T::AssetManager::deposit(
+        Asset::Ztg,
+        &caller,
+        (1_000_000u128 * LIQUIDITY).saturated_into(),
+    )
+    .unwrap();
     let oracle = caller.clone();
     let deadlines = Deadlines::<BlockNumberFor<T>> {
         grace_period: 1_u32.into(),
@@ -99,7 +109,7 @@ fn create_market_common<T: Config + pallet_timestamp::Config>(
     period: Option<MarketPeriod<BlockNumberFor<T>, MomentOf<T>>>,
     dispute_mechanism: Option<MarketDisputeMechanism>,
 ) -> Result<(T::AccountId, MarketIdOf<T>), &'static str> {
-    pallet_timestamp::Pallet::<T>::set_timestamp(0u32.into());
+    set_benchmark_timestamp::<T>(0);
     let range_start: MomentOf<T> = 100_000u64.saturated_into();
     let range_end: MomentOf<T> = 1_000_000u64.saturated_into();
     let creator_fee: Perbill = Perbill::zero();
@@ -149,7 +159,7 @@ fn create_close_and_report_market<T: Config + pallet_timestamp::Config>(
     };
     let grace_period: u32 =
         (market.deadlines.grace_period.saturated_into::<u32>() + 1) * MILLISECS_PER_BLOCK;
-    pallet_timestamp::Pallet::<T>::set_timestamp((end + grace_period).into());
+    set_benchmark_timestamp::<T>(u64::from(end + grace_period));
     Call::<T>::report { market_id, outcome }
         .dispatch_bypass_filter(RawOrigin::Signed(caller.clone()).into())?;
     Ok((caller, market_id))
@@ -193,7 +203,7 @@ fn setup_redeem_shares_common<T: Config + pallet_timestamp::Config>(
     };
     let grace_period: u32 =
         (market.deadlines.grace_period.saturated_into::<u32>() + 1) * MILLISECS_PER_BLOCK;
-    pallet_timestamp::Pallet::<T>::set_timestamp((end + grace_period).into());
+    set_benchmark_timestamp::<T>(u64::from(end + grace_period));
     Call::<T>::report { market_id, outcome }
         .dispatch_bypass_filter(RawOrigin::Signed(caller.clone()).into())?;
     Call::<T>::admin_move_market_to_resolved { market_id }
@@ -227,7 +237,7 @@ where
     };
     let grace_period: u32 =
         (market.deadlines.grace_period.saturated_into::<u32>() + 1) * MILLISECS_PER_BLOCK;
-    pallet_timestamp::Pallet::<T>::set_timestamp((end + grace_period).into());
+    set_benchmark_timestamp::<T>(u64::from(end + grace_period));
     Call::<T>::report {
         market_id,
         outcome: report_outcome,
@@ -853,7 +863,7 @@ benchmarks! {
         };
         let grace_period: u32 =
             (market.deadlines.grace_period.saturated_into::<u32>() + 1) * MILLISECS_PER_BLOCK;
-        pallet_timestamp::Pallet::<T>::set_timestamp((end + grace_period).into());
+        set_benchmark_timestamp::<T>(u64::from(end + grace_period));
         let report_at = frame_system::Pallet::<T>::block_number();
         let resolves_at = report_at.saturating_add(market.deadlines.dispute_duration);
         for i in 0..m {
@@ -867,7 +877,7 @@ benchmarks! {
     }
 
     report_trusted_market {
-        pallet_timestamp::Pallet::<T>::set_timestamp(0u32.into());
+        set_benchmark_timestamp::<T>(0);
         let start: MomentOf<T> = zrml_market_commons::Pallet::<T>::now();
         let end: MomentOf<T> = 1_000_000u64.saturated_into();
         let (caller, oracle, _, metadata) = create_market_common_parameters::<T>(false)?;
@@ -1032,7 +1042,7 @@ benchmarks! {
         let n in 0..63;
 
         let range_start: MomentOf<T> = 0u64.saturated_into();
-        let old_range_end: MomentOf<T> = 100_000_000_000u64.saturated_into();
+        let old_range_end: MomentOf<T> = 10_000_000u64.saturated_into();
         let (caller, market_id) = create_market_common::<T>(
             MarketCreation::Permissionless,
             MarketType::Categorical(T::MaxCategories::get()),
@@ -1067,7 +1077,7 @@ benchmarks! {
         let n in 0..63;
 
         let range_start: MomentOf<T> = 0u64.saturated_into();
-        let old_range_end: MomentOf<T> = 100_000_000_000u64.saturated_into();
+        let old_range_end: MomentOf<T> = 10_000_000u64.saturated_into();
         let (caller, market_id) = create_market_common::<T>(
             MarketCreation::Permissionless,
             MarketType::Categorical(T::MaxCategories::get()),
@@ -1112,7 +1122,7 @@ benchmarks! {
         let n in 0..63;
 
         let range_start: MomentOf<T> = 0u64.saturated_into();
-        let old_range_end: MomentOf<T> = 100_000_000_000u64.saturated_into();
+        let old_range_end: MomentOf<T> = 10_000_000u64.saturated_into();
         let (caller, market_id) = create_market_common::<T>(
             MarketCreation::Permissionless,
             MarketType::Categorical(T::MaxCategories::get()),
@@ -1150,7 +1160,7 @@ benchmarks! {
         let n in 0..63;
 
         let range_start: MomentOf<T> = 0u64.saturated_into();
-        let old_range_end: MomentOf<T> = 100_000_000_000u64.saturated_into();
+        let old_range_end: MomentOf<T> = 10_000_000u64.saturated_into();
         let (caller, market_id) = create_market_common::<T>(
             MarketCreation::Permissionless,
             MarketType::Categorical(T::MaxCategories::get()),
@@ -1201,7 +1211,7 @@ benchmarks! {
         let n in 0..63;
 
         let range_start: MomentOf<T> = 0u64.saturated_into();
-        let old_range_end: MomentOf<T> = 100_000_000_000u64.saturated_into();
+        let old_range_end: MomentOf<T> = 10_000_000u64.saturated_into();
         let (caller, market_id) = create_market_common::<T>(
             MarketCreation::Permissionless,
             MarketType::Categorical(T::MaxCategories::get()),
@@ -1249,7 +1259,7 @@ benchmarks! {
 
     reject_early_close_after_dispute {
         let range_start: MomentOf<T> = 0u64.saturated_into();
-        let old_range_end: MomentOf<T> = 100_000_000_000u64.saturated_into();
+        let old_range_end: MomentOf<T> = 10_000_000u64.saturated_into();
         let (caller, market_id) = create_market_common::<T>(
             MarketCreation::Permissionless,
             MarketType::Categorical(T::MaxCategories::get()),
@@ -1369,7 +1379,7 @@ benchmarks! {
             Ok(())
         })?;
 
-        pallet_timestamp::Pallet::<T>::set_timestamp(now.into());
+        set_benchmark_timestamp::<T>(u64::from(now));
     }: manually_close_market(RawOrigin::Signed(caller), market_id)
 
     impl_benchmark_test_suite!(

@@ -51,8 +51,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().writes(4))
     }
     fn set_stack_caps() -> Weight {
-        Weight::from_parts(29_010_000, 0)
-            .saturating_add(T::DbWeight::get().writes(1))
+        Weight::from_parts(29_010_000, 0).saturating_add(T::DbWeight::get().writes(1))
     }
     fn force_unregister_device() -> Weight {
         Weight::from_parts(109_866_000, 3665)
@@ -62,11 +61,25 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 }
 
 impl WeightInfo for () {
-    fn register_device() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn set_signed_prekey() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn set_opk_root() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn bump_prekey_epoch() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn unregister_device() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn set_stack_caps() -> Weight { Weight::from_parts(12_000_000, 0) }
-    fn force_unregister_device() -> Weight { Weight::from_parts(20_000_000, 0) }
+    fn register_device() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn set_signed_prekey() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn set_opk_root() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn bump_prekey_epoch() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn unregister_device() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn set_stack_caps() -> Weight {
+        Weight::from_parts(12_000_000, 0)
+    }
+    fn force_unregister_device() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
 }

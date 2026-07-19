@@ -13,28 +13,27 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-frame-support = { workspace = true }
-orml-traits = { workspace = true }
-sp-arithmetic = { workspace = true }
-sp-runtime = { workspace = true }
-zeitgeist-primitives = { workspace = true, features = ["mock"] }
-zrml-authorized = { workspace = true }
-zrml-market-commons = { workspace = true }
-zrml-prediction-markets = { workspace = true, features = ["mock"] }
+zeitgeist-primitives = { workspace = true }
 
 [dev-dependencies]
+frame-support = { workspace = true, features = ["std"] }
+frame-system = { workspace = true, features = ["std"] }
+orml-traits = { workspace = true, features = ["std"] }
+sp-arithmetic = { workspace = true, features = ["std"] }
 sp-io = { workspace = true, features = ["std"] }
+sp-runtime = { workspace = true, features = ["std"] }
+zeitgeist-primitives = { workspace = true, features = ["mock", "std"] }
+zrml-authorized = { workspace = true, features = ["std"] }
+zrml-combinatorial-tokens = { workspace = true, features = ["mock", "std"] }
+zrml-court = { workspace = true, features = ["std"] }
+zrml-global-disputes = { workspace = true, features = ["std"] }
+zrml-market-commons = { workspace = true, features = ["std"] }
+zrml-orderbook = { workspace = true, features = ["mock", "std"] }
+zrml-parimutuel = { workspace = true, features = ["mock", "std"] }
+zrml-prediction-markets = { workspace = true, features = ["mock", "std"] }
 
 [features]
 default = ["std"]
 std = [
-    "frame-support/std",
-    "orml-traits/std",
-    "sp-arithmetic/std",
-    "sp-io/std",
-    "sp-runtime/std",
     "zeitgeist-primitives/std",
-    "zrml-authorized/std",
-    "zrml-market-commons/std",
-    "zrml-prediction-markets/std",
 ]

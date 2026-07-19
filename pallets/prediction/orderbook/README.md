@@ -52,11 +52,12 @@ partially or fully fill and remove orders.
     maker 仍收到全部结果代币。
 
 The pallet consumes market records and does not admit collateral independently.
-The Nexus mock accepts native collateral and only the explicitly whitelisted USDX
-foreign-asset fixture; production collateral validation remains a market-creation
-responsibility.
-本 pallet 仅消费既有市场记录，不独立准入抵押资产。Nexus mock 接受原生抵押资产，
-并仅允许显式白名单中的 USDX 外部资产测试项；生产环境的抵押资产校验仍由市场创建边界负责。
+The Nexus mock backs USDX balances through the live Prediction Collateral
+whitelist, validator, mode, and escrow path. Production collateral admission
+remains a market-creation responsibility.
+本 pallet 仅消费既有市场记录，不独立准入抵押资产。Nexus mock 通过实时
+Prediction Collateral 白名单、validator、模式和托管路径支持 USDX 余额；生产
+环境的抵押资产准入仍由市场创建边界负责。
 
 ## Interface
 

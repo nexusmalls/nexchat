@@ -31,10 +31,14 @@ pub use pallet::*;
 pub mod pallet {
     use frame_support::{pallet_prelude::*, traits::Currency};
     use frame_system::pallet_prelude::*;
-    use sp_runtime::{traits::Zero, SaturatedConversion};
-    use zeitgeist_primitives::types::Balance;
+    use sp_runtime::traits::Zero;
 
     use crate::weights::WeightInfoZeitgeist;
+
+    /// Balance type of the configured native NEX currency.
+    /// 配置的原生 NEX 货币余额类型。
+    pub type BalanceOf<T> =
+        <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
 
     /// Runtime configuration for the Styx native-token burn gate.
     /// Styx 原生代币销毁门槛的 runtime 配置。
@@ -47,6 +51,10 @@ pub mod pallet {
         /// Native currency burned by a successful crossing.
         /// 成功跨越时销毁的原生货币。
         type Currency: Currency<Self::AccountId>;
+
+        /// Initial NEX amount burned by a crossing.
+        /// 跨越时初始销毁的 NEX 数量。
+        type DefaultBurnAmount: Get<BalanceOf<Self>>;
 
         /// Benchmark-generated weights.
         /// 基准测试生成的权重。
@@ -64,24 +72,25 @@ pub mod pallet {
     /// Return the default amount burned for a crossing.
     /// 返回跨越时默认销毁的数量。
     #[pallet::type_value]
-    pub fn DefaultBurnAmount<T: Config>() -> Balance {
-        (zeitgeist_primitives::constants::BASE * 200).saturated_into()
+    pub fn DefaultBurnAmount<T: Config>() -> BalanceOf<T> {
+        T::DefaultBurnAmount::get()
     }
 
     /// Configured amount burned for a crossing.
     /// 跨越时配置的销毁数量。
     #[pallet::storage]
-    pub type BurnAmount<T: Config> = StorageValue<_, Balance, ValueQuery, DefaultBurnAmount<T>>;
+    pub type BurnAmount<T: Config> =
+        StorageValue<_, BalanceOf<T>, ValueQuery, DefaultBurnAmount<T>>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// An account crossed and claimed its right to create an avatar.
         /// 账户完成跨越并获得创建头像的资格。
-        AccountCrossed(T::AccountId, Balance),
+        AccountCrossed(T::AccountId, BalanceOf<T>),
         /// The crossing fee was changed.
         /// 跨越费用已变更。
-        CrossingFeeChanged(Balance),
+        CrossingFeeChanged(BalanceOf<T>),
     }
 
     #[pallet::error]
@@ -96,8 +105,8 @@ pub mod pallet {
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
-        /// Burns ZTG (`styx.burnAmount()`) to cross, granting the ability to claim a Zeitgeist avatar.
-        /// 销毁 ZTG（`styx.burnAmount()`）以完成跨越，并获得申领 Zeitgeist 头像的资格。
+        /// Burns NEX (`styx.burnAmount()`) to enter the off-chain registry.
+        /// 销毁 NEX（`styx.burnAmount()`）以进入链下注册表。
         ///
         /// The signer can only cross once.
         /// 每个签名者只能跨越一次。
@@ -110,22 +119,23 @@ pub mod pallet {
                 Err(Error::<T>::HasAlreadyCrossed)?;
             }
 
-            let amount = BurnAmount::<T>::get().saturated_into();
+            let amount = BurnAmount::<T>::get();
 
             if !T::Currency::can_slash(&who, amount) {
                 Err(Error::<T>::FundDoesNotHaveEnoughFreeBalance)?;
             }
 
-            let (_imb, missing) = T::Currency::slash(&who, amount);
+            let (imbalance, missing) = T::Currency::slash(&who, amount);
             debug_assert!(
                 missing.is_zero(),
                 "Could not slash all of the amount. who: {:?}, amount: {:?}.",
                 &who,
                 amount,
             );
+            drop(imbalance);
             Crossings::<T>::insert(&who, ());
 
-            Self::deposit_event(Event::AccountCrossed(who, amount.saturated_into()));
+            Self::deposit_event(Event::AccountCrossed(who, amount));
 
             Ok(())
         }
@@ -143,7 +153,7 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::set_burn_amount())]
         pub fn set_burn_amount(
             origin: OriginFor<T>,
-            #[pallet::compact] amount: Balance,
+            #[pallet::compact] amount: BalanceOf<T>,
         ) -> DispatchResult {
             T::SetBurnAmountOrigin::ensure_origin(origin)?;
             BurnAmount::<T>::put(amount);

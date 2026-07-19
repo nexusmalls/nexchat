@@ -673,7 +673,7 @@ benchmarks! {
     }: _(RawOrigin::Signed(caller), court_id)
 
     set_inflation {
-        let inflation = Perbill::from_percent(10);
+        let inflation = T::MaxYearlyInflation::get();
     }: _(RawOrigin::Root, inflation)
 
     handle_inflation {

@@ -57,11 +57,14 @@ members = [
     "pallets/prediction/primitives",
     "pallets/prediction/control",
     "pallets/prediction/collateral",
+    "pallets/prediction/community/common",
+    "pallets/prediction/community/core",
     "pallets/prediction/market-commons",
     "pallets/prediction/authorized",
     "pallets/prediction/global-disputes",
     "pallets/prediction/court",
     "pallets/prediction/prediction-markets",
+    "pallets/prediction/prediction-markets/fuzz",
     "pallets/prediction/prediction-markets/runtime-api",
     "pallets/prediction/combinatorial-tokens",
     "pallets/prediction/combinatorial-tokens/fuzz",
@@ -129,11 +132,14 @@ zeitgeist-macros = { path = "./pallets/prediction/macros", default-features = fa
 zeitgeist-primitives = { path = "./pallets/prediction/primitives", default-features = false }
 pallet-prediction-control = { path = "./pallets/prediction/control", default-features = false }
 pallet-prediction-collateral = { path = "./pallets/prediction/collateral", default-features = false }
+pallet-prediction-community-common = { path = "./pallets/prediction/community/common", default-features = false }
+pallet-prediction-community-core = { path = "./pallets/prediction/community/core", default-features = false }
 zrml-market-commons = { path = "./pallets/prediction/market-commons", default-features = false }
 zrml-authorized = { path = "./pallets/prediction/authorized", default-features = false }
 zrml-global-disputes = { path = "./pallets/prediction/global-disputes", default-features = false }
 zrml-court = { path = "./pallets/prediction/court", default-features = false }
 zrml-prediction-markets = { path = "./pallets/prediction/prediction-markets", default-features = false }
+zrml-prediction-markets-fuzz = { path = "./pallets/prediction/prediction-markets/fuzz" }
 zrml-prediction-markets-runtime-api = { path = "./pallets/prediction/prediction-markets/runtime-api", default-features = false }
 zrml-combinatorial-tokens = { path = "./pallets/prediction/combinatorial-tokens", default-features = false }
 zrml-orderbook = { path = "./pallets/prediction/orderbook", default-features = false }

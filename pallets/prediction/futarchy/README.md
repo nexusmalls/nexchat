@@ -20,16 +20,12 @@ and only if the positive outcome is more valuable than the negative outcome over
 a period of time for a certain absolute and relative threshold determined by a
 `DecisionMarketOracleScoreboard`.
 
-The standard governance flow is the following:
+The Nexus governance flow is the following:
 
-- The root origin submits a proposal to be approved or rejected via futarchy by
-  running a governance proposal through
-  [pallet-democracy](https://github.com/paritytech/polkadot-sdk/tree/master/substrate/frame/democracy)
-  and calling into this pallet's sole extrinsic `submit_proposal`. Assuming that
-  the thesis of futarchy is correct and the market used to evaluate the proposal
-  is well-configured and sufficiently liquid, submitting a proposal to futarchy
-  rather than pallet-democracy gives a stronger guarantee on the efficacy of the
-  proposal.
+- Root or the configured Nexus Technical Committee threshold calls
+  `submit_proposal`; Nexus does not add `pallet-democracy` for Futarchy.
+- Root 或配置的 Nexus Technical Committee 门槛调用 `submit_proposal`；Nexus
+  不为 Futarchy 新增 `pallet-democracy`。
 - Wait until the `duration` specified in `submit_proposal` has passed. The
   oracle will be automatically evaluated and will either schedule
   `proposal.call` at `proposal.when` where `proposal` is the proposal specified

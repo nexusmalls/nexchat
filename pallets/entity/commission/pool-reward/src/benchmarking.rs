@@ -35,10 +35,17 @@ fn fixed_rule(base_cap_percent: u16) -> LevelClaimRule {
 fn make_level_rules<T: Config>(
     count: u32,
 ) -> BoundedVec<(u8, LevelClaimRule), T::MaxPoolRewardLevels> {
-    let per_level = if count == 0 { 10000u16 } else { 10000u16 / (count as u16) }.max(1);
-    let v: alloc::vec::Vec<(u8, LevelClaimRule)> =
-        (0..count).map(|i| ((i + 1) as u8, fixed_rule(per_level))).collect();
-    v.try_into().expect("count should be <= MaxPoolRewardLevels")
+    let per_level = if count == 0 {
+        10000u16
+    } else {
+        10000u16 / (count as u16)
+    }
+    .max(1);
+    let v: alloc::vec::Vec<(u8, LevelClaimRule)> = (0..count)
+        .map(|i| ((i + 1) as u8, fixed_rule(per_level)))
+        .collect();
+    v.try_into()
+        .expect("count should be <= MaxPoolRewardLevels")
 }
 
 /// Build `levels` level-quota snapshots for a round. / 为一轮构造 `levels` 个等级配额快照。
@@ -99,10 +106,22 @@ fn make_round_info<T: Config>(
         per_member_reward: BalanceOf::<T>::from(100u32),
         claimed_count: 0,
         level_quotas: make_level_quotas::<T>(levels),
-        token_pool_snapshot: if token { Some(TokenBalanceOf::<T>::from(5000u32)) } else { None },
-        token_per_member_reward: if token { Some(TokenBalanceOf::<T>::from(50u32)) } else { None },
+        token_pool_snapshot: if token {
+            Some(TokenBalanceOf::<T>::from(5000u32))
+        } else {
+            None
+        },
+        token_per_member_reward: if token {
+            Some(TokenBalanceOf::<T>::from(50u32))
+        } else {
+            None
+        },
         token_claimed_count: 0,
-        token_level_quotas: if token { Some(make_level_quotas::<T>(levels)) } else { None },
+        token_level_quotas: if token {
+            Some(make_level_quotas::<T>(levels))
+        } else {
+            None
+        },
     }
 }
 
@@ -133,7 +152,10 @@ fn make_completed_summary<T: Config>(
 fn seed_round<T: Config>(entity_id: u64, levels: u32) {
     let now = frame_system::Pallet::<T>::block_number();
     let round_id = LastRoundId::<T>::get(entity_id).saturating_add(1);
-    CurrentRound::<T>::insert(entity_id, make_round_info::<T>(round_id, now, levels, false));
+    CurrentRound::<T>::insert(
+        entity_id,
+        make_round_info::<T>(round_id, now, levels, false),
+    );
 }
 
 /// Seed user claim records for force_clear worst-case.
@@ -310,10 +332,7 @@ mod benches {
 
             // Create new round with snapshots
             let new_round_id = old_round.round_id.saturating_add(1);
-            CurrentRound::<T>::insert(
-                entity_id,
-                make_round_info::<T>(new_round_id, now, 3, false),
-            );
+            CurrentRound::<T>::insert(entity_id, make_round_info::<T>(new_round_id, now, 3, false));
             Pallet::<T>::deposit_event(Event::NewRoundStarted {
                 entity_id,
                 round_id: new_round_id,

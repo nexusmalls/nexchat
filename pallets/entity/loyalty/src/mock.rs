@@ -297,7 +297,9 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 /// Sets up entity + shop + manager state so extrinsic guards pass.
 pub fn register_benchmark_shop(shop_id: u64, entity_id: u64, manager: u64) {
     ENTITY_OWNERS.with(|m| m.borrow_mut().insert(entity_id, manager));
-    ENTITY_ACTIVE.with(|s| { s.borrow_mut().insert(entity_id); });
+    ENTITY_ACTIVE.with(|s| {
+        s.borrow_mut().insert(entity_id);
+    });
     ENTITY_SHOPS.with(|m| m.borrow_mut().insert(entity_id, vec![shop_id]));
     SHOP_ENTITY.with(|m| m.borrow_mut().insert(shop_id, entity_id));
     SHOP_OWNERS.with(|m| m.borrow_mut().insert(shop_id, manager));

@@ -7,19 +7,24 @@ use crate::{AssetOf, BalanceOf, MarketIdOf};
 use alloc::{vec, vec::Vec};
 use core::marker::PhantomData;
 use frame_support::{
-    construct_runtime, derive_impl,
+    assert_ok, construct_runtime, derive_impl,
     pallet_prelude::Get,
     parameter_types,
-    traits::{Everything, ExistenceRequirement},
+    traits::{
+        fungibles::{Inspect, Mutate},
+        AsEnsureOriginWithArg, ConstU32, Everything, ExistenceRequirement,
+    },
+    PalletId,
 };
-use frame_system::mocking::MockBlockU32;
+use frame_system::{mocking::MockBlockU32, EnsureRoot};
 use orml_traits::MultiCurrency;
-use prediction_mock_runtime::{MockBaseAssetPolicy, USDX_ASSET_ID};
+use pallet_prediction_collateral::AssetValidator;
+use pallet_prediction_control::PredictionMode;
+use prediction_mock_runtime::USDX_ASSET_ID;
 use sp_runtime::{
     traits::{IdentityLookup, Zero},
     BuildStorage, Perbill, SaturatedConversion,
 };
-use zeitgeist_primitives::traits::PredictionBaseAssetPolicy;
 use zeitgeist_primitives::{
     constants::mock::{
         BlockHashCount, ExistentialDeposit, ExistentialDeposits, GetNativeCurrencyId, MaxLocks,
@@ -36,6 +41,8 @@ pub const BOB: AccountIdTest = 1;
 pub const CHARLIE: AccountIdTest = 2;
 pub const MARKET_CREATOR: AccountIdTest = 42;
 pub const INITIAL_BALANCE: Balance = 1_000 * BASE;
+pub const INITIAL_FOREIGN_BALANCE: Balance = 1_000 * BASE;
+pub const USDX_MIN_BALANCE: Balance = 1;
 pub const EXTERNAL_FEES: Balance = CENT;
 
 parameter_types! {
@@ -88,9 +95,12 @@ where
 construct_runtime!(
     pub enum Runtime {
         AssetManager: orml_currencies,
+        Assets: pallet_assets,
         Balances: pallet_balances,
         MarketCommons: zrml_market_commons,
         Parimutuel: zrml_parimutuel,
+        PredictionCollateral: pallet_prediction_collateral,
+        PredictionControl: pallet_prediction_control,
         System: frame_system,
         Timestamp: pallet_timestamp,
         Tokens: orml_tokens,
@@ -146,6 +156,68 @@ impl orml_currencies::Config for Runtime {
     type WeightInfo = ();
 }
 
+parameter_types! {
+    pub const AssetDeposit: Balance = 0;
+    pub const AssetAccountDeposit: Balance = 0;
+    pub const ApprovalDeposit: Balance = 0;
+    pub const MetadataDepositBase: Balance = 0;
+    pub const MetadataDepositPerByte: Balance = 0;
+    pub const StringLimit: u32 = 50;
+}
+
+impl pallet_assets::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Balance = Balance;
+    type AssetId = u64;
+    type AssetIdParameter = u64;
+    type Currency = Balances;
+    type CreateOrigin = AsEnsureOriginWithArg<frame_system::EnsureSigned<AccountIdTest>>;
+    type ForceOrigin = EnsureRoot<AccountIdTest>;
+    type AssetDeposit = AssetDeposit;
+    type AssetAccountDeposit = AssetAccountDeposit;
+    type MetadataDepositBase = MetadataDepositBase;
+    type MetadataDepositPerByte = MetadataDepositPerByte;
+    type ApprovalDeposit = ApprovalDeposit;
+    type StringLimit = StringLimit;
+    type Freezer = ();
+    type Extra = ();
+    type CallbackHandle = ();
+    type WeightInfo = ();
+    type RemoveItemsLimit = ConstU32<1_000>;
+    type Holder = ();
+    type ReserveData = ();
+}
+
+impl pallet_prediction_control::Config for Runtime {
+    type UpdateOrigin = EnsureRoot<AccountIdTest>;
+    type WeightInfo = ();
+}
+
+pub struct LiveAssetValidator;
+
+impl AssetValidator for LiveAssetValidator {
+    fn is_valid(asset_id: u64) -> bool {
+        <Assets as Inspect<AccountIdTest>>::asset_exists(asset_id)
+            && pallet_assets::Asset::<Runtime>::get(asset_id)
+                .is_some_and(|details| details.status == pallet_assets::AssetStatus::Live)
+    }
+}
+
+parameter_types! {
+    pub const CollateralPalletId: PalletId = PalletId(*b"pa/collt");
+}
+
+impl pallet_prediction_collateral::Config for Runtime {
+    type Assets = Assets;
+    type PredictionCurrencies = AssetManager;
+    type Control = PredictionControl;
+    type AssetValidator = LiveAssetValidator;
+    type WhitelistOrigin = EnsureRoot<AccountIdTest>;
+    type PauseOrigin = EnsureRoot<AccountIdTest>;
+    type CollateralPalletId = CollateralPalletId;
+    type WeightInfo = ();
+}
+
 impl orml_tokens::Config for Runtime {
     type Amount = Amount;
     type Balance = Balance;
@@ -188,11 +260,41 @@ impl ExtBuilder {
         .assimilate_storage(&mut storage)
         .unwrap();
 
-        assert!(MockBaseAssetPolicy::is_allowed(USDX_ASSET_ID));
-        assert!(!MockBaseAssetPolicy::is_allowed(USDX_ASSET_ID + 1));
-
         let mut ext: sp_io::TestExternalities = storage.into();
-        ext.execute_with(|| System::set_block_number(1));
+        ext.execute_with(|| {
+            System::set_block_number(1);
+            assert_ok!(Assets::force_create(
+                RuntimeOrigin::root(),
+                USDX_ASSET_ID,
+                MARKET_CREATOR,
+                true,
+                USDX_MIN_BALANCE,
+            ));
+            for account in [ALICE, BOB, CHARLIE, MARKET_CREATOR] {
+                assert_ok!(<Assets as Mutate<AccountIdTest>>::mint_into(
+                    USDX_ASSET_ID,
+                    &account,
+                    INITIAL_FOREIGN_BALANCE + USDX_MIN_BALANCE,
+                ));
+            }
+            assert_ok!(PredictionControl::set_prediction_mode(
+                RuntimeOrigin::root(),
+                PredictionMode::Full,
+            ));
+            assert_ok!(PredictionCollateral::set_asset_whitelisted(
+                RuntimeOrigin::root(),
+                USDX_ASSET_ID,
+                true,
+            ));
+            for account in [ALICE, BOB, CHARLIE, MARKET_CREATOR] {
+                assert_ok!(PredictionCollateral::deposit(
+                    RuntimeOrigin::signed(account),
+                    USDX_ASSET_ID,
+                    INITIAL_FOREIGN_BALANCE,
+                ));
+            }
+            System::reset_events();
+        });
         ext
     }
 }

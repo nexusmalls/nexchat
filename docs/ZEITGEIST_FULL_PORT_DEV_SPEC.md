@@ -824,6 +824,24 @@ variant 顺序、discriminant 或字段编码。
 - 更新 chain spec/dev genesis，仅添加安全默认值。
 - `PredictionMode = Disabled`。
 
+当前进度（2026-07-13）：
+
+- [x] 固定注册 index 176–192，并用 runtime 单测锁定既有 0–175。
+- [x] 完成 `runtime/src/configs/prediction.rs`、dependencies/features 与安全 genesis 默认值。
+- [x] 注册当前已实现 FRAME benchmark 的 prediction pallets；control/collateral/
+  orml-currencies 的 benchmark 实现明确留到 Phase 7。
+- [x] 接入非 `()` 的集成期 WeightInfo；所有 imported/Phase 2 weights 仍禁止生产启用。
+- [x] 接入 `SwapsApi`、`PredictionMarketsApi` 与 Nexus 有界 `PredictionViewApi`。
+- [x] 合并 `swaps_*` 与 `prediction_*` node RPC。
+- [x] `PredictionMode = Disabled`、全部模块关闭、collateral whitelist 为空，并由
+  runtime upgrade marker 强制验证。
+- [x] release WASM 构建成功并记录产物体积；详见 Phase 6 验证记录。
+- [ ] 完成现有 Nexus 全量测试回归。
+- [ ] 基于接线前 metadata 产物审核 diff。
+- [ ] 在当前 Nexus state snapshot 上执行 try-runtime。
+
+实现与验证记录见 `pallets/prediction/docs/PHASE6_RUNTIME_WIRING.md`。
+
 退出条件：
 
 - release WASM 构建成功。
@@ -843,6 +861,36 @@ weights 后，才能进行任何可调用上线。
 - 移植并升级全部 upstream fuzz targets。
 - 新增 Nexus adapter fuzz/property tests。
 - 新增 TypeScript E2E。
+
+当前进度（2026-07-13）：
+
+- [x] 补齐并注册 `pallet-prediction-control`、`pallet-prediction-collateral`、
+  `orml-currencies` runtime benchmark。
+- [x] 使用 Nexus runtime、50 steps、20 repeats、compiled Wasm、max 回归与 measured
+  PoV 生成首批 control、collateral、ORML currencies/tokens 权重。
+- [x] Runtime 已切换首批 `SubstrateWeight<Runtime>`，ORML 不再通过包装类型委托给
+  `WeightInfo = ()`。
+- [x] 新增 `scripts/benchmark-prediction-zrml-weights.sh` 与
+  `scripts/merge-zrml-benchmark-weights.py`，开始批量重生成 `zrml-*` Nexus 权重。
+- [x] 全部 12 个 `zrml-*` Nexus runtime 权重已合并；重 pallet
+  （court / prediction-markets / neo-swaps / combinatorial-tokens）使用缩减
+  steps，生产前需以 50/20 重跑。
+- [x] 六个 upstream fuzz crate 已在 Nexus workspace 编译通过；collateral proptest 已覆盖
+  镜像序列不变量。
+- [x] 恢复并扩展 Phase 7 prediction TypeScript E2E：
+  emergency pause、collateral gate、USDX surface、USDX market、community-fee、
+  court gate、core lifecycle、authorized dispute、orderbook、neo-swaps、
+  hybrid-router、combinatorial、parimutuel、futarchy submit、styx；宿主侧
+  fuzz/property 冒烟脚本已落地。
+- [x] 在重建 `--dev` 节点上跑通上述套件（含 neo-swaps `PoolId` 映射、信任市场
+  `disputeDuration=0`、Full 下 USDX `deposit` 过 CallFilter、hybrid-router
+  orderbook 成交、community-fee Path A/B；neo-swaps 标准买卖从交易者扣
+  ExternalFees；D19 标记含块高）。
+- [ ] 安装 `cargo-fuzz` 跑限时 campaign；可选补齐 futarchy ≥600 块 schedule/execute；
+  方便时全新 `--dev` 上跑完整 15 套 `e2e:prediction`。
+
+实现与验证记录见
+`pallets/prediction/docs/PHASE7_BENCHMARK_FUZZ_E2E.md`。
 
 生产 runtime 禁止任何移植 pallet 使用 `WeightInfo = ()`。Phase 6 的临时保守 weights 必须在
 Phase 7 被实测生成值全部替换，并通过 metadata/代码审查确认无遗漏。

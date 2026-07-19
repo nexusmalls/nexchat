@@ -24,6 +24,7 @@ pub fn goldens() -> Vec<ScenarioSnapshot> {
     vec![
         permissionless_resolve_native_golden(),
         authorized_dispute_native_golden(),
+        court_global_dispute_native_golden(),
         trusted_market_native_golden(),
         scalar_lifecycle_native_golden(),
     ]
@@ -45,6 +46,7 @@ fn permissionless_resolve_native_golden() -> ScenarioSnapshot {
         resolved_outcome: Some("categorical:1".into()),
         latest_market_id: 0,
         balances,
+        checkpoints: BTreeMap::new(),
         creation_bond_settled: true,
         oracle_bond_settled: true,
         outsider_bond_settled: false,
@@ -67,6 +69,45 @@ fn authorized_dispute_native_golden() -> ScenarioSnapshot {
         resolved_outcome: Some("categorical:1".into()),
         latest_market_id: 0,
         balances,
+        checkpoints: BTreeMap::new(),
+        creation_bond_settled: true,
+        oracle_bond_settled: true,
+        outsider_bond_settled: false,
+        dispute_bond_settled: true,
+    }
+}
+
+fn court_global_dispute_native_golden() -> ScenarioSnapshot {
+    // Nexus intentionally retains CourtInfo until final outcome-dependent appeal
+    // settlement; fixed upstream deletes it during escalation and cannot complete
+    // this final-resolution snapshot.
+    // Nexus 有意保留 CourtInfo 到依赖最终结果的 appeal 结算完成；固定上游会在
+    // 升级时删除该记录，因此无法完成此最终决议快照。
+    let mut balances = BTreeMap::new();
+    balances.insert((0, NormalizedAsset::Native), balance(INITIAL));
+    balances.insert((1, NormalizedAsset::Native), balance(INITIAL));
+    balances.insert((2, NormalizedAsset::Native), balance(9_989_100_000_000));
+
+    let checkpoints = [
+        "appeal_free_restored",
+        "appeal_reserve_released",
+        "court_market_mapping_removed",
+        "court_record_removed",
+        "court_reverse_mapping_removed",
+        "global_dispute_inactive",
+        "resolution_queue_empty",
+    ]
+    .into_iter()
+    .map(|name| (name.into(), true))
+    .collect();
+
+    ScenarioSnapshot {
+        name: "court_global_dispute_native",
+        market_status: MarketStatus::Resolved,
+        resolved_outcome: Some("categorical:0".into()),
+        latest_market_id: 0,
+        balances,
+        checkpoints,
         creation_bond_settled: true,
         oracle_bond_settled: true,
         outsider_bond_settled: false,
@@ -86,6 +127,7 @@ fn trusted_market_native_golden() -> ScenarioSnapshot {
         resolved_outcome: Some("categorical:1".into()),
         latest_market_id: 0,
         balances,
+        checkpoints: BTreeMap::new(),
         creation_bond_settled: true,
         oracle_bond_settled: true,
         outsider_bond_settled: false,
@@ -105,6 +147,7 @@ fn scalar_lifecycle_native_golden() -> ScenarioSnapshot {
         resolved_outcome: Some("scalar:150".into()),
         latest_market_id: 0,
         balances,
+        checkpoints: BTreeMap::new(),
         creation_bond_settled: true,
         oracle_bond_settled: true,
         outsider_bond_settled: false,

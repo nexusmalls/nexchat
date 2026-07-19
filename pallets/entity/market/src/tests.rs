@@ -4262,8 +4262,8 @@ fn twap_uses_period_old_checkpoint() {
 /// v1 迁移: 旧版 TwapAccumulator 应正确转换为双 checkpoint 结构
 #[test]
 fn v1_migration_translates_old_accumulator() {
-    use codec::Encode;
     use crate::migrations::v1::{migrate, OldTwapAccumulator};
+    use codec::Encode;
 
     ExtBuilder::build().execute_with(|| {
         // 有成交的旧累积器

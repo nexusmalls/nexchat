@@ -1,0 +1,32 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.17"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+auto_detect_solc = false
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    # Test profile uses local mocks so `forge test` runs without the real
+    # ismp-solidity package. For production deployment, point this back to
+    # `lib/ismp-solidity/` and run `script/bootstrap.sh`.
+    # 测试 profile 指向本地 mock，使 `forge test` 无需真实 ismp-solidity 包。
+    # 生产部署请改回 `lib/ismp-solidity/` 并执行 `script/bootstrap.sh`。
+    "@polytope-labs/ismp-solidity-abi/=test/mocks/ismp-solidity-abi/",
+]
+
+[profile.ci]
+fuzz_runs = 256
+gas_reports = ["NexHyperFungibleToken", "NexHyperFungibleTokenUpgradeable"]
+
+[fmt]
+line_length = 110
+tab_width = 4
+bracket_spacing = false
+int_types = "long"

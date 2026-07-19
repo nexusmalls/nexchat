@@ -40,8 +40,8 @@
 
 pub use pallet::*;
 
-mod types;
 pub mod runtime_api;
+mod types;
 pub mod weights;
 
 #[cfg(test)]
@@ -165,22 +165,47 @@ pub mod pallet {
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// EN: A device identity (`IK`) was registered. CN: 注册了设备身份（`IK`）。
-        DeviceRegistered { account: T::AccountId, device_id: DeviceId },
+        DeviceRegistered {
+            account: T::AccountId,
+            device_id: DeviceId,
+        },
         /// EN: A device's signed prekey was set/rotated. CN: 设置/轮换了设备签名预密钥。
-        SignedPreKeySet { account: T::AccountId, device_id: DeviceId },
+        SignedPreKeySet {
+            account: T::AccountId,
+            device_id: DeviceId,
+        },
         /// EN: A device's OPK Merkle root was published/updated (with new epoch).
         /// CN: 发布/更新了设备 OPK Merkle 根（携新纪元）。
-        OpkRootSet { account: T::AccountId, device_id: DeviceId, epoch: u32, count: u32 },
+        OpkRootSet {
+            account: T::AccountId,
+            device_id: DeviceId,
+            epoch: u32,
+            count: u32,
+        },
         /// EN: A device's prekey epoch was bumped (revocation). CN: 设备预密钥纪元递增（撤销）。
-        PrekeyEpochBumped { account: T::AccountId, device_id: DeviceId, new_epoch: u32 },
+        PrekeyEpochBumped {
+            account: T::AccountId,
+            device_id: DeviceId,
+            new_epoch: u32,
+        },
         /// EN: A device identity was unregistered and its deposit returned.
         /// CN: 注销了设备身份并退还押金。
-        DeviceUnregistered { account: T::AccountId, device_id: DeviceId },
+        DeviceUnregistered {
+            account: T::AccountId,
+            device_id: DeviceId,
+        },
         /// EN: A device was force-unregistered by the privileged origin (deposit refunded).
         /// CN: 设备被特权来源强制注销（押金已退）。
-        DeviceForceUnregistered { account: T::AccountId, device_id: DeviceId },
+        DeviceForceUnregistered {
+            account: T::AccountId,
+            device_id: DeviceId,
+        },
         /// EN: An account's 1:1 stack capabilities were set. CN: 设置了账户 1:1 栈能力。
-        StackCapsSet { account: T::AccountId, flags: u8, version: u16 },
+        StackCapsSet {
+            account: T::AccountId,
+            flags: u8,
+            version: u16,
+        },
     }
 
     // ==================== 错误 / Errors ====================
@@ -203,7 +228,8 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_runtime_upgrade() -> Weight {
-            let on_chain = <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
+            let on_chain =
+                <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
             if on_chain < STORAGE_VERSION {
                 STORAGE_VERSION.put::<Pallet<T>>();
                 T::DbWeight::get().writes(1)
@@ -243,7 +269,10 @@ pub mod pallet {
             );
 
             let count = DeviceCountByAccount::<T>::get(&who);
-            ensure!(count < T::MaxDevicesPerAccount::get(), Error::<T>::TooManyDevices);
+            ensure!(
+                count < T::MaxDevicesPerAccount::get(),
+                Error::<T>::TooManyDevices
+            );
 
             let deposit = T::DeviceDeposit::get();
             reserve_deposit::<T::Currency, _, _>(&who, deposit)?;
@@ -261,7 +290,10 @@ pub mod pallet {
             );
             DeviceCountByAccount::<T>::insert(&who, count.saturating_add(1));
 
-            Self::deposit_event(Event::DeviceRegistered { account: who, device_id });
+            Self::deposit_event(Event::DeviceRegistered {
+                account: who,
+                device_id,
+            });
             Ok(())
         }
 
@@ -291,7 +323,10 @@ pub mod pallet {
                     updated_at: frame_system::Pallet::<T>::block_number(),
                 },
             );
-            Self::deposit_event(Event::SignedPreKeySet { account: who, device_id });
+            Self::deposit_event(Event::SignedPreKeySet {
+                account: who,
+                device_id,
+            });
             Ok(())
         }
 
@@ -316,7 +351,12 @@ pub mod pallet {
                 .map(|r| next_u32_epoch(r.epoch))
                 .unwrap_or(0);
             DeviceOpkRoots::<T>::insert(&who, device_id, OpkRoot { root, count, epoch });
-            Self::deposit_event(Event::OpkRootSet { account: who, device_id, epoch, count });
+            Self::deposit_event(Event::OpkRootSet {
+                account: who,
+                device_id,
+                epoch,
+                count,
+            });
             Ok(())
         }
 
@@ -344,11 +384,14 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::unregister_device())]
         pub fn unregister_device(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            let rec = DeviceIdentities::<T>::get(&who, device_id)
-                .ok_or(Error::<T>::DeviceNotFound)?;
+            let rec =
+                DeviceIdentities::<T>::get(&who, device_id).ok_or(Error::<T>::DeviceNotFound)?;
             unreserve_deposit::<T::Currency, _, _>(&who, rec.deposit);
             Self::purge_device(&who, device_id);
-            Self::deposit_event(Event::DeviceUnregistered { account: who, device_id });
+            Self::deposit_event(Event::DeviceUnregistered {
+                account: who,
+                device_id,
+            });
             Ok(())
         }
 
@@ -359,7 +402,11 @@ pub mod pallet {
         pub fn set_stack_caps(origin: OriginFor<T>, flags: u8, version: u16) -> DispatchResult {
             let who = ensure_signed(origin)?;
             ChatStackCaps::<T>::insert(&who, StackCaps { flags, version });
-            Self::deposit_event(Event::StackCapsSet { account: who, flags, version });
+            Self::deposit_event(Event::StackCapsSet {
+                account: who,
+                flags,
+                version,
+            });
             Ok(())
         }
 

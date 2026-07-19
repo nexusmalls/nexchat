@@ -42,21 +42,31 @@ where
     C::Api: pallet_chat_sync::runtime_api::ChatSyncApi<Block>,
     C::Api: pallet_chat_group::runtime_api::ChatGroupApi<Block, AccountId>,
     C::Api: pallet_ismp_runtime_api::IsmpRuntimeApi<Block, Hash>,
+    C::Api: zrml_prediction_markets_runtime_api::PredictionViewApi<Block, AccountId>,
+    C::Api: zrml_swaps_runtime_api::SwapsApi<Block, u128, AccountId, Balance, u128>,
     C::Api: BlockBuilder<Block>,
     P: TransactionPool + 'static,
     B: Backend<Block> + Send + Sync + 'static,
 {
     use crate::chat_rpc::{Chat, ChatApiServer};
+    use crate::prediction_rpc::{Prediction, PredictionApiServer};
     use pallet_ismp_rpc::{IsmpApiServer, IsmpRpcHandler};
     use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApiServer};
     use substrate_frame_rpc_system::{System, SystemApiServer};
+    use zrml_swaps_rpc::{Swaps, SwapsApiServer};
 
     let mut module = RpcModule::new(());
-    let FullDeps { client, pool, backend } = deps;
+    let FullDeps {
+        client,
+        pool,
+        backend,
+    } = deps;
 
     module.merge(System::new(client.clone(), pool).into_rpc())?;
     module.merge(TransactionPayment::new(client.clone()).into_rpc())?;
     module.merge(Chat::<_, Block>::new(client.clone()).into_rpc())?;
+    module.merge(Prediction::<_, Block>::new(client.clone()).into_rpc())?;
+    module.merge(Swaps::<_, Block>::new(client.clone()).into_rpc())?;
     module.merge(IsmpRpcHandler::new(client, backend)?.into_rpc())?;
 
     // Extend this RPC with a custom API by using the following syntax.

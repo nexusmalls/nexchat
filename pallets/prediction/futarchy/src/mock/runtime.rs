@@ -6,8 +6,11 @@ use crate::{
     mock::types::{MockOracle, MockScheduler},
     weights::WeightInfo,
 };
-use frame_support::{construct_runtime, derive_impl, parameter_types, traits::Everything};
-use frame_system::mocking::MockBlockU32;
+use frame_support::{
+    construct_runtime, derive_impl, ord_parameter_types, parameter_types,
+    traits::{EitherOfDiverse, Everything},
+};
+use frame_system::{mocking::MockBlockU32, EnsureRoot, EnsureSignedBy};
 use sp_runtime::traits::IdentityLookup;
 use zeitgeist_primitives::{
     constants::mock::{BlockHashCount, ExistentialDeposit, MaxLocks, MaxReserves},
@@ -20,6 +23,10 @@ use crate::mock::types::MockBenchmarkHelper;
 parameter_types! {
     pub const MaxProposals: u32 = 16;
     pub const MinDuration: BlockNumber = 10;
+}
+
+ord_parameter_types! {
+    pub const TechnicalCommittee: AccountIdTest = 42;
 }
 
 construct_runtime! {
@@ -59,5 +66,9 @@ impl zrml_futarchy::Config for Runtime {
     type Oracle = MockOracle;
     type RuntimeEvent = RuntimeEvent;
     type Scheduler = MockScheduler;
+    type SubmitOrigin = EitherOfDiverse<
+        EnsureRoot<AccountIdTest>,
+        EnsureSignedBy<TechnicalCommittee, AccountIdTest>,
+    >;
     type WeightInfo = WeightInfo<Runtime>;
 }

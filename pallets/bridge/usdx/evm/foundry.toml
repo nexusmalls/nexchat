@@ -1,0 +1,27 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.20"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+auto_detect_solc = false
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@hyperbridge/core/=lib/hyperbridge/sdk/packages/core/",
+    "@polytope-labs/solidity-merkle-trees/=lib/solidity-merkle-trees/",
+]
+
+[profile.ci]
+fuzz_runs = 256
+gas_reports = ["HftGovernanceController"]
+
+[fmt]
+line_length = 110
+tab_width = 4
+bracket_spacing = false
+int_types = "long"

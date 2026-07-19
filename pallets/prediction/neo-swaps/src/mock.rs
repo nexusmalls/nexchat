@@ -27,16 +27,21 @@ use crate as zrml_neo_swaps;
 use crate::{consts::*, AssetOf, MarketIdOf};
 use core::marker::PhantomData;
 use frame_support::{
-    construct_runtime, derive_impl, ord_parameter_types, parameter_types,
+    assert_ok, construct_runtime, derive_impl, ord_parameter_types, parameter_types,
     traits::{
+        fungibles::{Inspect, Mutate},
         tokens::{PayFromAccount, UnityAssetBalanceConversion},
-        Contains, Everything, ExistenceRequirement, NeverEnsureOrigin, Randomness,
+        AsEnsureOriginWithArg, ConstU32, Contains, EqualPrivilegeOnly, Everything,
+        ExistenceRequirement, NeverEnsureOrigin, Randomness,
     },
-    Blake2_256,
+    weights::Weight,
+    Blake2_256, PalletId,
 };
 use frame_system::{mocking::MockBlockU32, EnsureRoot, EnsureSignedBy};
 use orml_traits::MultiCurrency;
-use prediction_mock_runtime::{MockBaseAssetPolicy, USDX_ASSET_ID};
+use pallet_prediction_collateral::AssetValidator;
+use pallet_prediction_control::PredictionMode;
+use prediction_mock_runtime::USDX_ASSET_ID;
 use sp_runtime::{
     traits::{Get, Hash as HashT, IdentityLookup, Zero},
     BuildStorage, DispatchResult, Perbill, Percent, SaturatedConversion,
@@ -62,14 +67,14 @@ use zeitgeist_primitives::{
         },
     },
     math::fixed::FixedMul,
-    traits::{DeployPoolApi, DistributeFees, PredictionBaseAssetPolicy as _},
+    traits::{DeployPoolApi, DistributeFees},
     types::{
         AccountIdTest, Amount, Balance, BasicCurrencyAdapter, BlockNumber, CombinatorialId,
         CurrencyId, Hash, MarketId, Moment,
     },
 };
 use zrml_combinatorial_tokens::types::{CryptographicIdManager, Fuel};
-use zrml_neo_swaps::BalanceOf;
+use zrml_neo_swaps::{types::DecisionMarketOracle, BalanceOf};
 
 #[cfg(feature = "runtime-benchmarks")]
 use zeitgeist_primitives::types::NoopCombinatorialTokensBenchmarkHelper;
@@ -83,6 +88,8 @@ pub const EVE: AccountIdTest = 4;
 pub const FEE_ACCOUNT: AccountIdTest = 5;
 pub const SUDO: AccountIdTest = 123456;
 pub const EXTERNAL_FEES: Balance = CENT;
+pub const INITIAL_FOREIGN_BALANCE: Balance = 1_000 * BASE;
+pub const USDX_MIN_BALANCE: Balance = 1;
 
 parameter_types! {
     pub const FeeAccount: AccountIdTest = FEE_ACCOUNT;
@@ -172,12 +179,18 @@ construct_runtime!(
     pub enum Runtime {
         NeoSwaps: zrml_neo_swaps,
         AssetManager: orml_currencies,
+        Assets: pallet_assets,
         Authorized: zrml_authorized,
         Balances: pallet_balances,
         CombinatorialTokens: zrml_combinatorial_tokens,
         Court: zrml_court,
+        Futarchy: zrml_futarchy,
         MarketCommons: zrml_market_commons,
+        Preimage: pallet_preimage,
+        PredictionCollateral: pallet_prediction_collateral,
+        PredictionControl: pallet_prediction_control,
         PredictionMarkets: zrml_prediction_markets,
+        Scheduler: pallet_scheduler,
         GlobalDisputes: zrml_global_disputes,
         System: frame_system,
         Timestamp: pallet_timestamp,
@@ -186,12 +199,45 @@ construct_runtime!(
     }
 );
 
-pub struct StaticBaseAssetPolicy;
+parameter_types! {
+    pub const FutarchyMaxProposals: u32 = 16;
+    pub const FutarchyMinDuration: BlockNumber = 3;
+    pub const MaxScheduledPerBlock: u32 = 16;
+    pub MaximumSchedulerWeight: Weight = Weight::from_parts(u64::MAX, u64::MAX);
+}
 
-impl zeitgeist_primitives::traits::PredictionBaseAssetPolicy<u64> for StaticBaseAssetPolicy {
-    fn is_allowed(asset_id: u64) -> bool {
-        MockBaseAssetPolicy::is_allowed(asset_id)
-    }
+impl pallet_preimage::Config for Runtime {
+    type Consideration = ();
+    type Currency = ();
+    type ManagerOrigin = EnsureRoot<AccountIdTest>;
+    type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = ();
+}
+
+impl pallet_scheduler::Config for Runtime {
+    type BlockNumberProvider = System;
+    type MaxScheduledPerBlock = MaxScheduledPerBlock;
+    type MaximumWeight = MaximumSchedulerWeight;
+    type OriginPrivilegeCmp = EqualPrivilegeOnly;
+    type PalletsOrigin = OriginCaller;
+    type Preimages = Preimage;
+    type RuntimeCall = RuntimeCall;
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeOrigin = RuntimeOrigin;
+    type ScheduleOrigin = EnsureRoot<AccountIdTest>;
+    type WeightInfo = ();
+}
+
+impl zrml_futarchy::Config for Runtime {
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = crate::types::DecisionMarketBenchmarkHelper<Runtime>;
+    type MaxProposals = FutarchyMaxProposals;
+    type MinDuration = FutarchyMinDuration;
+    type Oracle = DecisionMarketOracle<Runtime>;
+    type RuntimeEvent = RuntimeEvent;
+    type Scheduler = Scheduler;
+    type SubmitOrigin = EnsureRoot<AccountIdTest>;
+    type WeightInfo = zrml_futarchy::weights::WeightInfo<Runtime>;
 }
 
 pub struct DeterministicRandomness;
@@ -225,7 +271,7 @@ impl zrml_prediction_markets::Config for Runtime {
     type AdvisoryBond = AdvisoryBond;
     type AdvisoryBondSlashPercentage = AdvisoryBondSlashPercentage;
     type ApproveOrigin = EnsureSignedBy<Sudo, AccountIdTest>;
-    type BaseAssetPolicy = StaticBaseAssetPolicy;
+    type BaseAssetPolicy = PredictionCollateral;
     type Authorized = Authorized;
     type CloseEarlyBlockPeriod = CloseEarlyBlockPeriod;
     type CloseEarlyDisputeBond = CloseEarlyDisputeBond;
@@ -328,6 +374,68 @@ impl orml_currencies::Config for Runtime {
     type GetNativeCurrencyId = GetNativeCurrencyId;
     type MultiCurrency = Tokens;
     type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances>;
+    type WeightInfo = ();
+}
+
+parameter_types! {
+    pub const AssetDeposit: Balance = 0;
+    pub const AssetAccountDeposit: Balance = 0;
+    pub const ApprovalDeposit: Balance = 0;
+    pub const MetadataDepositBase: Balance = 0;
+    pub const MetadataDepositPerByte: Balance = 0;
+    pub const StringLimit: u32 = 50;
+}
+
+impl pallet_assets::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Balance = Balance;
+    type AssetId = u64;
+    type AssetIdParameter = u64;
+    type Currency = Balances;
+    type CreateOrigin = AsEnsureOriginWithArg<frame_system::EnsureSigned<AccountIdTest>>;
+    type ForceOrigin = EnsureRoot<AccountIdTest>;
+    type AssetDeposit = AssetDeposit;
+    type AssetAccountDeposit = AssetAccountDeposit;
+    type MetadataDepositBase = MetadataDepositBase;
+    type MetadataDepositPerByte = MetadataDepositPerByte;
+    type ApprovalDeposit = ApprovalDeposit;
+    type StringLimit = StringLimit;
+    type Freezer = ();
+    type Extra = ();
+    type CallbackHandle = ();
+    type WeightInfo = ();
+    type RemoveItemsLimit = ConstU32<1_000>;
+    type Holder = ();
+    type ReserveData = ();
+}
+
+impl pallet_prediction_control::Config for Runtime {
+    type UpdateOrigin = EnsureRoot<AccountIdTest>;
+    type WeightInfo = ();
+}
+
+pub struct LiveAssetValidator;
+
+impl AssetValidator for LiveAssetValidator {
+    fn is_valid(asset_id: u64) -> bool {
+        <Assets as Inspect<AccountIdTest>>::asset_exists(asset_id)
+            && pallet_assets::Asset::<Runtime>::get(asset_id)
+                .is_some_and(|details| details.status == pallet_assets::AssetStatus::Live)
+    }
+}
+
+parameter_types! {
+    pub const CollateralPalletId: PalletId = PalletId(*b"ns/collt");
+}
+
+impl pallet_prediction_collateral::Config for Runtime {
+    type Assets = Assets;
+    type PredictionCurrencies = AssetManager;
+    type Control = PredictionControl;
+    type AssetValidator = LiveAssetValidator;
+    type WhitelistOrigin = EnsureRoot<AccountIdTest>;
+    type PauseOrigin = EnsureRoot<AccountIdTest>;
+    type CollateralPalletId = CollateralPalletId;
     type WeightInfo = ();
 }
 
@@ -439,10 +547,41 @@ impl ExtBuilder {
         }
         .assimilate_storage(&mut t)
         .unwrap();
-        assert!(MockBaseAssetPolicy::is_allowed(USDX_ASSET_ID));
-        assert!(!MockBaseAssetPolicy::is_allowed(USDX_ASSET_ID + 1));
         let mut test_ext: sp_io::TestExternalities = t.into();
-        test_ext.execute_with(|| System::set_block_number(1));
+        test_ext.execute_with(|| {
+            System::set_block_number(1);
+            assert_ok!(Assets::force_create(
+                RuntimeOrigin::root(),
+                USDX_ASSET_ID,
+                SUDO,
+                true,
+                USDX_MIN_BALANCE,
+            ));
+            for account in 0..69 {
+                assert_ok!(<Assets as Mutate<AccountIdTest>>::mint_into(
+                    USDX_ASSET_ID,
+                    &account,
+                    INITIAL_FOREIGN_BALANCE + USDX_MIN_BALANCE,
+                ));
+            }
+            assert_ok!(PredictionControl::set_prediction_mode(
+                RuntimeOrigin::root(),
+                PredictionMode::Full,
+            ));
+            assert_ok!(PredictionCollateral::set_asset_whitelisted(
+                RuntimeOrigin::root(),
+                USDX_ASSET_ID,
+                true,
+            ));
+            for account in 0..69 {
+                assert_ok!(PredictionCollateral::deposit(
+                    RuntimeOrigin::signed(account),
+                    USDX_ASSET_ID,
+                    INITIAL_FOREIGN_BALANCE,
+                ));
+            }
+            System::reset_events();
+        });
         test_ext
     }
 }

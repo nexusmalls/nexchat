@@ -429,9 +429,7 @@ impl<AccountId: Default> ShopProvider<AccountId> for NullShopProvider {
 // ============================================================================
 
 /// 商品聚合查询信息（单次存储读取返回下单所需全部字段）
-#[derive(
-    Encode, Decode, codec::DecodeWithMemTracking, Clone, PartialEq, Eq, TypeInfo, Debug,
-)]
+#[derive(Encode, Decode, codec::DecodeWithMemTracking, Clone, PartialEq, Eq, TypeInfo, Debug)]
 pub struct ProductQueryInfo {
     pub shop_id: u64,
     pub usdt_price: u64,

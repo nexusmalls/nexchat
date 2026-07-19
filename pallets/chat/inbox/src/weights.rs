@@ -69,11 +69,25 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 }
 
 impl WeightInfo for () {
-    fn register_inbox() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn bump_epoch() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn revoke_tag() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn unrevoke_tag() -> Weight { Weight::from_parts(15_000_000, 0) }
-    fn transfer_controller() -> Weight { Weight::from_parts(25_000_000, 0) }
-    fn deregister_inbox() -> Weight { Weight::from_parts(20_000_000, 0) }
-    fn force_deregister_inbox() -> Weight { Weight::from_parts(20_000_000, 0) }
+    fn register_inbox() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn bump_epoch() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn revoke_tag() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn unrevoke_tag() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn transfer_controller() -> Weight {
+        Weight::from_parts(25_000_000, 0)
+    }
+    fn deregister_inbox() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn force_deregister_inbox() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
 }

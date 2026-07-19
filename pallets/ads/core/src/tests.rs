@@ -1,9 +1,5 @@
 use crate::{mock::*, *};
-use frame_support::{
-    assert_noop, assert_ok,
-    traits::ReservableCurrency,
-    BoundedVec,
-};
+use frame_support::{assert_noop, assert_ok, traits::ReservableCurrency, BoundedVec};
 
 // ============================================================================
 // Helpers

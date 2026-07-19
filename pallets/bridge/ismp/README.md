@@ -37,6 +37,14 @@ Outbound, **before** any burn: not globally/lane paused · `>= MinBridgeAmount` 
 Inbound: source chain registered · `from == registered contract` · not paused ·
 `amount <= BridgedOut` and `<= BridgedOutByChain[src]` (anti-inflation).
 
+Recipient derivation: a 32-byte recipient is a native account used as-is; a 20-byte
+recipient is an EVM address derived through the **same** `EvmToSubstrate` mapping
+(`NexusEvmDerivation`, blake2) that cross-order / withdraw use, so plain transfers
+and HB-ENT-01 resolve a given EVM identity to one account (no stranded funds).
+收款人派生：32 字节为原生账户，原样使用；20 字节为 EVM 地址，用与跨链下单 / 提款
+**相同**的 `EvmToSubstrate`（`NexusEvmDerivation`，blake2）映射派生，使纯转账与 HB-ENT-01
+对同一 EVM 身份解析到同一账户（资金不被冻结）。
+
 ## Ledger invariant / 账本不变量
 
 `Σ BridgedOutByChain == BridgedOut`, checked by `try_state` (enabled in the
@@ -69,6 +77,20 @@ pallet_bridge_ismp::register_chain(
 )
 ```
 
+Multiple EVM chains can be registered independently (per-chain ledger, per-lane
+pause). For example, Polygon (chain id 137) is added the same way:
+
+可同时注册多条 EVM 链（按链独立账本、按 lane 独立暂停）。例如 Polygon（chain id
+137）以同样方式接入：
+
+```
+pallet_bridge_ismp::register_chain(
+    chain        = StateMachine::Evm(137),      // Polygon mainnet
+    contract     = 0x<NEX Polygon contract>,    // ERC-6160 NEX address on Polygon
+    erc_decimals = 18,
+)
+```
+
 `erc_decimals` must be `>= NativeDecimals (12)`. On the EVM side register Nexus as
 a peer with state-machine id `SUBSTRATE-NEXS` and module id `"nexbridg"`
 (`0x6e65786272696467`) — see `./evm/README.md`.
@@ -84,15 +106,30 @@ Start conservative on testnet; raise after monitoring. Until set, all
 
 ### 4. Pause controls / 暂停控制
 
-- Global: `set_paused(None, true)` · Per-lane: `set_paused(Some(Evm(56)), true)`.
-- `deregister_chain(chain)` disables both inbound and outbound for that chain.
+- Global: `set_paused(None, true)` · Per-lane: `set_paused(Some(Evm(56)), true)` or
+  `set_paused(Some(Evm(137)), true)` (BSC / Polygon respectively).
+- `deregister_chain(chain)` disables both inbound and outbound for that chain
+  (e.g. `deregister_chain(StateMachine::Evm(137))` halts the Polygon lane while
+  BSC keeps running — see `multi_lane_independent_ledgers` /
+  `polygon_pause_does_not_affect_bsc` tests).
 
 ### 5. Monitoring & reconciliation / 监控与对账
 
 - Off-chain, periodically assert: `BridgedOutByChain[Evm(n)]` (Nexus) ==
   `totalSupply` of the NEX contract on chain `n` (EVM), within in-flight slack.
+  Run this **per connected lane** — e.g. both `Evm(56)` (BSC) and `Evm(137)`
+  (Polygon) — since the per-chain ledgers are independent.
+  按每条已接入 lane 分别对账——例如 `Evm(56)`（BSC）与 `Evm(137)`（Polygon）各自
+  独立校验，因为按链账本相互独立。
 - Alert on `try_state` failure, on `BridgeRefunded` spikes (timeout/liveness), and
   on any inbound rejected for invariant violation.
+- Tracked-payout (HB-WD-01 mechanism 2) refund contexts are reaped by the
+  permissionless `prune_payout_refunds(limit)` once older than `PayoutRefundTtl`
+  (successfully delivered payouts never time out, so their entries would otherwise
+  linger). Run a keeper that calls it periodically to bound `PayoutRefunds` growth.
+  已跟踪派发（HB-WD-01 机制 2）的退款上下文在超过 `PayoutRefundTtl` 后由无许可的
+  `prune_payout_refunds(limit)` 回收（成功投递的派发永不超时，否则条目会一直残留）。
+  建议运行 keeper 周期性调用以限制 `PayoutRefunds` 增长。
 
 ## Cross-chain digital ordering (HB-ENT-01) / 跨链数字下单
 

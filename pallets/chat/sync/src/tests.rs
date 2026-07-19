@@ -64,7 +64,11 @@ fn first_publish_stores_record_and_reserves_deposit() {
         assert_eq!(Balances::free_balance(1), free_before - 100);
 
         System::assert_last_event(
-            Event::AnchorPublished { anchor_id: anchor_id(&pair), updated_at: 1_000 }.into(),
+            Event::AnchorPublished {
+                anchor_id: anchor_id(&pair),
+                updated_at: 1_000,
+            }
+            .into(),
         );
         assert_eq!(
             ChatSync::sync_anchor(anchor_id(&pair)),
@@ -129,7 +133,12 @@ fn short_ciphertext_rejected() {
             publish(1, &pair, 1_000, ct(0xAA, MIN_CIPHERTEXT_LEN as usize - 1)),
             Error::<Test>::CiphertextTooShort
         );
-        assert_ok!(publish(1, &pair, 1_000, ct(0xAA, MIN_CIPHERTEXT_LEN as usize)));
+        assert_ok!(publish(
+            1,
+            &pair,
+            1_000,
+            ct(0xAA, MIN_CIPHERTEXT_LEN as usize)
+        ));
     });
 }
 
@@ -140,7 +149,10 @@ fn lww_rejects_older_allows_equal_and_newer() {
         assert_ok!(publish(1, &pair, 1_000, ct(0xAA, 32)));
 
         System::set_block_number(20);
-        assert_noop!(publish(1, &pair, 999, ct(0xBB, 32)), Error::<Test>::StaleUpdatedAt);
+        assert_noop!(
+            publish(1, &pair, 999, ct(0xBB, 32)),
+            Error::<Test>::StaleUpdatedAt
+        );
 
         // `==` allowed: idempotent resend / same-ts overwrite (ADR §5.5 rule 4).
         assert_ok!(publish(1, &pair, 1_000, ct(0xBB, 32)));
@@ -176,9 +188,15 @@ fn republish_rate_limited_per_anchor() {
         assert_ok!(publish(1, &pair, 1_000, ct(0xAA, 32)));
 
         // Same block and within the window → rejected. / 同块与窗口内 → 拒绝。
-        assert_noop!(publish(1, &pair, 2_000, ct(0xBB, 32)), Error::<Test>::PublishTooFrequent);
+        assert_noop!(
+            publish(1, &pair, 2_000, ct(0xBB, 32)),
+            Error::<Test>::PublishTooFrequent
+        );
         System::set_block_number(10); // 9 blocks later < 10
-        assert_noop!(publish(1, &pair, 2_000, ct(0xBB, 32)), Error::<Test>::PublishTooFrequent);
+        assert_noop!(
+            publish(1, &pair, 2_000, ct(0xBB, 32)),
+            Error::<Test>::PublishTooFrequent
+        );
 
         System::set_block_number(11); // exactly MinBlocksBetweenPublish
         assert_ok!(publish(1, &pair, 2_000, ct(0xBB, 32)));
@@ -243,7 +261,12 @@ fn clear_refunds_depositor_and_removes() {
 
         assert!(ChatSync::sync_anchors(anchor_id(&pair)).is_none());
         assert_eq!(Balances::reserved_balance(1), 0);
-        System::assert_last_event(Event::AnchorCleared { anchor_id: anchor_id(&pair) }.into());
+        System::assert_last_event(
+            Event::AnchorCleared {
+                anchor_id: anchor_id(&pair),
+            }
+            .into(),
+        );
     });
 }
 
@@ -275,11 +298,7 @@ fn clear_signature_binds_stored_updated_at_no_replay() {
         // The captured signature no longer verifies (anti-replay across states).
         // 截获的签名不再有效（跨状态防重放）。
         assert_noop!(
-            ChatSync::clear_sync_anchor(
-                RuntimeOrigin::signed(1),
-                pair.public().0,
-                old_clear_sig,
-            ),
+            ChatSync::clear_sync_anchor(RuntimeOrigin::signed(1), pair.public().0, old_clear_sig,),
             Error::<Test>::BadAnchorSignature
         );
 
@@ -428,7 +447,9 @@ fn equal_resend_is_noop_and_does_not_reset_rate_limit_clock() {
         let body = ct(0xAA, 32);
         assert_ok!(publish(1, &pair, 1_000, body.clone()));
         assert_eq!(
-            ChatSync::sync_anchors(anchor_id(&pair)).unwrap().last_publish_block,
+            ChatSync::sync_anchors(anchor_id(&pair))
+                .unwrap()
+                .last_publish_block,
             1
         );
 
@@ -444,7 +465,9 @@ fn equal_resend_is_noop_and_does_not_reset_rate_limit_clock() {
         ));
         // No-op: the rate-limit clock did NOT move. / no-op：限频时钟未被推进。
         assert_eq!(
-            ChatSync::sync_anchors(anchor_id(&pair)).unwrap().last_publish_block,
+            ChatSync::sync_anchors(anchor_id(&pair))
+                .unwrap()
+                .last_publish_block,
             1
         );
 
@@ -473,7 +496,11 @@ fn cleared_anchor_cannot_be_resurrected_by_replayed_publish() {
         let old_sig = sign_publish(&pair, 1_000, &body);
 
         let sig = sign_clear(&pair, 1_000);
-        assert_ok!(ChatSync::clear_sync_anchor(RuntimeOrigin::signed(1), pair.public().0, sig));
+        assert_ok!(ChatSync::clear_sync_anchor(
+            RuntimeOrigin::signed(1),
+            pair.public().0,
+            sig
+        ));
         assert_eq!(crate::ClearedAt::<Test>::get(anchor_id(&pair)), Some(1_000));
 
         // Replay at the watermark (==) is rejected. / 等于水位的重放被拒。
@@ -528,13 +555,19 @@ fn force_clear_refunds_depositor_and_sets_tombstone() {
         let old_sig = sign_publish(&pair, 1_000, &body);
         assert_eq!(Balances::reserved_balance(1), 100);
 
-        assert_ok!(ChatSync::force_clear_sync_anchor(RuntimeOrigin::root(), anchor_id(&pair)));
+        assert_ok!(ChatSync::force_clear_sync_anchor(
+            RuntimeOrigin::root(),
+            anchor_id(&pair)
+        ));
 
         assert!(ChatSync::sync_anchors(anchor_id(&pair)).is_none());
         assert_eq!(Balances::reserved_balance(1), 0);
         assert_eq!(crate::ClearedAt::<Test>::get(anchor_id(&pair)), Some(1_000));
         System::assert_last_event(
-            Event::AnchorForceCleared { anchor_id: anchor_id(&pair) }.into(),
+            Event::AnchorForceCleared {
+                anchor_id: anchor_id(&pair),
+            }
+            .into(),
         );
 
         // History replay stays dead; a newer owner publish still works.

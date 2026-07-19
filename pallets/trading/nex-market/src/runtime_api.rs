@@ -2,8 +2,8 @@
 
 use codec::{Codec, Decode, Encode};
 use scale_info::TypeInfo;
-use Debug;
 use sp_std::vec::Vec;
+use Debug;
 
 /// 订单摘要（Runtime API 返回用，不含泛型 BlockNumber）
 #[derive(Encode, Decode, Clone, PartialEq, Eq, TypeInfo, Debug)]

@@ -63,12 +63,12 @@ pub use weights::WeightInfo;
 pub mod runtime_api;
 pub mod weights;
 
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
 #[cfg(test)]
 mod mock;
 #[cfg(test)]
 mod tests;
-#[cfg(feature = "runtime-benchmarks")]
-mod benchmarking;
 
 use codec::DecodeWithMemTracking;
 use frame_support::{
@@ -76,7 +76,9 @@ use frame_support::{
     traits::{Currency, ReservableCurrency},
 };
 use frame_system::pallet_prelude::*;
-use pallet_chat_common::rate_limit::{check_and_update_rate_limit, RateLimitResult, RateLimitState};
+use pallet_chat_common::rate_limit::{
+    check_and_update_rate_limit, RateLimitResult, RateLimitState,
+};
 use pallet_chat_common::{min_blocks_elapsed, reserve_deposit, unreserve_deposit};
 use sp_runtime::traits::{UniqueSaturatedInto, Zero};
 use sp_std::vec::Vec;
@@ -125,7 +127,9 @@ pub struct GroupMember {
 
 /// EN: On-chain MLS state anchor — contains NO secrets.
 /// CN: 群的 MLS 状态锚点——不含任何机密。
-#[derive(CloneNoBound, PartialEqNoBound, EqNoBound, Encode, Decode, TypeInfo, MaxEncodedLen, DebugNoBound)]
+#[derive(
+    CloneNoBound, PartialEqNoBound, EqNoBound, Encode, Decode, TypeInfo, MaxEncodedLen, DebugNoBound,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct MlsGroupState<T: Config> {
     /// EN: monotonic epoch, prevents fork/replay / CN: 单调 epoch，防分叉/重放
@@ -154,7 +158,9 @@ pub struct MlsGroupState<T: Config> {
 /// CN: 应用层群展示资料（群名 / 头像 / 公告）。**不属于 MLS**、不含密钥材料，是
 /// 所有成员都需要一致视图的明文元数据，故上链锚定。头像存 IPFS CID，群名与公告
 /// 存原始字节。
-#[derive(CloneNoBound, PartialEqNoBound, EqNoBound, Encode, Decode, TypeInfo, MaxEncodedLen, DebugNoBound)]
+#[derive(
+    CloneNoBound, PartialEqNoBound, EqNoBound, Encode, Decode, TypeInfo, MaxEncodedLen, DebugNoBound,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct GroupProfile<T: Config> {
     /// EN: Display name / CN: 群名称
@@ -197,7 +203,10 @@ pub struct MemberDelta<T: Config> {
 
 impl<T: Config> Default for MemberDelta<T> {
     fn default() -> Self {
-        Self { added: BoundedVec::default(), removed: BoundedVec::default() }
+        Self {
+            added: BoundedVec::default(),
+            removed: BoundedVec::default(),
+        }
     }
 }
 
@@ -430,14 +439,8 @@ pub mod pallet {
     /// EN: Application-level member table (no key material).
     /// CN: 应用层成员表（不含密钥材料）。
     #[pallet::storage]
-    pub type GroupMembers<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        GroupId,
-        Blake2_128Concat,
-        T::AccountId,
-        GroupMember,
-    >;
+    pub type GroupMembers<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, GroupId, Blake2_128Concat, T::AccountId, GroupMember>;
 
     /// EN: User's group list (kept in sync on every join/leave/disband to avoid
     /// ghost entries). / CN: 用户群列表（每次进/退/解散同步维护，杜绝幽灵群）。
@@ -462,15 +465,25 @@ pub mod pallet {
     /// CN: 写入型 MLS 操作（`commit` / `anchor_message_digest`）的按账户窗口限频状态。
     /// 窗口过期自动重置；非按群维度，故可跨群限制同一滥用者。
     #[pallet::storage]
-    pub type MlsActionRate<T: Config> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, RateLimitState<BlockNumberFor<T>>, ValueQuery>;
+    pub type MlsActionRate<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        RateLimitState<BlockNumberFor<T>>,
+        ValueQuery,
+    >;
 
     /// EN: Per-account windowed rate-limit state for `request_join`. Caps
     /// cross-group join-request spam. CN: `request_join` 的按账户窗口限频状态，
     /// 防止跨群刷待批入群申请。
     #[pallet::storage]
-    pub type JoinRequestRate<T: Config> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, RateLimitState<BlockNumberFor<T>>, ValueQuery>;
+    pub type JoinRequestRate<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        RateLimitState<BlockNumberFor<T>>,
+        ValueQuery,
+    >;
 
     /// EN: Groups frozen by governance for compliance. A frozen group blocks
     /// `commit` / `anchor_message_digest` / `request_join` until unfrozen (its
@@ -595,15 +608,34 @@ pub mod pallet {
         /// EN: KeyPackage revoked / CN: KeyPackage 已吊销
         KeyPackageRevoked { who: T::AccountId, id: KeyPackageId },
         /// EN: Group created (epoch 0) / CN: 群已创建（epoch 0）
-        GroupCreated { group_id: GroupId, creator: T::AccountId, epoch: u64 },
+        GroupCreated {
+            group_id: GroupId,
+            creator: T::AccountId,
+            epoch: u64,
+        },
         /// EN: Membership commit applied, epoch advanced / CN: 成员 Commit 已应用，epoch 推进
-        Committed { group_id: GroupId, epoch: u64, committer: T::AccountId },
+        Committed {
+            group_id: GroupId,
+            epoch: u64,
+            committer: T::AccountId,
+        },
         /// EN: Member added by a commit / CN: Commit 加入成员
-        MemberJoined { group_id: GroupId, member: T::AccountId, epoch: u64 },
+        MemberJoined {
+            group_id: GroupId,
+            member: T::AccountId,
+            epoch: u64,
+        },
         /// EN: Member removed by a commit / CN: Commit 移除成员
-        MemberRemoved { group_id: GroupId, member: T::AccountId, epoch: u64 },
+        MemberRemoved {
+            group_id: GroupId,
+            member: T::AccountId,
+            epoch: u64,
+        },
         /// EN: Welcome claimed / CN: Welcome 已领取
-        WelcomeClaimed { group_id: GroupId, who: T::AccountId },
+        WelcomeClaimed {
+            group_id: GroupId,
+            who: T::AccountId,
+        },
         /// EN: Group disbanded / CN: 群已解散
         GroupDisbanded { group_id: GroupId },
         /// EN: A disband call made bounded progress but the group is not yet fully
@@ -611,31 +643,77 @@ pub mod pallet {
         /// CN: 一次解散调用按预算推进，但群尚未完全拆除（大群）；再次调用以继续（审计 B4）。
         GroupDisbandProgress { group_id: GroupId },
         /// EN: Message-batch digest anchored (optional audit) / CN: 消息批次 digest 已锚（可选审计）
-        MessageDigestAnchored { group_id: GroupId, batch_seq: u64, epoch: u64 },
+        MessageDigestAnchored {
+            group_id: GroupId,
+            batch_seq: u64,
+            epoch: u64,
+        },
         /// EN: Join requested (private group) / CN: 已申请入群（私群）
-        JoinRequested { group_id: GroupId, who: T::AccountId },
+        JoinRequested {
+            group_id: GroupId,
+            who: T::AccountId,
+        },
         /// EN: Join request cancelled by applicant / CN: 申请人撤回入群申请
-        JoinRequestCancelled { group_id: GroupId, who: T::AccountId },
+        JoinRequestCancelled {
+            group_id: GroupId,
+            who: T::AccountId,
+        },
         /// EN: Join approved by owner/admin (awaits Add commit) / CN: 群主/管理员已批准（待 Add commit）
-        JoinApproved { group_id: GroupId, who: T::AccountId, by: T::AccountId },
+        JoinApproved {
+            group_id: GroupId,
+            who: T::AccountId,
+            by: T::AccountId,
+        },
         /// EN: Ownership transferred / CN: 群主已转让
-        OwnershipTransferred { group_id: GroupId, from: T::AccountId, to: T::AccountId },
+        OwnershipTransferred {
+            group_id: GroupId,
+            from: T::AccountId,
+            to: T::AccountId,
+        },
         /// EN: Admin role set/unset / CN: 管理员角色设/撤
-        AdminSet { group_id: GroupId, who: T::AccountId, on: bool },
+        AdminSet {
+            group_id: GroupId,
+            who: T::AccountId,
+            on: bool,
+        },
         /// EN: Group display profile updated / CN: 群展示资料已更新
         GroupProfileUpdated { group_id: GroupId, by: T::AccountId },
         /// EN: A member set their in-group nickname / CN: 成员设置了群内昵称
-        MemberNicknameSet { group_id: GroupId, who: T::AccountId },
+        MemberNicknameSet {
+            group_id: GroupId,
+            who: T::AccountId,
+        },
         /// EN: A member was banned (owner/admin) / CN: 成员已被封禁（群主/管理员）
-        MemberBanned { group_id: GroupId, who: T::AccountId, by: T::AccountId },
+        MemberBanned {
+            group_id: GroupId,
+            who: T::AccountId,
+            by: T::AccountId,
+        },
         /// EN: A member was unbanned / CN: 成员已被解封
-        MemberUnbanned { group_id: GroupId, who: T::AccountId, by: T::AccountId },
+        MemberUnbanned {
+            group_id: GroupId,
+            who: T::AccountId,
+            by: T::AccountId,
+        },
         /// EN: A member was muted until `until` block / CN: 成员被禁言至 `until` 区块
-        MemberMuted { group_id: GroupId, who: T::AccountId, until: BlockNumberFor<T>, by: T::AccountId },
+        MemberMuted {
+            group_id: GroupId,
+            who: T::AccountId,
+            until: BlockNumberFor<T>,
+            by: T::AccountId,
+        },
         /// EN: A member was unmuted / CN: 成员已被解除禁言
-        MemberUnmuted { group_id: GroupId, who: T::AccountId, by: T::AccountId },
+        MemberUnmuted {
+            group_id: GroupId,
+            who: T::AccountId,
+            by: T::AccountId,
+        },
         /// EN: Group-wide mute-all toggled / CN: 全员禁言开关已切换
-        GroupMuteAllSet { group_id: GroupId, on: bool, by: T::AccountId },
+        GroupMuteAllSet {
+            group_id: GroupId,
+            on: bool,
+            by: T::AccountId,
+        },
         /// EN: A group was force-disbanded by governance / CN: 群被治理强制解散
         GroupForceDisbanded { group_id: GroupId },
         /// EN: A group's frozen flag was set/cleared by governance / CN: 群冻结标记被治理设/撤
@@ -730,7 +808,8 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_runtime_upgrade() -> Weight {
-            let on_chain = <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
+            let on_chain =
+                <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
             if on_chain < STORAGE_VERSION {
                 STORAGE_VERSION.put::<Pallet<T>>();
                 T::DbWeight::get().writes(1)
@@ -757,7 +836,10 @@ pub mod pallet {
                 kp_bytes.try_into().map_err(|_| Error::<T>::TooLong)?;
 
             let count = KeyPackageCount::<T>::get(&who);
-            ensure!(count < T::MaxKeyPackagesPerUser::get(), Error::<T>::TooManyKeyPackages);
+            ensure!(
+                count < T::MaxKeyPackagesPerUser::get(),
+                Error::<T>::TooManyKeyPackages
+            );
 
             // 预留押金防滥用 / reserve anti-spam deposit
             reserve_deposit::<T::Currency, _, _>(&who, T::KeyPackageDeposit::get())?;
@@ -777,7 +859,10 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::revoke_key_package())]
         pub fn revoke_key_package(origin: OriginFor<T>, id: KeyPackageId) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            ensure!(KeyPackages::<T>::contains_key(&who, id), Error::<T>::KeyPackageNotFound);
+            ensure!(
+                KeyPackages::<T>::contains_key(&who, id),
+                Error::<T>::KeyPackageNotFound
+            );
             KeyPackages::<T>::remove(&who, id);
             KeyPackageCount::<T>::mutate(&who, |c| *c = c.saturating_sub(1));
             // 退还押金 / refund deposit
@@ -818,8 +903,9 @@ pub mod pallet {
                 Error::<T>::UserGroupLimitExceeded
             );
 
-            let cid: BoundedVec<u8, T::MaxCidLen> =
-                init_group_info_cid.try_into().map_err(|_| Error::<T>::TooLong)?;
+            let cid: BoundedVec<u8, T::MaxCidLen> = init_group_info_cid
+                .try_into()
+                .map_err(|_| Error::<T>::TooLong)?;
 
             // 预留建群押金 / reserve group creation deposit
             let deposit = T::GroupDeposit::get();
@@ -846,12 +932,20 @@ pub mod pallet {
             GroupMembers::<T>::insert(
                 group_id,
                 &who,
-                GroupMember { role: MemberRole::Owner, joined_epoch: 0, joined_at },
+                GroupMember {
+                    role: MemberRole::Owner,
+                    joined_epoch: 0,
+                    joined_at,
+                },
             );
             Self::user_groups_add(&who, group_id)?;
             LastGroupCreation::<T>::insert(&who, now);
 
-            Self::deposit_event(Event::GroupCreated { group_id, creator: who, epoch: 0 });
+            Self::deposit_event(Event::GroupCreated {
+                group_id,
+                creator: who,
+                epoch: 0,
+            });
             Ok(())
         }
 
@@ -884,7 +978,10 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             Self::ensure_sender_not_platform_muted(&who)?;
             // 治理冻结闸门 / governance freeze gate
-            ensure!(!GroupFrozen::<T>::contains_key(group_id), Error::<T>::GroupFrozen);
+            ensure!(
+                !GroupFrozen::<T>::contains_key(group_id),
+                Error::<T>::GroupFrozen
+            );
 
             let mut g = GroupMls::<T>::get(group_id).ok_or(Error::<T>::GroupNotFound)?;
             // ★ 防分叉闸门 / anti-fork gate
@@ -898,8 +995,8 @@ pub mod pallet {
                 && member_delta.removed.len() == 1
                 && member_delta.removed[0] == who;
             // 是否触及他人 / whether others are affected
-            let changes_others = !member_delta.added.is_empty()
-                || member_delta.removed.iter().any(|a| *a != who);
+            let changes_others =
+                !member_delta.added.is_empty() || member_delta.removed.iter().any(|a| *a != who);
             if removing_only_self {
                 ensure!(who != g.admin, Error::<T>::MustTransferFirst);
             } else if changes_others {
@@ -916,9 +1013,15 @@ pub mod pallet {
 
             // 校验 delta 合法性 / validate delta before mutating
             for acct in member_delta.added.iter() {
-                ensure!(!GroupMembers::<T>::contains_key(group_id, acct), Error::<T>::AlreadyMember);
+                ensure!(
+                    !GroupMembers::<T>::contains_key(group_id, acct),
+                    Error::<T>::AlreadyMember
+                );
                 // 封禁名单链上强制：被封禁账户不可被加入 / banned accounts cannot be added
-                ensure!(!Banned::<T>::contains_key(group_id, acct), Error::<T>::Banned);
+                ensure!(
+                    !Banned::<T>::contains_key(group_id, acct),
+                    Error::<T>::Banned
+                );
                 // 公开/私群（审计 U3 + P0）：被加成员必须已发布至少一个 KeyPackage。
                 // Public & private groups (audit U3 + P0): addee must have a KeyPackage.
                 ensure!(
@@ -935,17 +1038,20 @@ pub mod pallet {
             }
             Self::ensure_welcomes_match_added(&member_delta.added, &welcomes)?;
             for acct in member_delta.removed.iter() {
-                ensure!(GroupMembers::<T>::contains_key(group_id, acct), Error::<T>::NotMember);
+                ensure!(
+                    GroupMembers::<T>::contains_key(group_id, acct),
+                    Error::<T>::NotMember
+                );
                 // 群主不可被移除（须先转让，P1）/ owner cannot be removed (transfer first, P1)
                 ensure!(*acct != g.admin, Error::<T>::BadMemberDelta);
             }
             let added = member_delta.added.len() as u32;
             let removed = member_delta.removed.len() as u32;
-            let new_count = g
-                .member_count
-                .saturating_add(added)
-                .saturating_sub(removed);
-            ensure!(new_count <= T::MaxGroupMembers::get(), Error::<T>::GroupFull);
+            let new_count = g.member_count.saturating_add(added).saturating_sub(removed);
+            ensure!(
+                new_count <= T::MaxGroupMembers::get(),
+                Error::<T>::GroupFull
+            );
             // 隐私不变量：禁止恰好 2 人的链上群（1:1 走链下，见模块头注释）。
             // Privacy invariant: forbid exactly-2-member on-chain groups (1:1 is off-chain).
             ensure!(new_count != 2, Error::<T>::TwoMemberGroupForbidden);
@@ -960,7 +1066,11 @@ pub mod pallet {
                 GroupMembers::<T>::insert(
                     group_id,
                     acct,
-                    GroupMember { role: MemberRole::Member, joined_epoch: new_epoch, joined_at },
+                    GroupMember {
+                        role: MemberRole::Member,
+                        joined_epoch: new_epoch,
+                        joined_at,
+                    },
                 );
                 Self::user_groups_add(acct, group_id)?;
                 // 消费入群申请/批准状态 / consume join request & approval
@@ -993,8 +1103,9 @@ pub mod pallet {
             g.epoch = new_epoch;
             g.tree_hash = new_tree_hash;
             g.confirmed_transcript_hash = new_transcript_hash;
-            g.group_info_cid =
-                new_group_info_cid.try_into().map_err(|_| Error::<T>::TooLong)?;
+            g.group_info_cid = new_group_info_cid
+                .try_into()
+                .map_err(|_| Error::<T>::TooLong)?;
             g.member_count = new_count;
             GroupMls::<T>::insert(group_id, &g);
 
@@ -1010,7 +1121,11 @@ pub mod pallet {
                 WelcomeMailbox::<T>::insert(group_id, acct, wb);
             }
 
-            Self::deposit_event(Event::Committed { group_id, epoch: new_epoch, committer: who });
+            Self::deposit_event(Event::Committed {
+                group_id,
+                epoch: new_epoch,
+                committer: who,
+            });
             Ok(())
         }
 
@@ -1058,7 +1173,10 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             Self::ensure_sender_not_platform_muted(&who)?;
             // 治理冻结闸门 / governance freeze gate
-            ensure!(!GroupFrozen::<T>::contains_key(group_id), Error::<T>::GroupFrozen);
+            ensure!(
+                !GroupFrozen::<T>::contains_key(group_id),
+                Error::<T>::GroupFrozen
+            );
             let g = GroupMls::<T>::get(group_id).ok_or(Error::<T>::GroupNotFound)?;
             ensure!(g.epoch == epoch, Error::<T>::EpochStale);
             let m = GroupMembers::<T>::get(group_id, &who).ok_or(Error::<T>::NotMember)?;
@@ -1070,7 +1188,11 @@ pub mod pallet {
             Self::note_mls_action(&who)?;
             let now = frame_system::Pallet::<T>::block_number();
             MessageDigestAnchor::<T>::insert(group_id, batch_seq, (digest, epoch, now));
-            Self::deposit_event(Event::MessageDigestAnchored { group_id, batch_seq, epoch });
+            Self::deposit_event(Event::MessageDigestAnchored {
+                group_id,
+                batch_seq,
+                epoch,
+            });
             Ok(())
         }
 
@@ -1083,15 +1205,30 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             Self::ensure_sender_not_platform_muted(&who)?;
             // 治理冻结闸门：冻结群不接受新入群申请 / frozen groups reject new join requests
-            ensure!(!GroupFrozen::<T>::contains_key(group_id), Error::<T>::GroupFrozen);
+            ensure!(
+                !GroupFrozen::<T>::contains_key(group_id),
+                Error::<T>::GroupFrozen
+            );
             let g = GroupMls::<T>::get(group_id).ok_or(Error::<T>::GroupNotFound)?;
             ensure!(!g.is_public, Error::<T>::PublicGroupNoApproval);
-            ensure!(!GroupMembers::<T>::contains_key(group_id, &who), Error::<T>::AlreadyMember);
-            ensure!(!Banned::<T>::contains_key(group_id, &who), Error::<T>::Banned);
-            ensure!(!JoinRequests::<T>::contains_key(group_id, &who), Error::<T>::AlreadyRequested);
+            ensure!(
+                !GroupMembers::<T>::contains_key(group_id, &who),
+                Error::<T>::AlreadyMember
+            );
+            ensure!(
+                !Banned::<T>::contains_key(group_id, &who),
+                Error::<T>::Banned
+            );
+            ensure!(
+                !JoinRequests::<T>::contains_key(group_id, &who),
+                Error::<T>::AlreadyRequested
+            );
 
             let cnt = PendingJoinCount::<T>::get(group_id);
-            ensure!(cnt < T::MaxPendingJoins::get(), Error::<T>::TooManyPendingJoins);
+            ensure!(
+                cnt < T::MaxPendingJoins::get(),
+                Error::<T>::TooManyPendingJoins
+            );
 
             let now = frame_system::Pallet::<T>::block_number();
             Self::note_join_request(&who)?;
@@ -1128,8 +1265,14 @@ pub mod pallet {
         ) -> DispatchResult {
             let by = ensure_signed(origin)?;
             Self::ensure_sender_not_platform_muted(&by)?;
-            ensure!(!GroupFrozen::<T>::contains_key(group_id), Error::<T>::GroupFrozen);
-            ensure!(GroupMls::<T>::contains_key(group_id), Error::<T>::GroupNotFound);
+            ensure!(
+                !GroupFrozen::<T>::contains_key(group_id),
+                Error::<T>::GroupFrozen
+            );
+            ensure!(
+                GroupMls::<T>::contains_key(group_id),
+                Error::<T>::GroupNotFound
+            );
             let approver = GroupMembers::<T>::get(group_id, &by).ok_or(Error::<T>::NotMember)?;
             ensure!(
                 matches!(approver.role, MemberRole::Owner | MemberRole::Admin),
@@ -1139,8 +1282,14 @@ pub mod pallet {
                 JoinRequests::<T>::contains_key(group_id, &who),
                 Error::<T>::JoinRequestNotFound
             );
-            ensure!(!GroupMembers::<T>::contains_key(group_id, &who), Error::<T>::AlreadyMember);
-            ensure!(!Banned::<T>::contains_key(group_id, &who), Error::<T>::Banned);
+            ensure!(
+                !GroupMembers::<T>::contains_key(group_id, &who),
+                Error::<T>::AlreadyMember
+            );
+            ensure!(
+                !Banned::<T>::contains_key(group_id, &who),
+                Error::<T>::Banned
+            );
 
             let now = frame_system::Pallet::<T>::block_number();
             JoinApprovals::<T>::insert(group_id, &who, now);
@@ -1162,7 +1311,8 @@ pub mod pallet {
             ensure!(g.admin == who, Error::<T>::NotGroupOwner);
             ensure!(to != who, Error::<T>::CannotTargetSelf);
 
-            let mut target = GroupMembers::<T>::get(group_id, &to).ok_or(Error::<T>::TargetNotMember)?;
+            let mut target =
+                GroupMembers::<T>::get(group_id, &to).ok_or(Error::<T>::TargetNotMember)?;
             let mut old = GroupMembers::<T>::get(group_id, &who).ok_or(Error::<T>::NotMember)?;
             old.role = MemberRole::Admin;
             target.role = MemberRole::Owner;
@@ -1173,8 +1323,7 @@ pub mod pallet {
 
             // 重绑 ChatHook：现有成员的场景授权从旧群主切到新群主（P0）。
             // Rebind ChatHook: migrate scene auth from old owner to new owner (P0).
-            let members: Vec<T::AccountId> =
-                GroupMembers::<T>::iter_key_prefix(group_id).collect();
+            let members: Vec<T::AccountId> = GroupMembers::<T>::iter_key_prefix(group_id).collect();
             for member in members.iter() {
                 if *member == to {
                     continue;
@@ -1186,7 +1335,11 @@ pub mod pallet {
                 T::ChatHook::on_member_added(group_id, member, &to);
             }
 
-            Self::deposit_event(Event::OwnershipTransferred { group_id, from: who, to });
+            Self::deposit_event(Event::OwnershipTransferred {
+                group_id,
+                from: who,
+                to,
+            });
             Ok(())
         }
 
@@ -1205,10 +1358,15 @@ pub mod pallet {
             ensure!(g.admin == owner, Error::<T>::NotGroupOwner);
             ensure!(who != owner, Error::<T>::CannotTargetSelf);
 
-            let mut m = GroupMembers::<T>::get(group_id, &who).ok_or(Error::<T>::TargetNotMember)?;
+            let mut m =
+                GroupMembers::<T>::get(group_id, &who).ok_or(Error::<T>::TargetNotMember)?;
             // 群主角色不可经此修改 / owner role cannot be changed here
             ensure!(m.role != MemberRole::Owner, Error::<T>::BadMemberDelta);
-            m.role = if on { MemberRole::Admin } else { MemberRole::Member };
+            m.role = if on {
+                MemberRole::Admin
+            } else {
+                MemberRole::Member
+            };
             GroupMembers::<T>::insert(group_id, &who, m);
 
             Self::deposit_event(Event::AdminSet { group_id, who, on });
@@ -1259,7 +1417,10 @@ pub mod pallet {
             nickname: Option<Vec<u8>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            ensure!(GroupMembers::<T>::contains_key(group_id, &who), Error::<T>::NotMember);
+            ensure!(
+                GroupMembers::<T>::contains_key(group_id, &who),
+                Error::<T>::NotMember
+            );
 
             match nickname {
                 Some(nick) => {
@@ -1296,7 +1457,10 @@ pub mod pallet {
             Self::ensure_owner_or_admin(group_id, &by)?;
             ensure!(who != by, Error::<T>::CannotTargetSelf);
             ensure!(who != g.admin, Error::<T>::NotAuthorized);
-            ensure!(!Banned::<T>::contains_key(group_id, &who), Error::<T>::AlreadyBanned);
+            ensure!(
+                !Banned::<T>::contains_key(group_id, &who),
+                Error::<T>::AlreadyBanned
+            );
 
             let now = frame_system::Pallet::<T>::block_number();
             Banned::<T>::insert(group_id, &who, now);
@@ -1316,9 +1480,15 @@ pub mod pallet {
             who: T::AccountId,
         ) -> DispatchResult {
             let by = ensure_signed(origin)?;
-            ensure!(GroupMls::<T>::contains_key(group_id), Error::<T>::GroupNotFound);
+            ensure!(
+                GroupMls::<T>::contains_key(group_id),
+                Error::<T>::GroupNotFound
+            );
             Self::ensure_owner_or_admin(group_id, &by)?;
-            ensure!(Banned::<T>::contains_key(group_id, &who), Error::<T>::NotBanned);
+            ensure!(
+                Banned::<T>::contains_key(group_id, &who),
+                Error::<T>::NotBanned
+            );
 
             Banned::<T>::remove(group_id, &who);
             Self::deposit_event(Event::MemberUnbanned { group_id, who, by });
@@ -1345,14 +1515,22 @@ pub mod pallet {
             Self::ensure_owner_or_admin(group_id, &by)?;
             ensure!(who != by, Error::<T>::CannotTargetSelf);
             ensure!(who != g.admin, Error::<T>::NotAuthorized);
-            ensure!(GroupMembers::<T>::contains_key(group_id, &who), Error::<T>::TargetNotMember);
+            ensure!(
+                GroupMembers::<T>::contains_key(group_id, &who),
+                Error::<T>::TargetNotMember
+            );
 
             match until {
                 Some(until) => {
                     let now = frame_system::Pallet::<T>::block_number();
                     ensure!(until > now, Error::<T>::InvalidMuteExpiry);
                     MemberMutedUntil::<T>::insert(group_id, &who, until);
-                    Self::deposit_event(Event::MemberMuted { group_id, who, until, by });
+                    Self::deposit_event(Event::MemberMuted {
+                        group_id,
+                        who,
+                        until,
+                        by,
+                    });
                 }
                 None => {
                     MemberMutedUntil::<T>::remove(group_id, &who);
@@ -1372,7 +1550,10 @@ pub mod pallet {
             on: bool,
         ) -> DispatchResult {
             let by = ensure_signed(origin)?;
-            ensure!(GroupMls::<T>::contains_key(group_id), Error::<T>::GroupNotFound);
+            ensure!(
+                GroupMls::<T>::contains_key(group_id),
+                Error::<T>::GroupNotFound
+            );
             Self::ensure_owner_or_admin(group_id, &by)?;
 
             if on {
@@ -1393,7 +1574,10 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::force_disband_group())]
         pub fn force_disband_group(origin: OriginFor<T>, group_id: GroupId) -> DispatchResult {
             T::GovernanceOrigin::ensure_origin(origin)?;
-            ensure!(GroupMls::<T>::contains_key(group_id), Error::<T>::GroupNotFound);
+            ensure!(
+                GroupMls::<T>::contains_key(group_id),
+                Error::<T>::GroupNotFound
+            );
             // 有界拆除（审计 B4）：仅在完全拆除时发终态事件；未清完发 GroupDisbandProgress，
             // 治理重复调用直至完成（群在拆除期间已被冻结，无法继续增长）。
             // Bounded teardown (audit B4): emit the terminal event only on full
@@ -1418,7 +1602,10 @@ pub mod pallet {
             frozen: bool,
         ) -> DispatchResult {
             T::GovernanceOrigin::ensure_origin(origin)?;
-            ensure!(GroupMls::<T>::contains_key(group_id), Error::<T>::GroupNotFound);
+            ensure!(
+                GroupMls::<T>::contains_key(group_id),
+                Error::<T>::GroupNotFound
+            );
             if frozen {
                 GroupFrozen::<T>::insert(group_id, ());
             } else {
@@ -1586,7 +1773,9 @@ pub mod pallet {
         /// EN: Current member count of a group (0 if unknown).
         /// CN: 群当前成员数（未知为 0）。
         pub fn group_member_count(group_id: GroupId) -> u32 {
-            GroupMls::<T>::get(group_id).map(|g| g.member_count).unwrap_or(0)
+            GroupMls::<T>::get(group_id)
+                .map(|g| g.member_count)
+                .unwrap_or(0)
         }
 
         /// EN: Pending Welcome bytes for `who` in `group_id` (read-only; does NOT
@@ -1629,7 +1818,9 @@ pub mod pallet {
                 if groups.contains(&group_id) {
                     return Ok(());
                 }
-                groups.try_push(group_id).map_err(|_| Error::<T>::UserGroupLimitExceeded.into())
+                groups
+                    .try_push(group_id)
+                    .map_err(|_| Error::<T>::UserGroupLimitExceeded.into())
             })
         }
 
@@ -1700,7 +1891,9 @@ pub mod pallet {
 
             // 3. 仅当无成员残留且每个前缀都已清空时才算完成。
             //    Done only when no members remain and every prefix is fully cleared.
-            let members_left = GroupMembers::<T>::iter_key_prefix(group_id).next().is_some();
+            let members_left = GroupMembers::<T>::iter_key_prefix(group_id)
+                .next()
+                .is_some();
             let more = members_left
                 || c_hand.maybe_cursor.is_some()
                 || c_welc.maybe_cursor.is_some()

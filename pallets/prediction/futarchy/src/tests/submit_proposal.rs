@@ -61,6 +61,22 @@ fn submit_proposal_rejects_proposals() {
 }
 
 #[test]
+fn submit_proposal_reports_scheduler_failure() {
+    ExtBuilder::build().execute_with(|| {
+        let duration = <Runtime as Config>::MinDuration::get();
+        let proposal = proposal(true);
+        MockScheduler::set_return_value(Err(DispatchError::Other("scheduler failure")));
+        assert_ok!(Futarchy::submit_proposal(
+            RawOrigin::Root.into(),
+            duration,
+            proposal,
+        ));
+        utility::run_to_block(System::block_number() + duration);
+        System::assert_last_event(Event::<Runtime>::UnexpectedSchedulerError.into());
+    });
+}
+
+#[test]
 fn submit_proposal_fails_on_bad_origin() {
     ExtBuilder::build().execute_with(|| {
         let duration = <Runtime as Config>::MinDuration::get();
@@ -68,6 +84,20 @@ fn submit_proposal_fails_on_bad_origin() {
             Futarchy::submit_proposal(Account::new(0).signed(), duration, proposal(false)),
             DispatchError::BadOrigin
         );
+    });
+}
+
+#[test]
+fn technical_committee_origin_submits_proposal() {
+    ExtBuilder::build().execute_with(|| {
+        let duration = <Runtime as Config>::MinDuration::get();
+        let proposal = proposal(false);
+        assert_ok!(Futarchy::submit_proposal(
+            Account::new(TechnicalCommittee::get()).signed(),
+            duration,
+            proposal.clone(),
+        ));
+        System::assert_last_event(Event::<Runtime>::Submitted { duration, proposal }.into());
     });
 }
 

@@ -7,11 +7,7 @@
 
 use crate::{pallet::*, types::PrivacySettings, ChatPermissionLevel, SceneType};
 use frame_support::{
-    pallet_prelude::*,
-    storage_alias,
-    traits::GetStorageVersion,
-    weights::Weight,
-    BoundedVec,
+    pallet_prelude::*, storage_alias, traits::GetStorageVersion, weights::Weight, BoundedVec,
 };
 use frame_system::pallet_prelude::BlockNumberFor;
 
@@ -32,9 +28,7 @@ pub struct OldPrivacySettings<T: Config> {
 }
 
 /// EN: Legacy friend-graph clearing phase. CN: 旧好友图谱清理阶段。
-#[derive(
-    Encode, Decode, Clone, Copy, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen, Default,
-)]
+#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen, Default)]
 pub enum LegacyMigrationPhase {
     #[default]
     Privacy,
@@ -218,7 +212,10 @@ mod tests {
         new_test_ext().execute_with(|| {
             StorageVersion::new(0).put::<Pallet<Test>>();
             seed_v0_privacy(ALICE);
-            assert_eq!(Pallet::<Test>::on_chain_storage_version(), StorageVersion::new(0));
+            assert_eq!(
+                Pallet::<Test>::on_chain_storage_version(),
+                StorageVersion::new(0)
+            );
 
             let w = migrate_v0_to_v1::<Test>();
             let _ = w;
@@ -227,7 +224,10 @@ mod tests {
             assert_eq!(settings.permission_level, ChatPermissionLevel::Open);
             assert_eq!(settings.updated_at, 1);
 
-            assert_eq!(Pallet::<Test>::on_chain_storage_version(), StorageVersion::new(1));
+            assert_eq!(
+                Pallet::<Test>::on_chain_storage_version(),
+                StorageVersion::new(1)
+            );
         });
     }
 

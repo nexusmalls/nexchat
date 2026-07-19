@@ -63,12 +63,16 @@ use sp_runtime::{
 };
 use sp_std::{fmt::Debug, marker, result};
 
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
 mod mock;
 mod tests;
 mod weights;
 
+#[cfg(feature = "runtime-benchmarks")]
+pub use benchmarking::BenchmarkHelper;
 pub use module::*;
-pub use weights::WeightInfo;
+pub use weights::{SubstrateWeight, WeightInfo};
 
 #[frame_support::pallet]
 pub mod module {
@@ -110,6 +114,9 @@ pub mod module {
 
         #[pallet::constant]
         type GetNativeCurrencyId: Get<CurrencyIdOf<Self>>;
+
+        #[cfg(feature = "runtime-benchmarks")]
+        type BenchmarkHelper: BenchmarkHelper<CurrencyIdOf<Self>, BalanceOf<Self>, AmountOf<Self>>;
 
         /// Weight information for extrinsics in this module.
         type WeightInfo: WeightInfo;

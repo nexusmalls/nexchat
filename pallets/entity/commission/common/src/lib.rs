@@ -1113,14 +1113,23 @@ impl<AccountId> ParticipationGuard<AccountId> for () {
 /// 以便返回错误时一并回滚 burn 与 pending 扣减。
 pub trait CrossChainPayout<AccountId, Balance> {
     /// Bridge `amount` NEX out of `from`, minting native NEX to `recipient` on
-    /// the EVM chain identified by `evm_chain_id`.
+    /// the EVM chain identified by `evm_chain_id`. `refund_ctx` is an opaque,
+    /// caller-defined payload associated with the outbound request: if the POST
+    /// later times out, the bridge hands `refund_ctx` back to the business layer
+    /// so it can compensate (HB-WD-01 mechanism 2 — e.g. restore the promoter's
+    /// pending). An empty `refund_ctx` means "no timeout callback" (mechanism 1
+    /// only: the bridge still re-mints the NEX to `from`).
     /// 从 `from` 桥出 `amount` NEX，在 `evm_chain_id` 标识的 EVM 链向 `recipient`
-    /// 铸造原生 NEX。
+    /// 铸造原生 NEX。`refund_ctx` 是调用方自定义的不透明载荷，与本次出站请求关联：若该
+    /// POST 之后超时，桥会把 `refund_ctx` 交还业务层用于补偿（HB-WD-01 机制 2——例如恢复
+    /// 推广员 pending）。`refund_ctx` 为空表示「无超时回调」（仅机制 1：桥仍把 NEX 铸回
+    /// `from`）。
     fn payout_native(
         from: &AccountId,
         evm_chain_id: u32,
         recipient: [u8; 20],
         amount: Balance,
+        refund_ctx: &[u8],
     ) -> Result<[u8; 32], sp_runtime::DispatchError>;
 }
 
@@ -1133,6 +1142,7 @@ impl<AccountId, Balance> CrossChainPayout<AccountId, Balance> for () {
         _evm_chain_id: u32,
         _recipient: [u8; 20],
         _amount: Balance,
+        _refund_ctx: &[u8],
     ) -> Result<[u8; 32], sp_runtime::DispatchError> {
         Err(sp_runtime::DispatchError::Other(
             "cross-chain payout not configured",

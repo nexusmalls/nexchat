@@ -121,22 +121,28 @@ Nexus 通过相同场景，并额外通过 3 项 foreign-collateral 测试，合
 ## Differential baseline harness / 差分基线框架
 
 Added Nexus-only `prediction-differential` with normalized snapshot comparison
-against upstream-derived goldens pinned at commit `39ad8d60`. The first catalog
-covers four native lifecycle scenarios:
+against upstream-derived goldens pinned at commit `39ad8d60`. The catalog
+covers five native lifecycle scenarios:
 
 - `permissionless_resolve_native`
 - `authorized_dispute_native`
+- `court_global_dispute_native`
 - `trusted_market_native`
 - `scalar_lifecycle_native`
 
 Normalization rules follow spec §15.2: native asset identity (`Ztg` alias),
 `u32` `BlockNumber` semantics, stable account ids, and foreign-asset `u64`
 width. Compared fields include market status, resolved outcome, tracked native
-balances for core accounts, and bond settlement flags.
+balances for core accounts, and bond settlement flags. The
+Court-to-GlobalDisputes scenario additionally pins final vote resolution,
+resolution-queue cleanup, Court record and bidirectional mapping cleanup, and
+full appeal-bond reserve release.
 
 新增 Nexus 专用 `prediction-differential`，以归一化快照对比固定于 commit
-`39ad8d60` 的上游 golden。首批目录覆盖 4 个 native 生命周期场景，归一化规则
+`39ad8d60` 的上游 golden。目录覆盖 5 个 native 生命周期场景，归一化规则
 遵循规范 §15.2，比较市场状态、决议结果、核心账户 native 余额与 bond 结算标记。
+Court 升级场景还固定最终投票决议、决议队列清理、Court 记录及双向映射清理，
+以及 appeal bond reserve 完整释放。
 
 Added Phase 3 property tests in prediction-markets for native and USDX
 complete-set buy/sell roundtrip conservation.

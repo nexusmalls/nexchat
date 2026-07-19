@@ -22,8 +22,8 @@ extern crate alloc;
 pub use pallet::*;
 pub use pallet_commission_common::{
     CommissionModes, CommissionOutput, CommissionPlugin, CommissionProvider, CommissionRecord,
-    CommissionStatus, CommissionType, CrossChainPayout, EntityReferrerProvider, LevelDiffPlanWriter,
-    LevelDiffQueryProvider, MemberCommissionStatsData, MemberProvider,
+    CommissionStatus, CommissionType, CrossChainPayout, EntityReferrerProvider,
+    LevelDiffPlanWriter, LevelDiffQueryProvider, MemberCommissionStatsData, MemberProvider,
     MemberTokenCommissionStatsData, MultiLevelPlanWriter, MultiLevelQueryProvider,
     ParticipationGuard, PoolRewardPlanWriter, PoolRewardQueryProvider, ReferralPlanWriter,
     ReferralQueryProvider, SingleLineQueryProvider, TeamPlanWriter, TeamQueryProvider,
@@ -1017,6 +1017,17 @@ pub mod pallet {
             bonus_amount: BalanceOf<T>,
             commitment: [u8; 32],
         },
+        /// HB-WD-01 mechanism 2: a cross-chain commission payout timed out; the
+        /// bridged `withdrawal` amount was restored to the promoter's `pending`
+        /// (and removed from `withdrawn`), so the promoter can retry. The NEX itself
+        /// was re-minted by the bridge back to the Entity account.
+        /// HB-WD-01 机制 2：一笔跨链佣金派发超时；已桥出的 `withdrawal` 金额已恢复到推广员
+        /// `pending`（并从 `withdrawn` 扣回），推广员可重试。NEX 本身由桥铸回 Entity 账户。
+        CommissionPayoutRefunded {
+            entity_id: u64,
+            account: T::AccountId,
+            amount: BalanceOf<T>,
+        },
         WithdrawalConfigUpdated {
             entity_id: u64,
         },
@@ -1470,6 +1481,9 @@ pub mod pallet {
         /// HB-WD-01: EVM recipient address must not be the zero address.
         /// HB-WD-01：EVM 收款地址不能为零地址。
         InvalidEvmRecipient,
+        /// HB-WD-01 mechanism 2: the bridge timeout meta could not be decoded.
+        /// HB-WD-01 机制 2：桥超时 meta 无法解码。
+        InvalidPayoutRefundMeta,
     }
 
     // ========================================================================
@@ -2000,13 +2014,21 @@ pub mod pallet {
                     Error::<T>::InsufficientEntityFunds
                 );
 
+                // 机制 2 退款上下文：跨链超时时桥据此回调 on_payout_timeout 恢复本笔
+                // withdrawal 到推广员 pending（NEX 本身由桥铸回 entity_account）。
+                let refund_ctx = (entity_id, who.clone(), split.withdrawal).encode();
+
                 // withdrawal 部分：经 CrossChainPayout 从 entity_account burn 并派发 ISMP POST。
                 // 失败时返回错误 → extrinsic 事务层回滚（burn / pending / 购物余额全部回滚）。
                 let commitment = <T::CrossChainPayout as crate::CrossChainPayout<
                     T::AccountId,
                     BalanceOf<T>,
                 >>::payout_native(
-                    &entity_account, evm_chain_id, recipient, split.withdrawal
+                    &entity_account,
+                    evm_chain_id,
+                    recipient,
+                    split.withdrawal,
+                    &refund_ctx,
                 )
                 .map_err(|e| match e {
                     DispatchError::Other("cross-chain payout not configured") => {

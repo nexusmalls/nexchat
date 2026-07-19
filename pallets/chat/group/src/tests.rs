@@ -92,12 +92,18 @@ fn reserved(who: u64) -> u128 {
 #[test]
 fn publish_and_revoke_key_package() {
     new_test_ext().execute_with(|| {
-        assert_ok!(ChatGroup::publish_key_package(RuntimeOrigin::signed(ALICE), vec![1, 2, 3]));
+        assert_ok!(ChatGroup::publish_key_package(
+            RuntimeOrigin::signed(ALICE),
+            vec![1, 2, 3]
+        ));
         assert_eq!(crate::KeyPackageCount::<Test>::get(ALICE), 1);
         assert!(crate::KeyPackages::<Test>::contains_key(ALICE, 0));
         System::assert_has_event(Event::KeyPackagePublished { who: ALICE, id: 0 }.into());
 
-        assert_ok!(ChatGroup::revoke_key_package(RuntimeOrigin::signed(ALICE), 0));
+        assert_ok!(ChatGroup::revoke_key_package(
+            RuntimeOrigin::signed(ALICE),
+            0
+        ));
         assert_eq!(crate::KeyPackageCount::<Test>::get(ALICE), 0);
         assert!(!crate::KeyPackages::<Test>::contains_key(ALICE, 0));
     });
@@ -117,7 +123,10 @@ fn revoke_missing_key_package_fails() {
 fn key_package_limit_enforced() {
     new_test_ext().execute_with(|| {
         for _ in 0..4 {
-            assert_ok!(ChatGroup::publish_key_package(RuntimeOrigin::signed(ALICE), vec![0]));
+            assert_ok!(ChatGroup::publish_key_package(
+                RuntimeOrigin::signed(ALICE),
+                vec![0]
+            ));
         }
         assert_noop!(
             ChatGroup::publish_key_package(RuntimeOrigin::signed(ALICE), vec![0]),
@@ -137,7 +146,14 @@ fn create_group_works() {
         let m = GroupMembers::<Test>::get(gid, OWNER).unwrap();
         assert_eq!(m.role, MemberRole::Owner);
         assert_eq!(UserGroups::<Test>::get(OWNER).to_vec(), vec![gid]);
-        System::assert_has_event(Event::GroupCreated { group_id: gid, creator: OWNER, epoch: 0 }.into());
+        System::assert_has_event(
+            Event::GroupCreated {
+                group_id: gid,
+                creator: OWNER,
+                epoch: 0,
+            }
+            .into(),
+        );
     });
 }
 
@@ -199,7 +215,14 @@ fn commit_adds_members_and_advances_epoch() {
         assert!(WelcomeMailbox::<Test>::contains_key(gid, BOB));
         // Commit 落入本 epoch 日志 / commit logged at new epoch
         assert!(crate::HandshakeLog::<Test>::contains_key(gid, 1));
-        System::assert_has_event(Event::Committed { group_id: gid, epoch: 1, committer: OWNER }.into());
+        System::assert_has_event(
+            Event::Committed {
+                group_id: gid,
+                epoch: 1,
+                committer: OWNER,
+            }
+            .into(),
+        );
     });
 }
 
@@ -270,7 +293,12 @@ fn admin_cannot_remove_owner() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         seed_group(gid);
-        assert_ok!(ChatGroup::set_admin(RuntimeOrigin::signed(OWNER), gid, ALICE, true));
+        assert_ok!(ChatGroup::set_admin(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE,
+            true
+        ));
         let epoch = GroupMls::<Test>::get(gid).unwrap().epoch;
         assert_noop!(
             ChatGroup::commit(
@@ -352,8 +380,14 @@ fn public_add_requires_addee_keypackage() {
             Error::<Test>::AddeeNotJoinable
         );
 
-        assert_ok!(ChatGroup::publish_key_package(RuntimeOrigin::signed(15u64), vec![15]));
-        assert_ok!(ChatGroup::publish_key_package(RuntimeOrigin::signed(16u64), vec![16]));
+        assert_ok!(ChatGroup::publish_key_package(
+            RuntimeOrigin::signed(15u64),
+            vec![15]
+        ));
+        assert_ok!(ChatGroup::publish_key_package(
+            RuntimeOrigin::signed(16u64),
+            vec![16]
+        ));
         commit_at(gid, OWNER, epoch, vec![15u64, 16u64], vec![]);
         assert!(GroupMembers::<Test>::contains_key(gid, 15u64));
         assert!(GroupMembers::<Test>::contains_key(gid, 16u64));
@@ -421,7 +455,13 @@ fn mls_action_rate_limit_blocks_excess_anchors() {
         }
         // 第 max+1 次被限频 / the (max+1)-th is rate-limited
         assert_noop!(
-            ChatGroup::anchor_message_digest(RuntimeOrigin::signed(OWNER), gid, max as u64, [1u8; 32], 0),
+            ChatGroup::anchor_message_digest(
+                RuntimeOrigin::signed(OWNER),
+                gid,
+                max as u64,
+                [1u8; 32],
+                0
+            ),
             Error::<Test>::RateLimited
         );
     });
@@ -432,7 +472,11 @@ fn governance_freeze_blocks_writes_and_unfreeze_restores() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         // 治理冻结 / governance freeze (Root)
-        assert_ok!(ChatGroup::set_group_frozen(RuntimeOrigin::root(), gid, true));
+        assert_ok!(ChatGroup::set_group_frozen(
+            RuntimeOrigin::root(),
+            gid,
+            true
+        ));
 
         // 冻结期间禁止 anchor / commit / request_join
         assert_noop!(
@@ -456,7 +500,11 @@ fn governance_freeze_blocks_writes_and_unfreeze_restores() {
         );
 
         // 解冻后恢复 / unfreeze restores
-        assert_ok!(ChatGroup::set_group_frozen(RuntimeOrigin::root(), gid, false));
+        assert_ok!(ChatGroup::set_group_frozen(
+            RuntimeOrigin::root(),
+            gid,
+            false
+        ));
         assert_ok!(ChatGroup::anchor_message_digest(
             RuntimeOrigin::signed(OWNER),
             gid,
@@ -527,9 +575,15 @@ fn create_group_reserves_and_disband_refunds_deposit() {
 #[test]
 fn key_package_deposit_reserved_and_refunded() {
     new_test_ext().execute_with(|| {
-        assert_ok!(ChatGroup::publish_key_package(RuntimeOrigin::signed(ALICE), vec![1]));
+        assert_ok!(ChatGroup::publish_key_package(
+            RuntimeOrigin::signed(ALICE),
+            vec![1]
+        ));
         assert_eq!(reserved(ALICE), 10); // KeyPackageDeposit
-        assert_ok!(ChatGroup::revoke_key_package(RuntimeOrigin::signed(ALICE), 0));
+        assert_ok!(ChatGroup::revoke_key_package(
+            RuntimeOrigin::signed(ALICE),
+            0
+        ));
         assert_eq!(reserved(ALICE), 0);
     });
 }
@@ -544,8 +598,16 @@ fn private_group_join_flow_works() {
         assert_ok!(ChatGroup::request_join(RuntimeOrigin::signed(BOB), gid));
         assert_eq!(PendingJoinCount::<Test>::get(gid), 2);
 
-        assert_ok!(ChatGroup::approve_join(RuntimeOrigin::signed(OWNER), gid, ALICE));
-        assert_ok!(ChatGroup::approve_join(RuntimeOrigin::signed(OWNER), gid, BOB));
+        assert_ok!(ChatGroup::approve_join(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE
+        ));
+        assert_ok!(ChatGroup::approve_join(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            BOB
+        ));
 
         commit_at(gid, OWNER, 0, vec![ALICE, BOB], vec![]);
         assert!(GroupMembers::<Test>::contains_key(gid, ALICE));
@@ -594,7 +656,10 @@ fn cancel_join_request_works() {
     new_test_ext().execute_with(|| {
         let gid = create_with(OWNER, false);
         assert_ok!(ChatGroup::request_join(RuntimeOrigin::signed(ALICE), gid));
-        assert_ok!(ChatGroup::cancel_join_request(RuntimeOrigin::signed(ALICE), gid));
+        assert_ok!(ChatGroup::cancel_join_request(
+            RuntimeOrigin::signed(ALICE),
+            gid
+        ));
         assert!(!JoinRequests::<Test>::contains_key(gid, ALICE));
         assert_eq!(PendingJoinCount::<Test>::get(gid), 0);
         assert_noop!(
@@ -624,10 +689,20 @@ fn transfer_ownership_works() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         seed_group(gid);
-        assert_ok!(ChatGroup::transfer_ownership(RuntimeOrigin::signed(OWNER), gid, ALICE));
+        assert_ok!(ChatGroup::transfer_ownership(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE
+        ));
         assert_eq!(GroupMls::<Test>::get(gid).unwrap().admin, ALICE);
-        assert_eq!(GroupMembers::<Test>::get(gid, ALICE).unwrap().role, MemberRole::Owner);
-        assert_eq!(GroupMembers::<Test>::get(gid, OWNER).unwrap().role, MemberRole::Admin);
+        assert_eq!(
+            GroupMembers::<Test>::get(gid, ALICE).unwrap().role,
+            MemberRole::Owner
+        );
+        assert_eq!(
+            GroupMembers::<Test>::get(gid, OWNER).unwrap().role,
+            MemberRole::Admin
+        );
     });
 }
 
@@ -637,7 +712,11 @@ fn transfer_ownership_rebinds_chat_hook() {
         let _ = drain_hook_events();
         let gid = create(OWNER);
         seed_group(gid);
-        assert_ok!(ChatGroup::transfer_ownership(RuntimeOrigin::signed(OWNER), gid, ALICE));
+        assert_ok!(ChatGroup::transfer_ownership(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE
+        ));
         let events = drain_hook_events();
         // BOB：revoke(BOB, OWNER) + grant(BOB, ALICE)；OWNER(现管理员)：revoke + grant
         assert!(events.contains(&(false, gid, BOB, OWNER)));
@@ -663,10 +742,26 @@ fn set_admin_works_and_guards() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         seed_group(gid);
-        assert_ok!(ChatGroup::set_admin(RuntimeOrigin::signed(OWNER), gid, ALICE, true));
-        assert_eq!(GroupMembers::<Test>::get(gid, ALICE).unwrap().role, MemberRole::Admin);
-        assert_ok!(ChatGroup::set_admin(RuntimeOrigin::signed(OWNER), gid, ALICE, false));
-        assert_eq!(GroupMembers::<Test>::get(gid, ALICE).unwrap().role, MemberRole::Member);
+        assert_ok!(ChatGroup::set_admin(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE,
+            true
+        ));
+        assert_eq!(
+            GroupMembers::<Test>::get(gid, ALICE).unwrap().role,
+            MemberRole::Admin
+        );
+        assert_ok!(ChatGroup::set_admin(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE,
+            false
+        ));
+        assert_eq!(
+            GroupMembers::<Test>::get(gid, ALICE).unwrap().role,
+            MemberRole::Member
+        );
         assert_noop!(
             ChatGroup::set_admin(RuntimeOrigin::signed(ALICE), gid, OWNER, true),
             Error::<Test>::NotGroupOwner
@@ -679,7 +774,12 @@ fn admin_can_add_member_after_promotion() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         seed_group(gid);
-        assert_ok!(ChatGroup::set_admin(RuntimeOrigin::signed(OWNER), gid, ALICE, true));
+        assert_ok!(ChatGroup::set_admin(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE,
+            true
+        ));
         let epoch = GroupMls::<Test>::get(gid).unwrap().epoch;
         commit_at(gid, ALICE, epoch, vec![CAROL], vec![]);
         assert!(GroupMembers::<Test>::contains_key(gid, CAROL));
@@ -857,7 +957,13 @@ fn group_profile_set_by_admin_works() {
         assert_eq!(p.name.to_vec(), b"My Group".to_vec());
         assert_eq!(p.avatar_cid.to_vec(), b"QmAvatarCid".to_vec());
         assert_eq!(p.announcement.to_vec(), b"Welcome all".to_vec());
-        System::assert_has_event(Event::GroupProfileUpdated { group_id: gid, by: OWNER }.into());
+        System::assert_has_event(
+            Event::GroupProfileUpdated {
+                group_id: gid,
+                by: OWNER,
+            }
+            .into(),
+        );
 
         // 部分更新：仅改公告，其余保持 / partial update keeps other fields
         assert_ok!(ChatGroup::set_group_profile(
@@ -879,12 +985,24 @@ fn group_profile_non_admin_rejected() {
         let gid = create(OWNER);
         seed_group(gid);
         assert_noop!(
-            ChatGroup::set_group_profile(RuntimeOrigin::signed(ALICE), gid, Some(b"x".to_vec()), None, None),
+            ChatGroup::set_group_profile(
+                RuntimeOrigin::signed(ALICE),
+                gid,
+                Some(b"x".to_vec()),
+                None,
+                None
+            ),
             Error::<Test>::NotAuthorized
         );
         // 非成员 → NotMember / non-member
         assert_noop!(
-            ChatGroup::set_group_profile(RuntimeOrigin::signed(CAROL), gid, Some(b"x".to_vec()), None, None),
+            ChatGroup::set_group_profile(
+                RuntimeOrigin::signed(CAROL),
+                gid,
+                Some(b"x".to_vec()),
+                None,
+                None
+            ),
             Error::<Test>::NotMember
         );
     });
@@ -914,13 +1032,30 @@ fn group_nickname_set_and_cleared_on_leave() {
             gid,
             Some(b"Ali".to_vec()),
         ));
-        assert_eq!(GroupNicknames::<Test>::get(gid, ALICE).unwrap().to_vec(), b"Ali".to_vec());
-        System::assert_has_event(Event::MemberNicknameSet { group_id: gid, who: ALICE }.into());
+        assert_eq!(
+            GroupNicknames::<Test>::get(gid, ALICE).unwrap().to_vec(),
+            b"Ali".to_vec()
+        );
+        System::assert_has_event(
+            Event::MemberNicknameSet {
+                group_id: gid,
+                who: ALICE,
+            }
+            .into(),
+        );
 
-        assert_ok!(ChatGroup::set_group_nickname(RuntimeOrigin::signed(ALICE), gid, None));
+        assert_ok!(ChatGroup::set_group_nickname(
+            RuntimeOrigin::signed(ALICE),
+            gid,
+            None
+        ));
         assert!(!GroupNicknames::<Test>::contains_key(gid, ALICE));
 
-        assert_ok!(ChatGroup::set_group_nickname(RuntimeOrigin::signed(ALICE), gid, Some(b"Ali".to_vec())));
+        assert_ok!(ChatGroup::set_group_nickname(
+            RuntimeOrigin::signed(ALICE),
+            gid,
+            Some(b"Ali".to_vec())
+        ));
         let epoch = GroupMls::<Test>::get(gid).unwrap().epoch;
         commit_at(gid, ALICE, epoch, vec![], vec![ALICE]);
         assert!(!GroupNicknames::<Test>::contains_key(gid, ALICE));
@@ -942,9 +1077,20 @@ fn group_nickname_requires_membership() {
 fn ban_blocks_request_join_and_add() {
     new_test_ext().execute_with(|| {
         let gid = create_with(OWNER, false); // private
-        assert_ok!(ChatGroup::ban_member(RuntimeOrigin::signed(OWNER), gid, ALICE));
+        assert_ok!(ChatGroup::ban_member(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE
+        ));
         assert!(Banned::<Test>::contains_key(gid, ALICE));
-        System::assert_has_event(Event::MemberBanned { group_id: gid, who: ALICE, by: OWNER }.into());
+        System::assert_has_event(
+            Event::MemberBanned {
+                group_id: gid,
+                who: ALICE,
+                by: OWNER,
+            }
+            .into(),
+        );
 
         // 被封禁者不能申请入群 / banned cannot request join
         assert_noop!(
@@ -974,10 +1120,25 @@ fn ban_blocks_request_join_and_add() {
 fn ban_then_unban_allows_rejoin() {
     new_test_ext().execute_with(|| {
         let gid = create_with(OWNER, false);
-        assert_ok!(ChatGroup::ban_member(RuntimeOrigin::signed(OWNER), gid, ALICE));
-        assert_ok!(ChatGroup::unban_member(RuntimeOrigin::signed(OWNER), gid, ALICE));
+        assert_ok!(ChatGroup::ban_member(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE
+        ));
+        assert_ok!(ChatGroup::unban_member(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE
+        ));
         assert!(!Banned::<Test>::contains_key(gid, ALICE));
-        System::assert_has_event(Event::MemberUnbanned { group_id: gid, who: ALICE, by: OWNER }.into());
+        System::assert_has_event(
+            Event::MemberUnbanned {
+                group_id: gid,
+                who: ALICE,
+                by: OWNER,
+            }
+            .into(),
+        );
         // 解封后可申请 / can request after unban
         assert_ok!(ChatGroup::request_join(RuntimeOrigin::signed(ALICE), gid));
     });
@@ -988,7 +1149,12 @@ fn ban_guards_self_owner_and_duplicates() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         seed_group(gid);
-        assert_ok!(ChatGroup::set_admin(RuntimeOrigin::signed(OWNER), gid, ALICE, true));
+        assert_ok!(ChatGroup::set_admin(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE,
+            true
+        ));
         // 管理员不能封自己 / admin cannot ban self
         assert_noop!(
             ChatGroup::ban_member(RuntimeOrigin::signed(ALICE), gid, ALICE),
@@ -1000,7 +1166,11 @@ fn ban_guards_self_owner_and_duplicates() {
             Error::<Test>::NotAuthorized
         );
         // 重复封禁 / duplicate ban
-        assert_ok!(ChatGroup::ban_member(RuntimeOrigin::signed(OWNER), gid, BOB));
+        assert_ok!(ChatGroup::ban_member(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            BOB
+        ));
         assert_noop!(
             ChatGroup::ban_member(RuntimeOrigin::signed(OWNER), gid, BOB),
             Error::<Test>::AlreadyBanned
@@ -1019,7 +1189,11 @@ fn ban_consumes_pending_join_state() {
         let gid = create_with(OWNER, false);
         assert_ok!(ChatGroup::request_join(RuntimeOrigin::signed(ALICE), gid));
         assert_eq!(PendingJoinCount::<Test>::get(gid), 1);
-        assert_ok!(ChatGroup::ban_member(RuntimeOrigin::signed(OWNER), gid, ALICE));
+        assert_ok!(ChatGroup::ban_member(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE
+        ));
         // 封禁顺带清理待批申请 / ban clears the pending request
         assert!(!JoinRequests::<Test>::contains_key(gid, ALICE));
         assert_eq!(PendingJoinCount::<Test>::get(gid), 0);
@@ -1031,19 +1205,44 @@ fn mute_member_and_query() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         seed_group(gid);
-        assert_ok!(ChatGroup::set_member_mute(RuntimeOrigin::signed(OWNER), gid, ALICE, Some(100)));
+        assert_ok!(ChatGroup::set_member_mute(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE,
+            Some(100)
+        ));
         assert_eq!(MemberMutedUntil::<Test>::get(gid, ALICE).unwrap(), 100);
         assert!(ChatGroup::is_member_muted(gid, &ALICE));
-        System::assert_has_event(Event::MemberMuted { group_id: gid, who: ALICE, until: 100, by: OWNER }.into());
+        System::assert_has_event(
+            Event::MemberMuted {
+                group_id: gid,
+                who: ALICE,
+                until: 100,
+                by: OWNER,
+            }
+            .into(),
+        );
 
         // 到期后解除 / expires after the block
         run_to_block(100);
         assert!(!ChatGroup::is_member_muted(gid, &ALICE));
 
         // 显式解除 / explicit unmute
-        assert_ok!(ChatGroup::set_member_mute(RuntimeOrigin::signed(OWNER), gid, ALICE, None));
+        assert_ok!(ChatGroup::set_member_mute(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE,
+            None
+        ));
         assert!(!MemberMutedUntil::<Test>::contains_key(gid, ALICE));
-        System::assert_has_event(Event::MemberUnmuted { group_id: gid, who: ALICE, by: OWNER }.into());
+        System::assert_has_event(
+            Event::MemberUnmuted {
+                group_id: gid,
+                who: ALICE,
+                by: OWNER,
+            }
+            .into(),
+        );
     });
 }
 
@@ -1060,7 +1259,12 @@ fn mute_guards() {
             ChatGroup::set_member_mute(RuntimeOrigin::signed(OWNER), gid, CAROL, Some(100)),
             Error::<Test>::TargetNotMember
         );
-        assert_ok!(ChatGroup::set_admin(RuntimeOrigin::signed(OWNER), gid, BOB, true));
+        assert_ok!(ChatGroup::set_admin(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            BOB,
+            true
+        ));
         assert_noop!(
             ChatGroup::set_member_mute(RuntimeOrigin::signed(BOB), gid, OWNER, Some(100)),
             Error::<Test>::NotAuthorized
@@ -1073,11 +1277,27 @@ fn mute_all_exempts_admins() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         seed_group(gid);
-        assert_ok!(ChatGroup::set_admin(RuntimeOrigin::signed(OWNER), gid, BOB, true));
+        assert_ok!(ChatGroup::set_admin(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            BOB,
+            true
+        ));
 
-        assert_ok!(ChatGroup::set_group_mute_all(RuntimeOrigin::signed(OWNER), gid, true));
+        assert_ok!(ChatGroup::set_group_mute_all(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            true
+        ));
         assert!(GroupMutedAll::<Test>::get(gid));
-        System::assert_has_event(Event::GroupMuteAllSet { group_id: gid, on: true, by: OWNER }.into());
+        System::assert_has_event(
+            Event::GroupMuteAllSet {
+                group_id: gid,
+                on: true,
+                by: OWNER,
+            }
+            .into(),
+        );
 
         // 全员禁言下：普通成员被禁，群主/管理员豁免。
         assert!(ChatGroup::is_member_muted(gid, &ALICE));
@@ -1085,7 +1305,11 @@ fn mute_all_exempts_admins() {
         assert!(!ChatGroup::is_member_muted(gid, &BOB));
 
         // 关闭后恢复 / turn off
-        assert_ok!(ChatGroup::set_group_mute_all(RuntimeOrigin::signed(OWNER), gid, false));
+        assert_ok!(ChatGroup::set_group_mute_all(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            false
+        ));
         assert!(!GroupMutedAll::<Test>::get(gid));
         assert!(!ChatGroup::is_member_muted(gid, &ALICE));
     });
@@ -1096,11 +1320,34 @@ fn disband_clears_profile_ban_mute_nickname() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         seed_group(gid);
-        assert_ok!(ChatGroup::set_group_profile(RuntimeOrigin::signed(OWNER), gid, Some(b"G".to_vec()), None, None));
-        assert_ok!(ChatGroup::set_group_nickname(RuntimeOrigin::signed(ALICE), gid, Some(b"Ali".to_vec())));
-        assert_ok!(ChatGroup::set_member_mute(RuntimeOrigin::signed(OWNER), gid, ALICE, Some(100)));
-        assert_ok!(ChatGroup::set_group_mute_all(RuntimeOrigin::signed(OWNER), gid, true));
-        assert_ok!(ChatGroup::ban_member(RuntimeOrigin::signed(OWNER), gid, BOB));
+        assert_ok!(ChatGroup::set_group_profile(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            Some(b"G".to_vec()),
+            None,
+            None
+        ));
+        assert_ok!(ChatGroup::set_group_nickname(
+            RuntimeOrigin::signed(ALICE),
+            gid,
+            Some(b"Ali".to_vec())
+        ));
+        assert_ok!(ChatGroup::set_member_mute(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            ALICE,
+            Some(100)
+        ));
+        assert_ok!(ChatGroup::set_group_mute_all(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            true
+        ));
+        assert_ok!(ChatGroup::ban_member(
+            RuntimeOrigin::signed(OWNER),
+            gid,
+            BOB
+        ));
 
         assert_ok!(ChatGroup::disband_group(RuntimeOrigin::signed(OWNER), gid));
 
@@ -1140,12 +1387,12 @@ fn same_account_empty_delta_commit_rekey_is_allowed() {
         assert_ok!(ChatGroup::commit(
             RuntimeOrigin::signed(ALICE),
             gid,
-            1, // expected_epoch == current
+            1,             // expected_epoch == current
             vec![7, 7, 7], // opaque commit bytes
             [9u8; 32],
             [9u8; 32],
             b"cid-rekey".to_vec(),
-            vec![],            // no welcomes: no added members
+            vec![], // no welcomes: no added members
             delta(vec![], vec![]),
         ));
 
@@ -1158,7 +1405,12 @@ fn same_account_empty_delta_commit_rekey_is_allowed() {
         // ALICE 仍是成员，未被误判 / still a member, not misjudged
         assert!(GroupMembers::<Test>::contains_key(gid, ALICE));
         System::assert_has_event(
-            Event::Committed { group_id: gid, epoch: 2, committer: ALICE }.into(),
+            Event::Committed {
+                group_id: gid,
+                epoch: 2,
+                committer: ALICE,
+            }
+            .into(),
         );
     });
 }
@@ -1220,7 +1472,11 @@ fn approve_join_rejected_when_group_frozen() {
     new_test_ext().execute_with(|| {
         let gid = create_with(OWNER, false);
         assert_ok!(ChatGroup::request_join(RuntimeOrigin::signed(ALICE), gid));
-        assert_ok!(ChatGroup::set_group_frozen(RuntimeOrigin::root(), gid, true));
+        assert_ok!(ChatGroup::set_group_frozen(
+            RuntimeOrigin::root(),
+            gid,
+            true
+        ));
         assert_noop!(
             ChatGroup::approve_join(RuntimeOrigin::signed(OWNER), gid, ALICE),
             Error::<Test>::GroupFrozen
@@ -1255,13 +1511,7 @@ fn anchor_rejects_stale_epoch() {
     new_test_ext().execute_with(|| {
         let gid = create(OWNER);
         assert_noop!(
-            ChatGroup::anchor_message_digest(
-                RuntimeOrigin::signed(OWNER),
-                gid,
-                0,
-                [1u8; 32],
-                99,
-            ),
+            ChatGroup::anchor_message_digest(RuntimeOrigin::signed(OWNER), gid, 0, [1u8; 32], 99,),
             Error::<Test>::EpochStale
         );
     });

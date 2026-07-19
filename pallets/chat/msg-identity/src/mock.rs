@@ -2,7 +2,7 @@
 //! `pallet-msg-identity` 单元测试用 mock runtime。
 
 use crate as pallet_msg_identity;
-use frame_support::traits::{ConstU32, ConstU64, ConstU128};
+use frame_support::traits::{ConstU128, ConstU32, ConstU64};
 use sp_runtime::{
     traits::{BlakeTwo256, IdentityLookup},
     BuildStorage,
@@ -78,7 +78,9 @@ impl pallet_msg_identity::Config for Test {
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
-    let mut t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
+    let mut t = frame_system::GenesisConfig::<Test>::default()
+        .build_storage()
+        .unwrap();
     pallet_balances::GenesisConfig::<Test> {
         balances: (1..=20u64).map(|a| (a, 1_000_000u128)).collect(),
         ..Default::default()

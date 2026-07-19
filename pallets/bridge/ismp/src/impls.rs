@@ -19,14 +19,14 @@ use sp_core::U256;
 /// 除以 `10^(erc_decimals - local_decimals)`（整数除 → **截断 dust**，如 `1 wei → 0`）。
 /// 要求 `erc_decimals >= local_decimals`。
 pub fn convert_to_balance<B: core::str::FromStr>(
-	value: U256,
-	erc_decimals: u8,
-	local_decimals: u8,
+    value: U256,
+    erc_decimals: u8,
+    local_decimals: u8,
 ) -> Result<B, B::Err> {
-	let dec_str = (value /
-		U256::from(10u128.pow(erc_decimals.saturating_sub(local_decimals) as u32)))
-	.to_string();
-	dec_str.parse::<B>()
+    let dec_str = (value
+        / U256::from(10u128.pow(erc_decimals.saturating_sub(local_decimals) as u32)))
+    .to_string();
+    dec_str.parse::<B>()
 }
 
 /// Converts a local `u128` balance to an ERC-20 `U256` amount.
@@ -35,5 +35,5 @@ pub fn convert_to_balance<B: core::str::FromStr>(
 /// Multiplies by `10^(erc_decimals - local_decimals)`; **no dust** on the way out.
 /// 乘以 `10^(erc_decimals - local_decimals)`；出站**无 dust**。
 pub fn convert_to_erc20(value: u128, erc_decimals: u8, local_decimals: u8) -> U256 {
-	U256::from(value) * U256::from(10u128.pow(erc_decimals.saturating_sub(local_decimals) as u32))
+    U256::from(value) * U256::from(10u128.pow(erc_decimals.saturating_sub(local_decimals) as u32))
 }

@@ -66,8 +66,8 @@ fn do_cross_order_digital_public_completes() {
         assert_ok!(Transaction::do_cross_order(
             derived_buyer,
             PAYER,
-            2, // digital product
-            1, // quantity
+            2,        // digital product
+            1,        // quantity
             u64::MAX, // max_nex_amount (slippage cap)
             None,     // referrer
         ));
@@ -75,7 +75,10 @@ fn do_cross_order_digital_public_completes() {
         let order = Transaction::orders(1).expect("order should exist");
         assert_eq!(order.buyer, derived_buyer);
         assert_eq!(order.status, OrderStatus::Completed);
-        assert_eq!(order.payment_asset, pallet_entity_common::PaymentAsset::Native);
+        assert_eq!(
+            order.payment_asset,
+            pallet_entity_common::PaymentAsset::Native
+        );
     });
 }
 
@@ -406,10 +409,7 @@ fn notifier_fires_on_ship_and_confirm() {
             b"track".to_vec()
         ));
         // 发货后:买家收到 order:shipped:1。
-        assert_eq!(
-            notify_log(),
-            vec![(BUYER, b"order:shipped:1".to_vec())]
-        );
+        assert_eq!(notify_log(), vec![(BUYER, b"order:shipped:1".to_vec())]);
 
         assert_ok!(Transaction::confirm_receipt(
             RuntimeOrigin::signed(BUYER),
@@ -8234,7 +8234,10 @@ fn chat_revoke_on_confirm_receipt_completion() {
             b"track".to_vec()
         ));
         let _ = drain_chat_log(); // discard the grant from placement
-        assert_ok!(Transaction::confirm_receipt(RuntimeOrigin::signed(BUYER), 1));
+        assert_ok!(Transaction::confirm_receipt(
+            RuntimeOrigin::signed(BUYER),
+            1
+        ));
         // Completion revokes the order's chat authorization.
         assert_eq!(drain_chat_log(), vec![(false, 1, BUYER, SELLER)]);
     });
@@ -8259,6 +8262,10 @@ fn chat_no_grant_for_digital_instant_order() {
         ));
         // No grant ever recorded for an instant order.
         let log = drain_chat_log();
-        assert!(!log.iter().any(|(granted, ..)| *granted), "digital order must not grant chat: {:?}", log);
+        assert!(
+            !log.iter().any(|(granted, ..)| *granted),
+            "digital order must not grant chat: {:?}",
+            log
+        );
     });
 }

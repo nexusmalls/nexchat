@@ -8832,6 +8832,10 @@ dependencies = [
  "sp-timestamp",
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
+ "zeitgeist-primitives",
+ "zrml-prediction-markets-runtime-api",
+ "zrml-swaps-rpc",
+ "zrml-swaps-runtime-api",
 ]
 
 [[package]]
@@ -8853,6 +8857,9 @@ dependencies = [
  "ismp",
  "ismp-grandpa",
  "log",
+ "orml-currencies",
+ "orml-tokens",
+ "orml-traits",
  "pallet-ads-core",
  "pallet-ads-entity",
  "pallet-ads-grouprobot",
@@ -8915,6 +8922,10 @@ dependencies = [
  "pallet-msg-identity",
  "pallet-nex-market",
  "pallet-offences",
+ "pallet-prediction-collateral",
+ "pallet-prediction-community-common",
+ "pallet-prediction-community-core",
+ "pallet-prediction-control",
  "pallet-preimage",
  "pallet-scheduler",
  "pallet-session",
@@ -8947,6 +8958,22 @@ dependencies = [
  "sp-transaction-pool",
  "sp-version",
  "substrate-wasm-builder",
+ "zeitgeist-primitives",
+ "zrml-authorized",
+ "zrml-combinatorial-tokens",
+ "zrml-court",
+ "zrml-futarchy",
+ "zrml-global-disputes",
+ "zrml-hybrid-router",
+ "zrml-market-commons",
+ "zrml-neo-swaps",
+ "zrml-orderbook",
+ "zrml-parimutuel",
+ "zrml-prediction-markets",
+ "zrml-prediction-markets-runtime-api",
+ "zrml-styx",
+ "zrml-swaps",
+ "zrml-swaps-runtime-api",
 ]
 
 [[package]]
@@ -9310,6 +9337,7 @@ dependencies = [
 name = "orml-currencies"
 version = "1.5.0"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "orml-tokens",
@@ -11703,6 +11731,7 @@ dependencies = [
 name = "pallet-prediction-collateral"
 version = "0.1.0"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "orml-currencies",
@@ -11711,6 +11740,36 @@ dependencies = [
  "pallet-assets",
  "pallet-balances",
  "pallet-prediction-control",
+ "parity-scale-codec",
+ "proptest",
+ "scale-info",
+ "sp-io",
+ "sp-runtime",
+ "zeitgeist-primitives",
+]
+
+[[package]]
+name = "pallet-prediction-community-common"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-prediction-community-core"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "orml-currencies",
+ "orml-tokens",
+ "orml-traits",
+ "pallet-balances",
+ "pallet-prediction-community-common",
  "parity-scale-codec",
  "scale-info",
  "sp-io",
@@ -11722,6 +11781,7 @@ dependencies = [
 name = "pallet-prediction-control"
 version = "0.1.0"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "parity-scale-codec",
@@ -14858,13 +14918,19 @@ name = "prediction-differential"
 version = "0.1.0"
 dependencies = [
  "frame-support",
+ "frame-system",
  "orml-traits",
  "sp-arithmetic",
  "sp-io",
  "sp-runtime",
  "zeitgeist-primitives",
  "zrml-authorized",
+ "zrml-combinatorial-tokens",
+ "zrml-court",
+ "zrml-global-disputes",
  "zrml-market-commons",
+ "zrml-orderbook",
+ "zrml-parimutuel",
  "zrml-prediction-markets",
 ]
 
@@ -23011,7 +23077,10 @@ dependencies = [
  "orml-currencies",
  "orml-tokens",
  "orml-traits",
+ "pallet-assets",
  "pallet-balances",
+ "pallet-prediction-collateral",
+ "pallet-prediction-control",
  "pallet-timestamp",
  "parity-scale-codec",
  "prediction-mock-runtime",
@@ -23132,7 +23201,10 @@ dependencies = [
  "orml-currencies",
  "orml-tokens",
  "orml-traits",
+ "pallet-assets",
  "pallet-balances",
+ "pallet-prediction-collateral",
+ "pallet-prediction-control",
  "pallet-timestamp",
  "pallet-treasury",
  "parity-scale-codec",
@@ -23190,7 +23262,12 @@ dependencies = [
  "orml-currencies",
  "orml-tokens",
  "orml-traits",
+ "pallet-assets",
  "pallet-balances",
+ "pallet-prediction-collateral",
+ "pallet-prediction-control",
+ "pallet-preimage",
+ "pallet-scheduler",
  "pallet-timestamp",
  "pallet-treasury",
  "parity-scale-codec",
@@ -23207,6 +23284,7 @@ dependencies = [
  "zrml-authorized",
  "zrml-combinatorial-tokens",
  "zrml-court",
+ "zrml-futarchy",
  "zrml-global-disputes",
  "zrml-market-commons",
  "zrml-neo-swaps",
@@ -23241,7 +23319,10 @@ dependencies = [
  "orml-currencies",
  "orml-tokens",
  "orml-traits",
+ "pallet-assets",
  "pallet-balances",
+ "pallet-prediction-collateral",
+ "pallet-prediction-control",
  "pallet-timestamp",
  "parity-scale-codec",
  "prediction-mock-runtime",
@@ -23277,7 +23358,10 @@ dependencies = [
  "orml-currencies",
  "orml-tokens",
  "orml-traits",
+ "pallet-assets",
  "pallet-balances",
+ "pallet-prediction-collateral",
+ "pallet-prediction-control",
  "pallet-timestamp",
  "parity-scale-codec",
  "prediction-mock-runtime",
@@ -23328,10 +23412,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "zrml-prediction-markets-fuzz"
+version = "0.6.1"
+dependencies = [
+ "arbitrary",
+ "frame-support",
+ "libfuzzer-sys",
+ "sp-arithmetic",
+ "zeitgeist-primitives",
+ "zrml-prediction-markets",
+]
+
+[[package]]
 name = "zrml-prediction-markets-runtime-api"
 version = "0.6.1"
 dependencies = [
  "parity-scale-codec",
+ "scale-info",
+ "serde",
  "sp-api",
  "zeitgeist-primitives",
 ]

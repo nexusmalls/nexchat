@@ -26,14 +26,7 @@ pub type AnchorId = [u8; 32];
 /// `deposit` 记录预留的反垃圾押金（clear 时退还，后续 publish 不变）；`last_publish_block`
 /// 支撑每锚块高频率限制。
 #[derive(
-    CloneNoBound,
-    PartialEqNoBound,
-    EqNoBound,
-    Encode,
-    Decode,
-    TypeInfo,
-    MaxEncodedLen,
-    DebugNoBound,
+    CloneNoBound, PartialEqNoBound, EqNoBound, Encode, Decode, TypeInfo, MaxEncodedLen, DebugNoBound,
 )]
 #[scale_info(skip_type_params(MaxAnchorLen))]
 pub struct SyncAnchorRecord<

@@ -127,7 +127,8 @@ pub mod pallet {
         >>::Balance;
 
     #[pallet::config]
-    pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>>
+    pub trait Config:
+        frame_system::Config<RuntimeEvent: From<Event<Self>>>
         + pallet_dispute_escrow::pallet::Config
     {
         /// Maximum number of evidence items.

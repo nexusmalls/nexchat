@@ -1,7 +1,10 @@
 use crate as pallet_entity_member;
 use alloc::collections::BTreeSet;
 use core::cell::RefCell;
-use frame_support::{derive_impl, traits::{ConstU32, ConstU64}};
+use frame_support::{
+    derive_impl,
+    traits::{ConstU32, ConstU64},
+};
 use sp_runtime::BuildStorage;
 
 extern crate alloc;

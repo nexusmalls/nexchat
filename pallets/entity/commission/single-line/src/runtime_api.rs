@@ -10,8 +10,8 @@
 use codec::{Codec, Decode, Encode};
 use pallet_commission_common::CommissionType;
 use scale_info::TypeInfo;
-use Debug;
 use sp_std::vec::Vec;
+use Debug;
 
 /// 会员在消费单链中的位置与邻位信息
 #[derive(Encode, Decode, Clone, PartialEq, Eq, TypeInfo, Debug)]

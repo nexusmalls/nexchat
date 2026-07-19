@@ -1,6 +1,6 @@
 use codec::{Decode, Encode, MaxEncodedLen};
-use scale_info::TypeInfo;
 use core::fmt::Debug;
+use scale_info::TypeInfo;
 
 /// 分页请求参数
 #[derive(
@@ -47,9 +47,7 @@ impl PageRequest {
 }
 
 /// 分页响应
-#[derive(
-    Encode, Decode, codec::DecodeWithMemTracking, Clone, PartialEq, Eq, TypeInfo, Debug,
-)]
+#[derive(Encode, Decode, codec::DecodeWithMemTracking, Clone, PartialEq, Eq, TypeInfo, Debug)]
 pub struct PageResponse<T> {
     /// 当前页数据
     pub items: sp_std::vec::Vec<T>,

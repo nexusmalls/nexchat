@@ -8,7 +8,7 @@ mod submit_proposal;
 use crate::{
     mock::{
         ext_builder::ExtBuilder,
-        runtime::{Futarchy, Runtime, RuntimeOrigin, System},
+        runtime::{Futarchy, Runtime, RuntimeOrigin, System, TechnicalCommittee},
         types::{MockOracle, MockScheduler},
         utility,
     },
@@ -18,7 +18,7 @@ use crate::{
 use frame_support::{
     assert_noop, assert_ok,
     dispatch::RawOrigin,
-    traits::{schedule::DispatchTime, Bounded},
+    traits::{schedule::DispatchTime, Bounded, Get},
 };
 use sp_runtime::DispatchError;
 

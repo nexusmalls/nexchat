@@ -28,23 +28,22 @@ use crate::Config;
 #[cfg(test)]
 use crate::Pallet as Styx;
 use frame_benchmarking::{benchmarks, whitelisted_caller};
-use frame_support::traits::{Currency, EnsureOrigin, UnfilteredDispatchable};
+use frame_support::traits::{Currency, EnsureOrigin, Get, UnfilteredDispatchable};
 use frame_system::RawOrigin;
-use sp_runtime::SaturatedConversion;
-use zeitgeist_primitives::constants::BASE;
+use sp_runtime::traits::Saturating;
 
 benchmarks! {
     cross {
         let caller: T::AccountId = whitelisted_caller();
-        let balance = (90_000_000 * BASE).saturated_into();
+        let balance = T::DefaultBurnAmount::get().saturating_add(T::Currency::minimum_balance());
         let _ = T::Currency::deposit_creating(&caller, balance);
     }: _(RawOrigin::Signed(caller))
 
     set_burn_amount {
         let origin = T::SetBurnAmountOrigin::try_successful_origin().unwrap();
         let caller: T::AccountId = whitelisted_caller();
-        let balance = (10_000 * BASE).saturated_into();
-        let amount = (20 * BASE).saturated_into();
+        let balance = T::DefaultBurnAmount::get();
+        let amount = T::DefaultBurnAmount::get();
         let _ = T::Currency::deposit_creating(&caller, balance);
         let call = Call::<T>::set_burn_amount { amount };
     }: { call.dispatch_bypass_filter(origin)? }

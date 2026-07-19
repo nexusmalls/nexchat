@@ -16,7 +16,9 @@ use scale_info::TypeInfo;
 ///
 /// 定义了系统支持的各种聊天场景类型，业务模块通过场景类型
 /// 来区分不同的聊天授权来源。
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
+)]
 pub enum SceneType {
     /// 做市商场景：用户可咨询做市商
     /// 当用户与做市商建立交易关系时自动授权
@@ -69,7 +71,18 @@ impl Default for SceneType {
 /// 场景标识符枚举
 ///
 /// 用于唯一标识某个具体的业务场景实例，如订单ID、纪念馆ID等。
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen, Default)]
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Clone,
+    PartialEq,
+    Eq,
+    Debug,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+)]
 pub enum SceneId {
     /// 无特定 ID（如 MarketMaker 场景不需要具体ID）
     #[default]
@@ -86,7 +99,9 @@ pub enum SceneId {
 ///
 /// 记录两个用户之间某个场景的聊天授权信息。
 /// 包含授权来源、时间、有效期和额外元数据。
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(BlockNumber))]
 pub struct SceneAuthorization<BlockNumber> {
     /// 场景类型
@@ -122,7 +137,18 @@ pub struct SceneAuthorization<BlockNumber> {
 /// 聊天权限级别枚举
 ///
 /// 定义用户的基础聊天权限策略，决定陌生人能否发起聊天。
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen, Default)]
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Clone,
+    PartialEq,
+    Eq,
+    Debug,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+)]
 pub enum ChatPermissionLevel {
     /// 开放：任何人可发起聊天
     Open,
@@ -162,7 +188,17 @@ pub enum ChatPermissionLevel {
 /// 泄露本设计要隐藏的通信关系。拉黑与「允许向我私聊」的权利现完全以链下、由接收方签名
 /// 的能力令牌承载，经 [`crate::CapabilityEpoch`]（`bump_capability_epoch`）与每联系人
 /// 信箱标签撤销（`pallet-chat-inbox::revoke_tag`）实现。
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, DebugNoBound, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Clone,
+    PartialEq,
+    Eq,
+    DebugNoBound,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct PrivacySettings<T: crate::Config> {
     /// 聊天权限级别
@@ -257,7 +293,9 @@ pub struct SceneAuthorizationInfo {
 /// until the mute is lifted or (for `Until`) expires.
 /// CN: 由治理设置的账户平台级禁言状态。被禁言账户作为聊天**发送方**会被拒绝
 /// （`check_permission` → `DeniedSenderMuted`），直到解除或（`Until`）到期。
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
+)]
 pub enum MuteStatus<BlockNumber> {
     /// EN: Muted indefinitely (until governance unmutes). CN: 无限期禁言（直至治理解除）。
     Forever,
@@ -269,7 +307,17 @@ pub enum MuteStatus<BlockNumber> {
 /// (ids / hashes) live on-chain — no plaintext, consistent with the chat
 /// module's off-chain content model. CN: 用户举报的对象（合规 / 存证）。链上仅存
 /// 引用（id / 哈希），无明文，与聊天模块的链下内容模型一致。
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DebugNoBound)]
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DebugNoBound,
+)]
 #[scale_info(skip_type_params(T))]
 pub enum ReportTarget<T: crate::Config> {
     /// EN: Report an account. CN: 举报某账户。
@@ -284,7 +332,17 @@ pub enum ReportTarget<T: crate::Config> {
 /// IPFS CID (evidence stored off-chain); records are removed by governance via
 /// `resolve_report`. CN: 供治理审阅的链上举报记录。理由为 IPFS CID（证据存链下）；
 /// 记录由治理经 `resolve_report` 移除。
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, DebugNoBound, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Clone,
+    PartialEq,
+    Eq,
+    DebugNoBound,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct ReportRecord<T: crate::Config> {
     /// EN: Account that filed the report. CN: 举报发起账户。

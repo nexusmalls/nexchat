@@ -2153,7 +2153,11 @@ pub mod pallet {
                         // 与 extrinsic 保持一致：优先快照汇率，缺失时使用实时汇率。
                         let rate = round.nex_usdt_rate_snapshot.or_else(|| {
                             let live = T::ExchangeRateProvider::get_nex_usdt_price();
-                            if live > 0 { Some(live) } else { None }
+                            if live > 0 {
+                                Some(live)
+                            } else {
+                                None
+                            }
                         })?;
                         let clipped = round.per_member_reward.min(Self::convert_usdt_to_nex(
                             cap.saturating_sub(cumulative),

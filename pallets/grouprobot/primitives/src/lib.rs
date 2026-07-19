@@ -9,8 +9,8 @@
 //! 无 Storage、无 Extrinsic，纯类型与 Trait 定义。
 
 use codec::{Decode, Encode, MaxEncodedLen};
-use scale_info::TypeInfo;
 use core::fmt::Debug;
+use scale_info::TypeInfo;
 
 // Re-export 通用广告类型 (已迁移到 ads-primitives)
 pub use pallet_ads_primitives::{

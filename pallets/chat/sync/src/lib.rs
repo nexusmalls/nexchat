@@ -32,8 +32,8 @@
 
 pub use pallet::*;
 
-mod types;
 pub mod runtime_api;
+mod types;
 pub mod weights;
 
 #[cfg(test)]
@@ -169,7 +169,10 @@ pub mod pallet {
     pub enum Event<T: Config> {
         /// EN: An anchor was published or replaced (client's on-chain confirmation
         /// basis). CN: 锚已发布或更新（前端确认上链的依据）。
-        AnchorPublished { anchor_id: AnchorId, updated_at: u64 },
+        AnchorPublished {
+            anchor_id: AnchorId,
+            updated_at: u64,
+        },
 
         /// EN: An anchor was cleared and its deposit refunded.
         /// CN: 锚已删除并退还押金。
@@ -208,7 +211,8 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_runtime_upgrade() -> Weight {
-            let on_chain = <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
+            let on_chain =
+                <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
             if on_chain < STORAGE_VERSION {
                 STORAGE_VERSION.put::<Pallet<T>>();
                 T::DbWeight::get().writes(1)
@@ -282,7 +286,10 @@ pub mod pallet {
                     // `last_publish_block`, fee-bidding the owner's next update out of
                     // every window.
                     if updated_at == record.updated_at && ciphertext == record.ciphertext {
-                        Self::deposit_event(Event::AnchorPublished { anchor_id, updated_at });
+                        Self::deposit_event(Event::AnchorPublished {
+                            anchor_id,
+                            updated_at,
+                        });
                         return Ok(());
                     }
 
@@ -330,7 +337,10 @@ pub mod pallet {
                 }
             }
 
-            Self::deposit_event(Event::AnchorPublished { anchor_id, updated_at });
+            Self::deposit_event(Event::AnchorPublished {
+                anchor_id,
+                updated_at,
+            });
             Ok(())
         }
 
@@ -376,7 +386,10 @@ pub mod pallet {
         /// 写入墓碑水位。持有者随时可用更新清单重新发布——force-clear 无法审查未来状态。
         #[pallet::call_index(2)]
         #[pallet::weight(<T as Config>::WeightInfo::force_clear_sync_anchor())]
-        pub fn force_clear_sync_anchor(origin: OriginFor<T>, anchor_id: AnchorId) -> DispatchResult {
+        pub fn force_clear_sync_anchor(
+            origin: OriginFor<T>,
+            anchor_id: AnchorId,
+        ) -> DispatchResult {
             T::ForceOrigin::ensure_origin(origin)?;
 
             let record = SyncAnchors::<T>::get(anchor_id).ok_or(Error::<T>::AnchorNotFound)?;
@@ -402,8 +415,7 @@ pub mod pallet {
             ciphertext: &[u8],
         ) -> Vec<u8> {
             let genesis = frame_system::Pallet::<T>::block_hash(BlockNumberFor::<T>::zero());
-            let mut payload =
-                Vec::with_capacity(PUBLISH_CONTEXT.len() + 32 + 32 + 8 + 32);
+            let mut payload = Vec::with_capacity(PUBLISH_CONTEXT.len() + 32 + 32 + 8 + 32);
             payload.extend_from_slice(PUBLISH_CONTEXT);
             payload.extend_from_slice(genesis.as_ref());
             payload.extend_from_slice(anchor_id);

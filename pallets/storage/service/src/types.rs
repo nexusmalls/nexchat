@@ -41,15 +41,7 @@ use Debug;
 /// - General = 98
 /// - Custom = 99
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub enum SubjectType {
     /// 证据类数据（最高优先级，Critical级别，永久保存）
@@ -134,15 +126,7 @@ impl<A, B> EntityFunding<A, B> for () {
 /// - CidToSubject存储的Value
 /// - 周期扣费时查找资金账户
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct SubjectInfo {
     /// Subject类型
@@ -174,15 +158,7 @@ pub struct SubjectInfo {
 /// }
 /// ```
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct DomainConfig {
     /// 域是否启用自动PIN
@@ -243,15 +219,7 @@ impl Default for DomainConfig {
 /// - 关键数据高成本高可靠性
 /// - 临时数据低成本低可靠性
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub enum PinTier {
     /// 关键级：5副本，6小时巡检
@@ -284,15 +252,7 @@ impl Default for PinTier {
 /// - Standard：3副本，28800块（24小时），1.0x费率，7天宽限期
 /// - Temporary：1副本，604800块（7天），0.5x费率，3天宽限期
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct TierConfig {
     /// 副本数（1-10）
@@ -363,15 +323,7 @@ impl TierConfig {
 /// - last_status：上次巡检结果
 /// - consecutive_failures：连续失败次数（≥5次发送告警）
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 #[scale_info(skip_type_params(BlockNumber))]
 pub struct HealthCheckTask<BlockNumber> {
@@ -398,15 +350,7 @@ pub struct HealthCheckTask<BlockNumber> {
 /// - Critical：危险，副本数 < 2（数据安全风险）
 /// - Unknown：未知，巡检失败（网络错误等）
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub enum HealthStatus {
     /// 健康：副本数 >= 目标副本数
@@ -485,15 +429,7 @@ pub struct GlobalHealthStats<BlockNumber> {
 /// - degraded_count：降级CID数量
 /// - critical_count：危险CID数量
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct DomainStats {
     /// 域名
@@ -528,15 +464,7 @@ pub struct DomainStats {
 /// - grace_status：宽限期状态
 /// - charge_layer：当前使用的扣费层级
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 #[scale_info(skip_type_params(BlockNumber, Balance))]
 pub struct BillingTask<BlockNumber, Balance> {
@@ -564,15 +492,7 @@ pub struct BillingTask<BlockNumber, Balance> {
 /// - InGrace：宽限期中，记录进入时间和截止时间
 /// - Expired：宽限期已过期，待Unpin
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 #[scale_info(skip_type_params(BlockNumber))]
 pub enum GraceStatus<BlockNumber> {
@@ -606,15 +526,7 @@ impl<BlockNumber> Default for GraceStatus<BlockNumber> {
 /// - 用户账户作为第二层备份，补充公共池
 /// - 宽限期保护用户，避免因短期余额不足导致数据丢失
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub enum ChargeLayer {
     /// 第1层：IpfsPoolAccount公共池（系统缓冲）
@@ -666,15 +578,7 @@ pub enum ChargeResult<BlockNumber> {
 /// - GovernanceDecision：治理决定（违规内容等）
 /// - OperatorOffline：运营者长期离线
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub enum UnpinReason {
     /// 费用不足（宽限期已过）
@@ -696,15 +600,7 @@ pub enum UnpinReason {
 /// - Core（Layer 1）：项目方运行，存储100%数据，最高优先级
 /// - Community（Layer 2）：社区成员运行，选择性存储，通过链上奖励获利
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub enum OperatorLayer {
     /// Layer 1：核心运营者（项目方）
@@ -725,15 +621,7 @@ impl Default for OperatorLayer {
 /// 降级策略：可用运营者不足时优先满足 Layer 1，Layer 1 不足时从 Layer 2 补充，
 /// 总副本数 < min_total_replicas 时拒绝 Pin 请求。
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct StorageLayerConfig {
@@ -830,15 +718,7 @@ pub struct LayeredOperatorSelection<AccountId> {
 
 /// CID 的分层 Pin 分配记录，包含 Layer 1（core）和 Layer 2（community）运营者列表。
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct LayeredPinAssignment<AccountId> {
     /// Layer 1运营者列表
@@ -877,15 +757,7 @@ pub struct LayeredPinAssignment<AccountId> {
 /// - 在OCW健康检查时更新（`check_pin_health_via_ocw`）
 /// - 在运营者Dashboard展示（RPC查询）
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 #[scale_info(skip_type_params(BlockNumber))]
 pub struct OperatorPinHealth<BlockNumber> {
@@ -980,15 +852,7 @@ pub struct OperatorMetrics<Balance: MaxEncodedLen, BlockNumber: MaxEncodedLen> {
 /// score = capacity_usage(50%) + (100 - health_score)(50%)
 /// 评分越低，节点越优先被选择
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 #[scale_info(skip_type_params(BlockNumber))]
 pub struct SimpleNodeStats<BlockNumber> {
@@ -1021,15 +885,7 @@ impl<BlockNumber: Default> Default for SimpleNodeStats<BlockNumber> {
 /// - Failed：Pin失败
 /// - Restored：丢失后已修复
 #[derive(
-    Clone,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Eq,
-    PartialEq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub enum SimplePinStatus {
     /// 等待OCW处理

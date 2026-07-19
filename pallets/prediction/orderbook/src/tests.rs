@@ -21,6 +21,7 @@ use frame_support::{assert_noop, assert_ok, traits::ExistenceRequirement};
 use orml_tokens::Error as AError;
 use orml_traits::{MultiCurrency, MultiReservableCurrency};
 use pallet_balances::Error as BError;
+use prediction_mock_runtime::USDX_ASSET_ID;
 use sp_runtime::{Perbill, Perquintill};
 use test_case::test_case;
 use zeitgeist_primitives::{
@@ -1085,5 +1086,179 @@ fn place_order_emits_event() {
             }
             .into(),
         );
+    });
+}
+
+#[test]
+fn partial_fill_preserves_live_foreign_collateral_and_reserves() {
+    ExtBuilder::default().build().execute_with(|| {
+        let market_id = 0u128;
+        let base_asset = Asset::ForeignAsset(USDX_ASSET_ID);
+        let outcome_asset = Asset::CategoricalOutcome(market_id, 1);
+        let mut market = market_mock::<Runtime>();
+        market.base_asset = base_asset;
+        Markets::<Runtime>::insert(market_id, market);
+
+        assert!(PredictionCollateral::is_deposit_allowed(USDX_ASSET_ID));
+        let issuance_before = PredictionCollateral::mirror_issuance(USDX_ASSET_ID);
+        let escrow_before = PredictionCollateral::escrow_balance(USDX_ASSET_ID);
+        assert_eq!(issuance_before, escrow_before);
+
+        let maker_amount = 50 * BASE;
+        let taker_amount = 20 * BASE;
+        let partial_fill = 10 * BASE;
+        assert_ok!(AssetManager::deposit(outcome_asset, &ALICE, taker_amount));
+        assert_ok!(Orderbook::place_order(
+            RuntimeOrigin::signed(BOB),
+            market_id,
+            base_asset,
+            maker_amount,
+            outcome_asset,
+            taker_amount,
+        ));
+        assert_ok!(Orderbook::fill_order(
+            RuntimeOrigin::signed(ALICE),
+            0,
+            Some(partial_fill),
+        ));
+
+        let filled_base = 25 * BASE;
+        let remaining_base = maker_amount - filled_base;
+        let fee = calculate_fee::<Runtime>(filled_base);
+        assert_eq!(
+            Orders::<Runtime>::get(0),
+            Some(Order {
+                market_id,
+                maker: BOB,
+                maker_asset: base_asset,
+                maker_amount: remaining_base,
+                taker_asset: outcome_asset,
+                taker_amount: taker_amount - partial_fill,
+            })
+        );
+        assert_eq!(
+            AssetManager::reserved_balance(base_asset, &BOB),
+            remaining_base
+        );
+        assert_eq!(
+            AssetManager::free_balance(base_asset, &ALICE),
+            INITIAL_FOREIGN_BALANCE + filled_base - fee
+        );
+        assert_eq!(
+            AssetManager::free_balance(base_asset, &MARKET_CREATOR),
+            INITIAL_FOREIGN_BALANCE + fee
+        );
+        assert_eq!(
+            AssetManager::free_balance(base_asset, &BOB),
+            INITIAL_FOREIGN_BALANCE - maker_amount
+        );
+        assert_eq!(
+            AssetManager::free_balance(outcome_asset, &ALICE),
+            taker_amount - partial_fill
+        );
+        assert_eq!(
+            AssetManager::free_balance(outcome_asset, &BOB),
+            partial_fill
+        );
+
+        let tracked_mirror = AssetManager::free_balance(base_asset, &ALICE)
+            + AssetManager::free_balance(base_asset, &BOB)
+            + AssetManager::reserved_balance(base_asset, &BOB)
+            + AssetManager::free_balance(base_asset, &MARKET_CREATOR);
+        assert_eq!(tracked_mirror, issuance_before);
+        assert_eq!(
+            PredictionCollateral::mirror_issuance(USDX_ASSET_ID),
+            issuance_before
+        );
+        assert_eq!(
+            PredictionCollateral::escrow_balance(USDX_ASSET_ID),
+            escrow_before
+        );
+        assert!(PredictionCollateral::is_mirror_consistent(USDX_ASSET_ID));
+    });
+}
+
+#[test]
+fn full_fill_preserves_live_foreign_collateral_and_fees() {
+    ExtBuilder::default().build().execute_with(|| {
+        let market_id = 0u128;
+        let base_asset = Asset::ForeignAsset(USDX_ASSET_ID);
+        let outcome_asset = Asset::CategoricalOutcome(market_id, 1);
+        let mut market = market_mock::<Runtime>();
+        market.base_asset = base_asset;
+        Markets::<Runtime>::insert(market_id, market);
+        let issuance_before = PredictionCollateral::mirror_issuance(USDX_ASSET_ID);
+        let maker_amount = 50 * BASE;
+        let taker_amount = 10 * BASE;
+        assert_ok!(AssetManager::deposit(outcome_asset, &ALICE, taker_amount));
+        assert_ok!(Orderbook::place_order(
+            RuntimeOrigin::signed(BOB),
+            market_id,
+            base_asset,
+            maker_amount,
+            outcome_asset,
+            taker_amount,
+        ));
+
+        assert_ok!(Orderbook::fill_order(RuntimeOrigin::signed(ALICE), 0, None,));
+
+        let fee = calculate_fee::<Runtime>(maker_amount);
+        assert!(Orders::<Runtime>::get(0).is_none());
+        assert_eq!(AssetManager::reserved_balance(base_asset, &BOB), 0);
+        assert_eq!(
+            AssetManager::free_balance(base_asset, &ALICE),
+            INITIAL_FOREIGN_BALANCE + maker_amount - fee
+        );
+        assert_eq!(
+            AssetManager::free_balance(base_asset, &BOB),
+            INITIAL_FOREIGN_BALANCE - maker_amount
+        );
+        assert_eq!(
+            AssetManager::free_balance(base_asset, &MARKET_CREATOR),
+            INITIAL_FOREIGN_BALANCE + fee
+        );
+        assert_eq!(
+            PredictionCollateral::mirror_issuance(USDX_ASSET_ID),
+            issuance_before
+        );
+        assert!(PredictionCollateral::is_mirror_consistent(USDX_ASSET_ID));
+    });
+}
+
+#[test]
+fn cancellation_restores_live_foreign_collateral_reserve() {
+    ExtBuilder::default().build().execute_with(|| {
+        let market_id = 0u128;
+        let base_asset = Asset::ForeignAsset(USDX_ASSET_ID);
+        let outcome_asset = Asset::CategoricalOutcome(market_id, 1);
+        let mut market = market_mock::<Runtime>();
+        market.base_asset = base_asset;
+        Markets::<Runtime>::insert(market_id, market);
+        let issuance_before = PredictionCollateral::mirror_issuance(USDX_ASSET_ID);
+        let maker_before = AssetManager::free_balance(base_asset, &BOB);
+        let maker_amount = 25 * BASE;
+        assert_ok!(Orderbook::place_order(
+            RuntimeOrigin::signed(BOB),
+            market_id,
+            base_asset,
+            maker_amount,
+            outcome_asset,
+            10 * BASE,
+        ));
+        assert_eq!(
+            AssetManager::reserved_balance(base_asset, &BOB),
+            maker_amount
+        );
+
+        assert_ok!(Orderbook::remove_order(RuntimeOrigin::signed(BOB), 0));
+
+        assert!(Orders::<Runtime>::get(0).is_none());
+        assert_eq!(AssetManager::reserved_balance(base_asset, &BOB), 0);
+        assert_eq!(AssetManager::free_balance(base_asset, &BOB), maker_before);
+        assert_eq!(
+            PredictionCollateral::mirror_issuance(USDX_ASSET_ID),
+            issuance_before
+        );
+        assert!(PredictionCollateral::is_mirror_consistent(USDX_ASSET_ID));
     });
 }

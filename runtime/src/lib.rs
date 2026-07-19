@@ -8,6 +8,7 @@ pub mod apis;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks;
 pub mod configs;
+mod migrations;
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -71,7 +72,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 103,
+    spec_version: 106,
     impl_version: 2,
     apis: apis::RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -184,6 +185,8 @@ pub type SignedPayload = generic::SignedPayload<RuntimeCall, TxExtension>;
 pub type Migrations = (
     pallet_dispute_escrow::migrations::V2RemoveLockNonces<Runtime>,
     pallet_entity_order::migration::MigrateV1ToV2<Runtime>,
+    migrations::InitializeUsdxProtocolAssets,
+    migrations::VerifyPredictionSafeDefaults,
 );
 
 /// Executive: handles dispatch to the various modules.
@@ -483,4 +486,206 @@ mod runtime {
     // Stage 2 / HB-ASSET-01：自建原生 NEX 资产桥（burn/mint，D3=(c)）。
     #[runtime::pallet_index(173)]
     pub type BridgeIsmp = pallet_bridge_ismp;
+
+    // Phase 0 USDX PSM. It is intentionally inert: runtime adapters reject every
+    // receipt until a pinned, authenticated HFT receipt registry is integrated.
+    // Phase 0 USDX PSM。当前刻意保持惰性：在接入锁定版本、可认证的 HFT 收据注册表前，
+    // runtime adapter 拒绝所有收据。
+    #[runtime::pallet_index(174)]
+    pub type Usdx = pallet_usdx;
+
+    // Official Hyperbridge HFT 2512.0.0. No tokens are registered by genesis;
+    // production registration remains blocked on upstream callback review and lane evidence.
+    // 官方 Hyperbridge HFT 2512.0.0。genesis 不注册任何 token；生产注册仍受上游 callback
+    // 审查与通道证据阻塞。
+    #[runtime::pallet_index(175)]
+    pub type HyperFungibleToken = pallet_hyper_fungible_token;
+
+    // ============================================================================
+    // Prediction markets (Phase 6: registered with all business paths disabled)
+    // 预测市场（Phase 6：完成注册，全部业务路径保持禁用）
+    // ============================================================================
+
+    #[runtime::pallet_index(176)]
+    pub type PredictionControl = pallet_prediction_control;
+
+    #[runtime::pallet_index(177)]
+    pub type PredictionCollateral = pallet_prediction_collateral;
+
+    #[runtime::pallet_index(178)]
+    pub type PredictionCurrencies = orml_currencies;
+
+    #[runtime::pallet_index(179)]
+    pub type PredictionTokens = orml_tokens;
+
+    #[runtime::pallet_index(180)]
+    pub type PredictionMarketCommons = zrml_market_commons;
+
+    #[runtime::pallet_index(181)]
+    pub type PredictionAuthorized = zrml_authorized;
+
+    #[runtime::pallet_index(182)]
+    pub type PredictionCourt = zrml_court;
+
+    #[runtime::pallet_index(183)]
+    pub type PredictionGlobalDisputes = zrml_global_disputes;
+
+    #[runtime::pallet_index(184)]
+    pub type PredictionMarkets = zrml_prediction_markets;
+
+    #[runtime::pallet_index(185)]
+    pub type PredictionLegacySwaps = zrml_swaps;
+
+    #[runtime::pallet_index(186)]
+    pub type PredictionNeoSwaps = zrml_neo_swaps;
+
+    #[runtime::pallet_index(187)]
+    pub type PredictionOrderbook = zrml_orderbook;
+
+    #[runtime::pallet_index(188)]
+    pub type PredictionParimutuel = zrml_parimutuel;
+
+    #[runtime::pallet_index(189)]
+    pub type PredictionHybridRouter = zrml_hybrid_router;
+
+    #[runtime::pallet_index(190)]
+    pub type PredictionCombinatorialTokens = zrml_combinatorial_tokens;
+
+    #[runtime::pallet_index(191)]
+    pub type PredictionFutarchy = zrml_futarchy;
+
+    #[runtime::pallet_index(192)]
+    pub type PredictionStyx = zrml_styx;
+
+    #[runtime::pallet_index(193)]
+    pub type PredictionCommunityCore = pallet_prediction_community_core;
+}
+
+#[cfg(test)]
+mod pallet_index_compatibility_tests {
+    use super::*;
+    use frame_support::traits::PalletInfoAccess;
+
+    #[test]
+    fn existing_pallet_indices_zero_through_175_are_stable() {
+        let expected = [
+            (System::name(), System::index(), 0),
+            (Timestamp::name(), Timestamp::index(), 1),
+            (Babe::name(), Babe::index(), 2),
+            (Grandpa::name(), Grandpa::index(), 3),
+            (Balances::name(), Balances::index(), 4),
+            (TransactionPayment::name(), TransactionPayment::index(), 5),
+            (Sudo::name(), Sudo::index(), 6),
+            (Preimage::name(), Preimage::index(), 7),
+            (Scheduler::name(), Scheduler::index(), 8),
+            (Authorship::name(), Authorship::index(), 9),
+            (Session::name(), Session::index(), 10),
+            (Historical::name(), Historical::index(), 11),
+            (Offences::name(), Offences::index(), 12),
+            (ImOnline::name(), ImOnline::index(), 13),
+            (Staking::name(), Staking::index(), 14),
+            (Inscription::name(), Inscription::index(), 15),
+            (NexMarket::name(), NexMarket::index(), 56),
+            (Escrow::name(), Escrow::index(), 60),
+            (StorageService::name(), StorageService::index(), 62),
+            (Evidence::name(), Evidence::index(), 63),
+            (Arbitration::name(), Arbitration::index(), 64),
+            (StorageLifecycle::name(), StorageLifecycle::index(), 65),
+            (ChatPermission::name(), ChatPermission::index(), 67),
+            (ChatCore::name(), ChatCore::index(), 68),
+            (ChatGroup::name(), ChatGroup::index(), 69),
+            (TechnicalCommittee::name(), TechnicalCommittee::index(), 70),
+            (
+                TechnicalMembership::name(),
+                TechnicalMembership::index(),
+                71,
+            ),
+            (
+                ArbitrationCommittee::name(),
+                ArbitrationCommittee::index(),
+                72,
+            ),
+            (
+                ArbitrationMembership::name(),
+                ArbitrationMembership::index(),
+                73,
+            ),
+            (TreasuryCouncil::name(), TreasuryCouncil::index(), 74),
+            (TreasuryMembership::name(), TreasuryMembership::index(), 75),
+            (ContentCommittee::name(), ContentCommittee::index(), 76),
+            (ContentMembership::name(), ContentMembership::index(), 77),
+            (ChatInbox::name(), ChatInbox::index(), 78),
+            (ChatSync::name(), ChatSync::index(), 79),
+            (MsgIdentity::name(), MsgIdentity::index(), 80),
+            (Contracts::name(), Contracts::index(), 90),
+            (Assets::name(), Assets::index(), 110),
+            (EntityRegistry::name(), EntityRegistry::index(), 120),
+            (EntityProduct::name(), EntityProduct::index(), 121),
+            (EntityTransaction::name(), EntityTransaction::index(), 122),
+            (EntityReview::name(), EntityReview::index(), 123),
+            (EntityToken::name(), EntityToken::index(), 124),
+            (EntityGovernance::name(), EntityGovernance::index(), 125),
+            (EntityMember::name(), EntityMember::index(), 126),
+            (CommissionCore::name(), CommissionCore::index(), 127),
+            (EntityMarket::name(), EntityMarket::index(), 128),
+            (EntityShop::name(), EntityShop::index(), 129),
+            (EntityDisclosure::name(), EntityDisclosure::index(), 130),
+            (EntityKyc::name(), EntityKyc::index(), 131),
+            (EntityTokenSale::name(), EntityTokenSale::index(), 132),
+            (CommissionReferral::name(), CommissionReferral::index(), 133),
+            (
+                CommissionLevelDiff::name(),
+                CommissionLevelDiff::index(),
+                134,
+            ),
+            (
+                CommissionSingleLine::name(),
+                CommissionSingleLine::index(),
+                135,
+            ),
+            (CommissionTeam::name(), CommissionTeam::index(), 136),
+            (
+                CommissionPoolReward::name(),
+                CommissionPoolReward::index(),
+                137,
+            ),
+            (
+                CommissionMultiLevel::name(),
+                CommissionMultiLevel::index(),
+                138,
+            ),
+            (EntityLoyalty::name(), EntityLoyalty::index(), 139),
+            (GroupRobotRegistry::name(), GroupRobotRegistry::index(), 150),
+            (
+                GroupRobotConsensus::name(),
+                GroupRobotConsensus::index(),
+                151,
+            ),
+            (
+                GroupRobotCommunity::name(),
+                GroupRobotCommunity::index(),
+                152,
+            ),
+            (GroupRobotCeremony::name(), GroupRobotCeremony::index(), 153),
+            (
+                GroupRobotSubscription::name(),
+                GroupRobotSubscription::index(),
+                154,
+            ),
+            (GroupRobotRewards::name(), GroupRobotRewards::index(), 155),
+            (AdsCore::name(), AdsCore::index(), 160),
+            (AdsGroupRobot::name(), AdsGroupRobot::index(), 161),
+            (AdsEntity::name(), AdsEntity::index(), 162),
+            (Ismp::name(), Ismp::index(), 170),
+            (Hyperbridge::name(), Hyperbridge::index(), 171),
+            (IsmpGrandpa::name(), IsmpGrandpa::index(), 172),
+            (BridgeIsmp::name(), BridgeIsmp::index(), 173),
+            (Usdx::name(), Usdx::index(), 174),
+            (HyperFungibleToken::name(), HyperFungibleToken::index(), 175),
+        ];
+
+        for (name, actual, stable) in expected {
+            assert_eq!(actual, stable, "{name} index changed");
+        }
+    }
 }

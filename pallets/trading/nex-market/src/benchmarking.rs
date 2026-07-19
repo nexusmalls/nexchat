@@ -14,9 +14,9 @@ use frame_support::{
     traits::{Currency, Get, ReservableCurrency},
     BoundedVec,
 };
-use pallet_trading_common::DepositCalculator;
 use frame_system::pallet_prelude::BlockNumberFor;
 use frame_system::RawOrigin;
+use pallet_trading_common::DepositCalculator;
 use sp_runtime::traits::{Bounded, Saturating, Zero};
 use sp_runtime::SaturatedConversion;
 

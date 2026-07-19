@@ -17,6 +17,7 @@
 
 #![cfg(all(feature = "mock", test))]
 
+mod collateral;
 mod integration;
 mod merge_position;
 mod redeem_position;
@@ -25,7 +26,10 @@ mod split_position;
 use crate::{
     mock::{
         ext_builder::ExtBuilder,
-        runtime::{CombinatorialTokens, Currencies, MarketCommons, Runtime, RuntimeOrigin, System},
+        runtime::{
+            CombinatorialTokens, Currencies, MarketCommons, PredictionCollateral, Runtime,
+            RuntimeOrigin, System,
+        },
         types::MockPayout,
     },
     types::cryptographic_id_manager::Fuel,
@@ -33,7 +37,7 @@ use crate::{
 };
 use frame_support::{assert_noop, assert_ok};
 use orml_traits::MultiCurrency;
-use prediction_mock_runtime::{MockBaseAssetPolicy, USDX_ASSET_ID};
+use prediction_mock_runtime::USDX_ASSET_ID;
 use sp_runtime::{DispatchError, Perbill};
 use zeitgeist_primitives::traits::PredictionBaseAssetPolicy;
 use zeitgeist_primitives::{
@@ -50,13 +54,12 @@ pub(crate) const B0: bool = false;
 pub(crate) const B1: bool = true;
 
 fn create_market(base_asset: Asset<MarketId>, market_type: MarketType) -> MarketId {
-    // Phase 1 keeps collateral admission explicit: native is allowed and the only foreign
-    // fixture is the shared USDX id. Phase 2 must replace this with live asset validation.
-    // Phase 1 保持显式抵押准入：允许原生资产，外部资产仅允许共享 USDX fixture。
-    // Phase 2 必须用实时资产校验替换此静态策略。
+    // Foreign collateral follows the same live whitelist, mode, validator, and mirror gates as
+    // Prediction Markets. / 外部抵押与 Prediction Markets 使用相同的实时白名单、模式、
+    // validator 与镜像门禁。
     assert!(
         matches!(base_asset, Asset::Ztg)
-            || matches!(base_asset, Asset::ForeignAsset(id) if MockBaseAssetPolicy::is_allowed(id))
+            || matches!(base_asset, Asset::ForeignAsset(id) if PredictionCollateral::is_allowed(id))
     );
 
     let market = Market {

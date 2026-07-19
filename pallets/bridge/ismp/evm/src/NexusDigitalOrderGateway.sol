@@ -79,10 +79,13 @@ contract NexusDigitalOrderGateway is BaseIsmpModule, Ownable {
     // -------------------------------------------------------------------- outbound
 
     /// @notice Burn `amount` NEX and place a cross-chain digital order on Nexus.
+    /// @dev The order amount is carried only as `Message.amount` (the burned NEX),
+    /// which the pallet uses as both the buyer's budget and the slippage cap; it is
+    /// NOT duplicated in the SCALE payload. Replay protection is the ISMP request
+    /// commitment, so no application-level nonce is sent.
     /// @param productId   target product id
     /// @param quantity    order quantity
-    /// @param amount      NEX to burn (18 dp); also the buyer's on-chain budget
-    /// @param maxNex      slippage cap (18 dp); 0 = no extra cap beyond `amount`
+    /// @param amount      NEX to burn (18 dp); the buyer's budget and slippage cap
     /// @param referrer    optional referrer EVM address (address(0) = none)
     /// @param timeout     request TTL in seconds (0 = never)
     /// @param relayerFee  fee offered to relayers (host fee token)
@@ -90,9 +93,7 @@ contract NexusDigitalOrderGateway is BaseIsmpModule, Ownable {
         uint64 productId,
         uint32 quantity,
         uint256 amount,
-        uint256 maxNex,
         address referrer,
-        uint64 nonce,
         uint64 timeout,
         uint256 relayerFee
     ) external payable returns (bytes32 commitment) {
@@ -104,14 +105,11 @@ contract NexusDigitalOrderGateway is BaseIsmpModule, Ownable {
 
         bytes memory order = abi.encodePacked(
             uint8(0), // InboundOp::Order variant index
-            uint8(1), // schema_version
+            uint8(1), // schema_version (== PAYLOAD_SCHEMA_VERSION)
             bytes20(uint160(msg.sender)), // buyer_evm [u8;20]
             _le(productId, 8),
             _le(quantity, 4),
-            _le(amount, 16),
-            _le(maxNex, 16),
-            _optAddr(referrer), // Option<[u8;20]>
-            _le(nonce, 8)
+            _optAddr(referrer) // Option<[u8;20]>
         );
 
         commitment = _dispatch(abi.encodePacked(msg.sender), amount, order, timeout, relayerFee);
@@ -123,7 +121,7 @@ contract NexusDigitalOrderGateway is BaseIsmpModule, Ownable {
     /// msg.sender)`, so only the owning EVM key can drive it — enforced by binding
     /// `owner_evm = msg.sender`. The returned NEX is minted by the NEX token contract
     /// (a plain transfer), not by this gateway.
-    function withdraw(uint256 amount, address dest, uint64 nonce, uint64 timeout, uint256 relayerFee)
+    function withdraw(uint256 amount, address dest, uint64 timeout, uint256 relayerFee)
         external
         payable
         returns (bytes32 commitment)
@@ -134,11 +132,10 @@ contract NexusDigitalOrderGateway is BaseIsmpModule, Ownable {
 
         bytes memory req = abi.encodePacked(
             uint8(1), // InboundOp::Withdraw variant index
-            uint8(1), // schema_version
+            uint8(1), // schema_version (== PAYLOAD_SCHEMA_VERSION)
             bytes20(uint160(msg.sender)), // owner_evm [u8;20] (== caller)
             _le(amount, 16),
-            bytes20(uint160(dest)), // dest_recipient [u8;20]
-            _le(nonce, 8)
+            bytes20(uint160(dest)) // dest_recipient [u8;20]
         );
 
         // Withdraw carries no inbound asset: Message.amount = 0.

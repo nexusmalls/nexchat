@@ -4,10 +4,14 @@ use crate::{
 };
 use frame_support::{
     assert_noop, assert_ok,
-    traits::{fungibles::Mutate, tokens::Preservation},
+    traits::{
+        fungibles::{Inspect, Mutate},
+        tokens::Preservation,
+    },
 };
 use orml_traits::{MultiCurrency, MultiReservableCurrency};
 use pallet_prediction_control::{PredictionMode, PredictionModule};
+use proptest::prelude::*;
 use sp_runtime::DispatchError;
 use zeitgeist_primitives::{traits::PredictionBaseAssetPolicy, types::Asset};
 
@@ -455,6 +459,46 @@ fn multi_user_repeated_sequence_preserves_invariant_every_step() {
         }
         assert_eq!(PredictionCollateral::mirror_issuance(USDX_ASSET_ID), 0);
     });
+}
+
+proptest! {
+    #[test]
+    fn arbitrary_multi_user_deposit_withdraw_sequence_preserves_escrow_equality(
+        operations in prop::collection::vec((any::<bool>(), any::<bool>(), 1_u16..=250), 1..=128),
+    ) {
+        new_test_ext().execute_with(|| {
+            set_full_and_whitelist(USDX_ASSET_ID);
+
+            for (use_bob, is_deposit, raw_amount) in operations {
+                let who = if use_bob { BOB } else { ALICE };
+                let requested = u128::from(raw_amount);
+
+                if is_deposit {
+                    let available = Assets::balance(USDX_ASSET_ID, &who);
+                    let amount = requested.min(available);
+                    if amount > 0 {
+                        assert_ok!(PredictionCollateral::deposit(
+                            RuntimeOrigin::signed(who),
+                            USDX_ASSET_ID,
+                            amount,
+                        ));
+                    }
+                } else {
+                    let available = PredictionCurrencies::free_balance(mirror(USDX_ASSET_ID), &who);
+                    let amount = requested.min(available);
+                    if amount > 0 {
+                        assert_ok!(PredictionCollateral::withdraw(
+                            RuntimeOrigin::signed(who),
+                            USDX_ASSET_ID,
+                            amount,
+                        ));
+                    }
+                }
+
+                assert_consistent(USDX_ASSET_ID);
+            }
+        });
+    }
 }
 
 #[test]

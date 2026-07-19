@@ -28,13 +28,10 @@ mod pallet {
     use core::marker::PhantomData;
     use frame_support::{
         pallet_prelude::{IsType, StorageMap, StorageValue, StorageVersion, ValueQuery, Weight},
-        traits::{schedule::v3::Anon as ScheduleAnon, Bounded, Hooks, OriginTrait},
+        traits::{schedule::v3::Anon as ScheduleAnon, Bounded, EnsureOrigin, Hooks, OriginTrait},
         transactional, Blake2_128Concat, BoundedVec,
     };
-    use frame_system::{
-        ensure_root,
-        pallet_prelude::{BlockNumberFor, OriginFor},
-    };
+    use frame_system::pallet_prelude::{BlockNumberFor, OriginFor};
     use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
     use scale_info::TypeInfo;
     use sp_runtime::{traits::Get, DispatchResult, SaturatedConversion};
@@ -85,6 +82,10 @@ mod pallet {
             PalletsOriginOf<Self>,
             Hasher = <Self as frame_system::Config>::Hashing,
         >;
+
+        /// Origin allowed to submit governance proposals.
+        /// 允许提交治理提案的 origin。
+        type SubmitOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
         /// Weight implementation.
         /// 权重实现。
@@ -149,7 +150,7 @@ mod pallet {
             duration: BlockNumberFor<T>,
             proposal: Proposal<T>,
         ) -> DispatchResult {
-            ensure_root(origin)?;
+            T::SubmitOrigin::ensure_origin(origin)?;
             Self::do_submit_proposal(duration, proposal)
         }
     }

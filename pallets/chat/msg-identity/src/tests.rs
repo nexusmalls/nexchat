@@ -33,7 +33,13 @@ fn register_device_works_and_reserves_deposit() {
         assert!(MsgIdentity::device_exists(&ACC, dev));
         assert_eq!(MsgIdentity::device_ik(&ACC, dev), Some((ik, 0)));
         assert_eq!(Balances::reserved_balance(ACC), DEPOSIT);
-        System::assert_has_event(Event::DeviceRegistered { account: ACC, device_id: dev }.into());
+        System::assert_has_event(
+            Event::DeviceRegistered {
+                account: ACC,
+                device_id: dev,
+            }
+            .into(),
+        );
     });
 }
 
@@ -53,7 +59,12 @@ fn register_rejects_device_id_not_matching_ik() {
 fn register_rejects_duplicate() {
     new_test_ext().execute_with(|| {
         let (ik, dev) = ik_for(0x11);
-        assert_ok!(MsgIdentity::register_device(RuntimeOrigin::signed(ACC), dev, ik, [0u8; 64]));
+        assert_ok!(MsgIdentity::register_device(
+            RuntimeOrigin::signed(ACC),
+            dev,
+            ik,
+            [0u8; 64]
+        ));
         assert_noop!(
             MsgIdentity::register_device(RuntimeOrigin::signed(ACC), dev, ik, [0u8; 64]),
             Error::<Test>::DeviceAlreadyExists
@@ -92,7 +103,12 @@ fn set_signed_prekey_requires_device_then_stores() {
             MsgIdentity::set_signed_prekey(RuntimeOrigin::signed(ACC), dev, spk, [0u8; 64], 100),
             Error::<Test>::DeviceNotFound
         );
-        assert_ok!(MsgIdentity::register_device(RuntimeOrigin::signed(ACC), dev, ik, [0u8; 64]));
+        assert_ok!(MsgIdentity::register_device(
+            RuntimeOrigin::signed(ACC),
+            dev,
+            ik,
+            [0u8; 64]
+        ));
         assert_ok!(MsgIdentity::set_signed_prekey(
             RuntimeOrigin::signed(ACC),
             dev,
@@ -110,15 +126,36 @@ fn set_signed_prekey_requires_device_then_stores() {
 fn set_opk_root_bumps_epoch_and_rejects_empty() {
     new_test_ext().execute_with(|| {
         let (ik, dev) = ik_for(0x44);
-        assert_ok!(MsgIdentity::register_device(RuntimeOrigin::signed(ACC), dev, ik, [0u8; 64]));
+        assert_ok!(MsgIdentity::register_device(
+            RuntimeOrigin::signed(ACC),
+            dev,
+            ik,
+            [0u8; 64]
+        ));
         assert_noop!(
             MsgIdentity::set_opk_root(RuntimeOrigin::signed(ACC), dev, [1u8; 32], 0),
             Error::<Test>::EmptyOpkSet
         );
-        assert_ok!(MsgIdentity::set_opk_root(RuntimeOrigin::signed(ACC), dev, [1u8; 32], 100));
-        assert_eq!(MsgIdentity::device_opk_root(&ACC, dev), Some(([1u8; 32], 100, 0)));
-        assert_ok!(MsgIdentity::set_opk_root(RuntimeOrigin::signed(ACC), dev, [2u8; 32], 80));
-        assert_eq!(MsgIdentity::device_opk_root(&ACC, dev), Some(([2u8; 32], 80, 1)));
+        assert_ok!(MsgIdentity::set_opk_root(
+            RuntimeOrigin::signed(ACC),
+            dev,
+            [1u8; 32],
+            100
+        ));
+        assert_eq!(
+            MsgIdentity::device_opk_root(&ACC, dev),
+            Some(([1u8; 32], 100, 0))
+        );
+        assert_ok!(MsgIdentity::set_opk_root(
+            RuntimeOrigin::signed(ACC),
+            dev,
+            [2u8; 32],
+            80
+        ));
+        assert_eq!(
+            MsgIdentity::device_opk_root(&ACC, dev),
+            Some(([2u8; 32], 80, 1))
+        );
     });
 }
 
@@ -139,10 +176,21 @@ fn set_opk_root_requires_device() {
 fn bump_prekey_epoch_increments() {
     new_test_ext().execute_with(|| {
         let (ik, dev) = ik_for(0x55);
-        assert_ok!(MsgIdentity::register_device(RuntimeOrigin::signed(ACC), dev, ik, [0u8; 64]));
-        assert_ok!(MsgIdentity::bump_prekey_epoch(RuntimeOrigin::signed(ACC), dev));
+        assert_ok!(MsgIdentity::register_device(
+            RuntimeOrigin::signed(ACC),
+            dev,
+            ik,
+            [0u8; 64]
+        ));
+        assert_ok!(MsgIdentity::bump_prekey_epoch(
+            RuntimeOrigin::signed(ACC),
+            dev
+        ));
         assert_eq!(MsgIdentity::device_ik(&ACC, dev), Some((ik, 1)));
-        assert_ok!(MsgIdentity::bump_prekey_epoch(RuntimeOrigin::signed(ACC), dev));
+        assert_ok!(MsgIdentity::bump_prekey_epoch(
+            RuntimeOrigin::signed(ACC),
+            dev
+        ));
         assert_eq!(MsgIdentity::device_ik(&ACC, dev), Some((ik, 2)));
     });
 }
@@ -154,7 +202,12 @@ fn unregister_refunds_and_purges() {
     new_test_ext().execute_with(|| {
         let (ik, dev) = ik_for(0x66);
         let (spk, _) = ik_for(0x77);
-        assert_ok!(MsgIdentity::register_device(RuntimeOrigin::signed(ACC), dev, ik, [0u8; 64]));
+        assert_ok!(MsgIdentity::register_device(
+            RuntimeOrigin::signed(ACC),
+            dev,
+            ik,
+            [0u8; 64]
+        ));
         assert_ok!(MsgIdentity::set_signed_prekey(
             RuntimeOrigin::signed(ACC),
             dev,
@@ -162,10 +215,18 @@ fn unregister_refunds_and_purges() {
             [0u8; 64],
             0
         ));
-        assert_ok!(MsgIdentity::set_opk_root(RuntimeOrigin::signed(ACC), dev, [1u8; 32], 10));
+        assert_ok!(MsgIdentity::set_opk_root(
+            RuntimeOrigin::signed(ACC),
+            dev,
+            [1u8; 32],
+            10
+        ));
         assert_eq!(Balances::reserved_balance(ACC), DEPOSIT);
 
-        assert_ok!(MsgIdentity::unregister_device(RuntimeOrigin::signed(ACC), dev));
+        assert_ok!(MsgIdentity::unregister_device(
+            RuntimeOrigin::signed(ACC),
+            dev
+        ));
         assert!(!MsgIdentity::device_exists(&ACC, dev));
         assert_eq!(MsgIdentity::device_spk(&ACC, dev), None);
         assert_eq!(MsgIdentity::device_opk_root(&ACC, dev), None);
@@ -173,7 +234,12 @@ fn unregister_refunds_and_purges() {
 
         // 注销后可重新注册（计数已回退）/ can re-register after unregister (count rolled back).
         let (ik2, dev2) = ik_for(0x88);
-        assert_ok!(MsgIdentity::register_device(RuntimeOrigin::signed(ACC), dev2, ik2, [0u8; 64]));
+        assert_ok!(MsgIdentity::register_device(
+            RuntimeOrigin::signed(ACC),
+            dev2,
+            ik2,
+            [0u8; 64]
+        ));
     });
 }
 
@@ -199,7 +265,10 @@ fn set_stack_caps_roundtrips() {
             STACK_DR | STACK_MLS_WIRE,
             3
         ));
-        assert_eq!(MsgIdentity::stack_caps(&ACC), Some((STACK_DR | STACK_MLS_WIRE, 3)));
+        assert_eq!(
+            MsgIdentity::stack_caps(&ACC),
+            Some((STACK_DR | STACK_MLS_WIRE, 3))
+        );
     });
 }
 
@@ -209,18 +278,24 @@ fn set_stack_caps_roundtrips() {
 fn force_unregister_only_by_force_origin() {
     new_test_ext().execute_with(|| {
         let (ik, dev) = ik_for(0x99);
-        assert_ok!(MsgIdentity::register_device(RuntimeOrigin::signed(ACC), dev, ik, [0u8; 64]));
+        assert_ok!(MsgIdentity::register_device(
+            RuntimeOrigin::signed(ACC),
+            dev,
+            ik,
+            [0u8; 64]
+        ));
 
         // 非特权来源被拒 / non-privileged origin rejected.
-        assert!(MsgIdentity::force_unregister_device(
-            RuntimeOrigin::signed(ACC2),
-            ACC,
-            dev
-        )
-        .is_err());
+        assert!(
+            MsgIdentity::force_unregister_device(RuntimeOrigin::signed(ACC2), ACC, dev).is_err()
+        );
 
         // Root 强制注销并退押金 / Root force-unregisters and refunds.
-        assert_ok!(MsgIdentity::force_unregister_device(RuntimeOrigin::root(), ACC, dev));
+        assert_ok!(MsgIdentity::force_unregister_device(
+            RuntimeOrigin::root(),
+            ACC,
+            dev
+        ));
         assert!(!MsgIdentity::device_exists(&ACC, dev));
         assert_eq!(Balances::reserved_balance(ACC), 0);
     });

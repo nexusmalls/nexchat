@@ -38,6 +38,12 @@ pub fn diff_snapshots(actual: &ScenarioSnapshot, expected: &ScenarioSnapshot) ->
             actual.latest_market_id, expected.latest_market_id
         ));
     }
+    if actual.checkpoints != expected.checkpoints {
+        mismatches.push(format!(
+            "checkpoints: actual={:?}, expected={:?}",
+            actual.checkpoints, expected.checkpoints
+        ));
+    }
     if actual.creation_bond_settled != expected.creation_bond_settled {
         mismatches.push(format!(
             "creation bond settled: actual={}, expected={}",

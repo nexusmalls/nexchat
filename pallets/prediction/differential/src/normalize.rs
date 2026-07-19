@@ -1,7 +1,7 @@
 //! Normalizers for known Nexus vs upstream semantic deltas.
 //! 已知 Nexus 与上游语义差异的归一化器。
 
-use alloc::string::String;
+use alloc::{format, string::String};
 use zeitgeist_primitives::types::{Asset, OutcomeReport};
 
 /// Collateral asset identity after native-name and foreign-width normalization.

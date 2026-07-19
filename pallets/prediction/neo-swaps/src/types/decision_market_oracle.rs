@@ -21,7 +21,7 @@ use crate::{
 };
 use frame_support::pallet_prelude::Weight;
 use frame_system::pallet_prelude::BlockNumberFor;
-use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
+use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;
 use zeitgeist_primitives::traits::FutarchyOracle;
@@ -35,7 +35,9 @@ use zeitgeist_primitives::traits::FutarchyOracle;
 ///
 /// 该预言机仅在 `pool_id` 指定池中的正向结果，在一段时间内按绝对与相对阈值持续高于
 /// 负向结果时返回 `true`；阈值与计分由 [`DecisionMarketOracleScoreboard`] 管理。
-#[derive(Clone, Debug, Decode, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo)]
+#[derive(
+    Clone, Debug, Decode, DecodeWithMemTracking, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo,
+)]
 pub struct DecisionMarketOracle<T>
 where
     T: Config,

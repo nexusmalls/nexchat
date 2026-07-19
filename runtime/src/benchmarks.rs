@@ -77,6 +77,8 @@ frame_benchmarking::define_benchmarks!(
 
     // Bridge (Hyperbridge / ISMP)
     [pallet_bridge_ismp, BridgeIsmp]
+    [pallet_hyper_fungible_token, HyperFungibleToken]
+    [pallet_usdx, Usdx]
 
     // Chat
     [pallet_chat_group, ChatGroup]
@@ -85,4 +87,22 @@ frame_benchmarking::define_benchmarks!(
     [pallet_chat_inbox, ChatInbox]
     [pallet_chat_sync, ChatSync]
     [pallet_msg_identity, MsgIdentity]
+
+    // Prediction markets (Phase 7 benchmark coverage)
+    [pallet_prediction_control, PredictionControl]
+    [pallet_prediction_collateral, PredictionCollateral]
+    [orml_currencies, PredictionCurrencies]
+    [orml_tokens, PredictionTokens]
+    [zrml_authorized, PredictionAuthorized]
+    [zrml_court, PredictionCourt]
+    [zrml_global_disputes, PredictionGlobalDisputes]
+    [zrml_prediction_markets, PredictionMarkets]
+    [zrml_swaps, PredictionLegacySwaps]
+    [zrml_neo_swaps, PredictionNeoSwaps]
+    [zrml_orderbook, PredictionOrderbook]
+    [zrml_parimutuel, PredictionParimutuel]
+    [zrml_hybrid_router, PredictionHybridRouter]
+    [zrml_combinatorial_tokens, PredictionCombinatorialTokens]
+    [zrml_futarchy, PredictionFutarchy]
+    [zrml_styx, PredictionStyx]
 );

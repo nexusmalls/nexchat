@@ -51,8 +51,8 @@
 
 pub use pallet::*;
 
-mod types;
 pub mod runtime_api;
+mod types;
 pub mod weights;
 
 #[cfg(test)]
@@ -149,7 +149,10 @@ pub mod pallet {
     pub enum Event<T: Config> {
         /// EN: A delivery inbox was registered (epoch starts at 0).
         /// CN: 注册了一个投递信箱（epoch 从 0 开始）。
-        InboxRegistered { inbox_id: InboxId, controller: T::AccountId },
+        InboxRegistered {
+            inbox_id: InboxId,
+            controller: T::AccountId,
+        },
 
         /// EN: An inbox advanced its revocation epoch; all prior tokens are now
         /// stale and `revoked_tags` was cleared. CN: 信箱递增撤销纪元；此前所有令牌
@@ -180,7 +183,10 @@ pub mod pallet {
         /// EN: An inbox was force-deregistered by the privileged origin (governance
         /// recovery); the deposit was refunded to the controller. CN: 信箱被特权
         /// 来源强制注销（治理回收）；押金退还给 controller。
-        InboxForceDeregistered { inbox_id: InboxId, controller: T::AccountId },
+        InboxForceDeregistered {
+            inbox_id: InboxId,
+            controller: T::AccountId,
+        },
     }
 
     // ==================== 错误 / Errors ====================
@@ -208,7 +214,8 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_runtime_upgrade() -> Weight {
-            let on_chain = <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
+            let on_chain =
+                <Pallet<T> as frame_support::traits::GetStorageVersion>::on_chain_storage_version();
             if on_chain < STORAGE_VERSION {
                 STORAGE_VERSION.put::<Pallet<T>>();
                 T::DbWeight::get().writes(1)
@@ -232,10 +239,16 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::register_inbox())]
         pub fn register_inbox(origin: OriginFor<T>, inbox_id: InboxId) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            ensure!(!Inboxes::<T>::contains_key(inbox_id), Error::<T>::InboxAlreadyExists);
+            ensure!(
+                !Inboxes::<T>::contains_key(inbox_id),
+                Error::<T>::InboxAlreadyExists
+            );
 
             let count = InboxCountByController::<T>::get(&who);
-            ensure!(count < T::MaxInboxesPerController::get(), Error::<T>::TooManyInboxes);
+            ensure!(
+                count < T::MaxInboxesPerController::get(),
+                Error::<T>::TooManyInboxes
+            );
 
             let deposit = T::InboxDeposit::get();
             reserve_deposit::<T::Currency, _, _>(&who, deposit)?;
@@ -250,7 +263,10 @@ pub mod pallet {
             Inboxes::<T>::insert(inbox_id, record);
             InboxCountByController::<T>::insert(&who, count.saturating_add(1));
 
-            Self::deposit_event(Event::InboxRegistered { inbox_id, controller: who });
+            Self::deposit_event(Event::InboxRegistered {
+                inbox_id,
+                controller: who,
+            });
             Ok(())
         }
 
@@ -269,7 +285,10 @@ pub mod pallet {
                 record.revoked_tags = BoundedVec::default();
                 Ok::<u32, DispatchError>(new_epoch)
             })?;
-            Self::deposit_event(Event::InboxEpochBumped { inbox_id, new_epoch });
+            Self::deposit_event(Event::InboxEpochBumped {
+                inbox_id,
+                new_epoch,
+            });
             Ok(())
         }
 
@@ -279,12 +298,19 @@ pub mod pallet {
         /// 标签的令牌，且不影响其他联系人。
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::revoke_tag())]
-        pub fn revoke_tag(origin: OriginFor<T>, inbox_id: InboxId, tag: ContactTag) -> DispatchResult {
+        pub fn revoke_tag(
+            origin: OriginFor<T>,
+            inbox_id: InboxId,
+            tag: ContactTag,
+        ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             Inboxes::<T>::try_mutate(inbox_id, |maybe| {
                 let record = maybe.as_mut().ok_or(Error::<T>::InboxNotFound)?;
                 ensure!(record.controller == who, Error::<T>::NotController);
-                ensure!(!record.revoked_tags.contains(&tag), Error::<T>::TagAlreadyRevoked);
+                ensure!(
+                    !record.revoked_tags.contains(&tag),
+                    Error::<T>::TagAlreadyRevoked
+                );
                 record
                     .revoked_tags
                     .try_push(tag)
@@ -320,7 +346,11 @@ pub mod pallet {
         /// 无需轮换 epoch（轮换会作废*所有*联系人）。
         #[pallet::call_index(4)]
         #[pallet::weight(T::WeightInfo::unrevoke_tag())]
-        pub fn unrevoke_tag(origin: OriginFor<T>, inbox_id: InboxId, tag: ContactTag) -> DispatchResult {
+        pub fn unrevoke_tag(
+            origin: OriginFor<T>,
+            inbox_id: InboxId,
+            tag: ContactTag,
+        ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             Inboxes::<T>::try_mutate(inbox_id, |maybe| {
                 let record = maybe.as_mut().ok_or(Error::<T>::InboxNotFound)?;
@@ -363,7 +393,10 @@ pub mod pallet {
             }
 
             let new_count = InboxCountByController::<T>::get(&new_controller);
-            ensure!(new_count < T::MaxInboxesPerController::get(), Error::<T>::TooManyInboxes);
+            ensure!(
+                new_count < T::MaxInboxesPerController::get(),
+                Error::<T>::TooManyInboxes
+            );
 
             // 先向新 controller 预留（可能因余额不足失败 → 整体回滚），再解押旧 controller。
             // Reserve from the new controller first (may fail on low balance → whole

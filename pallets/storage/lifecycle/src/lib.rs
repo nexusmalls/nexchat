@@ -200,15 +200,7 @@ impl<AccountId> DataOwnerProvider<AccountId> for () {
 /// Global archive configuration (G1: runtime-adjustable).
 /// 归档全局配置（G1：运行时可调）。
 #[derive(
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct ArchiveConfig {
     /// Delay in blocks before data can move from Active to L1 archive.
@@ -231,15 +223,7 @@ pub struct ArchiveConfig {
 /// Per-data-type archive policy (G3: differentiated archival).
 /// 按数据类型的归档策略（G3：差异化归档）。
 #[derive(
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct ArchivePolicy {
     /// Per-type delay in blocks before data can move from Active to L1 archive.
@@ -276,15 +260,7 @@ pub use weights::SubstrateWeight;
 /// Archive batch metadata.
 /// 归档批次信息。
 #[derive(
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    TypeInfo,
-    MaxEncodedLen,
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct ArchiveBatch {
     /// 批次ID

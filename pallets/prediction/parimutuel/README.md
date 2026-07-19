@@ -28,15 +28,15 @@ participants may refund their original bets minus external fees.
 - _Pot / 资金池_: The pallet-derived account holding wagered collateral.
   保存下注抵押资产的 pallet 派生账户。
 
-## Nexus Phase 1 boundary / Nexus 第一阶段边界
+## Nexus collateral boundary / Nexus 抵押边界
 
 The pallet consumes existing market records and does not admit collateral
-independently. Its mock permits native collateral and only the explicitly
-whitelisted USDX foreign-asset fixture. Production foreign-collateral existence,
-mirror validity, and pause/freeze checks remain at the market-creation boundary.
-本 pallet 仅消费既有市场记录，不独立准入抵押资产。其 mock 允许原生抵押资产，并且仅
-允许显式白名单中的 USDX 外部资产测试项。生产环境中的外部抵押资产存在性、镜像有效性
-及暂停/冻结检查仍由市场创建边界负责。
+independently. Its Nexus mock backs USDX balances through the live Prediction
+Collateral whitelist, validator, mode, and escrow path. Production
+foreign-collateral admission remains at the market-creation boundary.
+本 pallet 仅消费既有市场记录，不独立准入抵押资产。其 Nexus mock 通过实时
+Prediction Collateral 白名单、validator、模式和托管路径支持 USDX 余额；生产环境
+中的外部抵押资产准入仍由市场创建边界负责。
 
 The existential deposit of parimutuel shares must be at least the collateral
 existential deposit so the pot cannot be dusted.

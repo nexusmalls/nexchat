@@ -192,3 +192,6 @@ secrets.yaml
 /[一-龥]*.md
 /*[一-龥]*.md
 /docs/
+!/docs/
+/docs/*
+!/docs/ZEITGEIST_FULL_PORT_DEV_SPEC.md

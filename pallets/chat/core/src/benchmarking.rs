@@ -68,13 +68,7 @@ mod benchmarks {
         let receiver: T::AccountId = account("receiver", 0, 0);
         let cid: BoundedVec<u8, T::MaxCidLen> = b"bench-cid".to_vec().try_into().expect("cid fits");
         #[extrinsic_call]
-        send_message(
-            RawOrigin::Root,
-            receiver,
-            cid.to_vec(),
-            4u8,
-            None,
-        );
+        send_message(RawOrigin::Root, receiver, cid.to_vec(), 4u8, None);
     }
 
     #[benchmark]
@@ -183,8 +177,7 @@ mod benchmarks {
         let sid = seed_session::<T>(&sender, &receiver);
         let now = frame_system::Pallet::<T>::block_number();
         let expiration = T::MessageExpirationTime::get();
-        let cid: BoundedVec<u8, T::MaxCidLen> =
-            b"bench-cid".to_vec().try_into().expect("cid fits");
+        let cid: BoundedVec<u8, T::MaxCidLen> = b"bench-cid".to_vec().try_into().expect("cid fits");
         for i in 0..n {
             Messages::<T>::insert(
                 i as u64,
@@ -242,11 +235,7 @@ mod benchmarks {
         let caller: T::AccountId = whitelisted_caller();
         Chat::<T>::register_chat_user(RawOrigin::Signed(caller.clone()).into(), None).unwrap();
         #[extrinsic_call]
-        update_privacy_settings(
-            RawOrigin::Signed(caller),
-            Some(true),
-            Some(false),
-        );
+        update_privacy_settings(RawOrigin::Signed(caller), Some(true), Some(false));
     }
 
     impl_benchmark_test_suite!(Chat, crate::mock::new_test_ext(), crate::mock::Test);

@@ -22,6 +22,35 @@ use sp_runtime::traits::{Saturating, Zero};
 use sp_runtime::SaturatedConversion;
 
 impl<T: Config> Pallet<T> {
+    /// HB-WD-01 mechanism 2: compensate a promoter after a cross-chain commission
+    /// payout timed out. Called by the runtime's `PayoutRefundHandler` (wired to
+    /// the bridge's `on_timeout`), it decodes `(entity_id, who, amount)` — the
+    /// bridged `withdrawal` part recorded at dispatch — and restores it to the
+    /// promoter's `pending` (and removes it from `withdrawn`), so the promoter can
+    /// retry. The NEX itself is re-minted by the bridge back to the Entity account
+    /// (mechanism 1), so this only repairs the off-chain-claimable ledger; the
+    /// repurchase/bonus parts (which never left Nexus) are untouched.
+    /// HB-WD-01 机制 2：跨链佣金派发超时后补偿推广员。由 runtime 的 `PayoutRefundHandler`
+    ///（接桥 `on_timeout`）调用，解码 `(entity_id, who, amount)`——派发时记录的已桥出
+    /// `withdrawal` 部分——并恢复到推广员 `pending`（并从 `withdrawn` 扣回），使其可重试。
+    /// NEX 本身由桥铸回 Entity 账户（机制 1），故本函数仅修复可领记账；repurchase/bonus
+    ///（从未离开 Nexus）不受影响。
+    pub fn on_payout_timeout(meta: &[u8]) -> DispatchResult {
+        let (entity_id, who, amount): (u64, T::AccountId, BalanceOf<T>) =
+            Decode::decode(&mut &meta[..]).map_err(|_| Error::<T>::InvalidPayoutRefundMeta)?;
+        MemberCommissionStats::<T>::mutate(entity_id, &who, |stats| {
+            stats.pending = stats.pending.saturating_add(amount);
+            stats.withdrawn = stats.withdrawn.saturating_sub(amount);
+        });
+        ShopPendingTotal::<T>::mutate(entity_id, |t| *t = t.saturating_add(amount));
+        Self::deposit_event(Event::CommissionPayoutRefunded {
+            entity_id,
+            account: who,
+            amount,
+        });
+        Ok(())
+    }
+
     /// F1: 验证 Entity Owner 或 Admin(COMMISSION_MANAGE) 权限
     pub(crate) fn ensure_owner_or_admin(entity_id: u64, who: &T::AccountId) -> DispatchResult {
         let owner = T::EntityProvider::entity_owner(entity_id).ok_or(Error::<T>::EntityNotFound)?;

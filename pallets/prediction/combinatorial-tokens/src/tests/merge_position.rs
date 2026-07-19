@@ -54,6 +54,7 @@ fn merge_position_works_no_parent(
         if let Some(expected) = expected_ct_110 {
             assert_eq!(ct_110, expected);
         }
+        let collateral_before = Currencies::free_balance(collateral, &0);
         let alice = Account::new(0)
             .deposit(ct_001, amount)
             .unwrap()
@@ -75,7 +76,7 @@ fn merge_position_works_no_parent(
 
         assert_eq!(alice.free_balance(ct_001), 0);
         assert_eq!(alice.free_balance(ct_110), 0);
-        assert_eq!(alice.free_balance(collateral), _100);
+        assert_eq!(alice.free_balance(collateral), collateral_before + amount);
         assert_eq!(pallet.free_balance(collateral), 0);
 
         System::assert_last_event(

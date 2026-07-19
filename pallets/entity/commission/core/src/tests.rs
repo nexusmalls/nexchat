@@ -1,5 +1,6 @@
 use crate::mock::*;
 use crate::pallet::*;
+use codec::Encode;
 use frame_support::traits::ConstU32;
 use frame_support::BoundedVec;
 use frame_support::{assert_noop, assert_ok};
@@ -11135,9 +11136,10 @@ fn shopping_pipeline_does_not_pay_owner_reward() {
         let owner_before = <pallet_balances::Pallet<Test> as frame_support::traits::Currency<
             u64,
         >>::free_balance(&OWNER_ACCT);
-        let ea_before = <pallet_balances::Pallet<Test> as frame_support::traits::Currency<
-            u64,
-        >>::free_balance(&ea);
+        let ea_before =
+            <pallet_balances::Pallet<Test> as frame_support::traits::Currency<u64>>::free_balance(
+                &ea,
+            );
 
         assert_ok!(CommissionCore::process_shopping_commission(
             ENTITY_ID, SHOP_ID, 9803, &BUYER, 100_000, PRODUCT_ID,
@@ -11148,13 +11150,20 @@ fn shopping_pipeline_does_not_pay_owner_reward() {
             <pallet_balances::Pallet<Test> as frame_support::traits::Currency<u64>>::free_balance(
                 &OWNER_ACCT,
             );
-        assert_eq!(owner_after, owner_before, "Shopping pipeline must not pay Owner reward");
+        assert_eq!(
+            owner_after, owner_before,
+            "Shopping pipeline must not pay Owner reward"
+        );
 
         // Entity account unchanged (no transfer out for owner reward)
-        let ea_after = <pallet_balances::Pallet<Test> as frame_support::traits::Currency<
-            u64,
-        >>::free_balance(&ea);
-        assert_eq!(ea_after, ea_before, "Entity account must not be debited for Owner reward");
+        let ea_after =
+            <pallet_balances::Pallet<Test> as frame_support::traits::Currency<u64>>::free_balance(
+                &ea,
+            );
+        assert_eq!(
+            ea_after, ea_before,
+            "Entity account must not be debited for Owner reward"
+        );
 
         // Full budget (minus owner reward) goes to plugins / unallocated pool
         // With OWNER_REWARD enabled but ignored, the entire Pool B is available for plugins
@@ -11179,7 +11188,10 @@ fn shopping_pipeline_full_budget_available_for_plugins_despite_owner_config() {
                 &OWNER_ACCT,
             );
         // OWNER_ACCT was funded with 1 in setup
-        assert_eq!(owner_after, 1, "Owner must not receive reward from shopping pipeline");
+        assert_eq!(
+            owner_after, 1,
+            "Owner must not receive reward from shopping pipeline"
+        );
     });
 }
 
@@ -11646,6 +11658,7 @@ fn cross_chain_payout_default_unit_returns_not_configured() {
         EVM_CHAIN,
         EVM_RCPT,
         100,
+        &[],
     );
     assert_eq!(
         res,
@@ -11653,4 +11666,105 @@ fn cross_chain_payout_default_unit_returns_not_configured() {
             "cross-chain payout not configured"
         ))
     );
+}
+
+// 机制 2：跨链超时 → on_payout_timeout 把 withdrawal 恢复到 pending（从 withdrawn 扣回）
+#[test]
+fn bridge_withdrawal_timeout_restores_pending() {
+    new_test_ext().execute_with(|| {
+        let ea = entity_account(ENTITY_ID);
+        fund(ea, 100_000);
+        seed_pending(REFERRER, 10_000);
+
+        // 先成功桥出全额（FullWithdrawal 默认）
+        assert_ok!(CommissionCore::withdraw_commission_to_evm(
+            RuntimeOrigin::signed(REFERRER),
+            ENTITY_ID,
+            Some(10_000),
+            None,
+            EVM_CHAIN,
+            EVM_RCPT,
+        ));
+        let stats = MemberCommissionStats::<Test>::get(ENTITY_ID, REFERRER);
+        assert_eq!(stats.pending, 0);
+        assert_eq!(stats.withdrawn, 10_000);
+        assert_eq!(ShopPendingTotal::<Test>::get(ENTITY_ID), 0);
+
+        // 模拟桥超时回调：meta = (entity_id, who, withdrawal)
+        let meta = (ENTITY_ID, REFERRER, 10_000u128).encode();
+        assert_ok!(CommissionCore::on_payout_timeout(&meta));
+
+        // pending 恢复、withdrawn 扣回、ShopPendingTotal 恢复
+        let stats = MemberCommissionStats::<Test>::get(ENTITY_ID, REFERRER);
+        assert_eq!(stats.pending, 10_000);
+        assert_eq!(stats.withdrawn, 0);
+        assert_eq!(ShopPendingTotal::<Test>::get(ENTITY_ID), 10_000);
+
+        System::assert_has_event(RuntimeEvent::CommissionCore(
+            crate::pallet::Event::CommissionPayoutRefunded {
+                entity_id: ENTITY_ID,
+                account: REFERRER,
+                amount: 10_000,
+            },
+        ));
+    });
+}
+
+// 机制 2：仅恢复 withdrawal 部分（FixedRate 30%：repurchase 已成功留 Nexus，不回补）
+#[test]
+fn bridge_withdrawal_timeout_restores_only_withdrawal_part() {
+    new_test_ext().execute_with(|| {
+        let ea = entity_account(ENTITY_ID);
+        fund(ea, 100_000);
+        seed_pending(REFERRER, 10_000);
+
+        assert_ok!(CommissionCore::set_withdrawal_config(
+            RuntimeOrigin::signed(SELLER),
+            ENTITY_ID,
+            WithdrawalMode::FixedRate {
+                repurchase_rate: 3000
+            },
+            WithdrawalTierConfig {
+                withdrawal_rate: 7000,
+                repurchase_rate: 3000
+            },
+            BoundedVec::default(),
+            0,
+            true,
+        ));
+
+        assert_ok!(CommissionCore::withdraw_commission_to_evm(
+            RuntimeOrigin::signed(REFERRER),
+            ENTITY_ID,
+            None,
+            None,
+            EVM_CHAIN,
+            EVM_RCPT,
+        ));
+        // withdrawal=7000 桥出，repurchase=3000 留 Nexus
+        assert_eq!(payout_calls(), vec![(ea, EVM_CHAIN, EVM_RCPT, 7_000)]);
+
+        // 超时仅回补 withdrawal=7000
+        let meta = (ENTITY_ID, REFERRER, 7_000u128).encode();
+        assert_ok!(CommissionCore::on_payout_timeout(&meta));
+
+        let stats = MemberCommissionStats::<Test>::get(ENTITY_ID, REFERRER);
+        assert_eq!(stats.pending, 7_000); // 仅 withdrawal 回补
+        assert_eq!(stats.withdrawn, 0);
+        assert_eq!(stats.repurchased, 3_000); // repurchase 不变
+        assert_eq!(ShopPendingTotal::<Test>::get(ENTITY_ID), 7_000);
+        // 购物余额（repurchase）保持
+        assert_eq!(get_loyalty_shopping_balance(ENTITY_ID, REFERRER), 3_000);
+    });
+}
+
+// 机制 2：meta 无法解码 → InvalidPayoutRefundMeta
+#[test]
+fn bridge_withdrawal_timeout_rejects_bad_meta() {
+    new_test_ext().execute_with(|| {
+        assert_noop!(
+            CommissionCore::on_payout_timeout(&[0xFFu8, 0x01]),
+            Error::<Test>::InvalidPayoutRefundMeta
+        );
+    });
 }

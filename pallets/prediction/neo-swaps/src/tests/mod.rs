@@ -19,11 +19,14 @@
 
 mod buy;
 mod buy_and_sell;
+mod collateral;
 mod combo_buy;
 mod combo_sell;
 mod deploy_combinatorial_pool;
 mod deploy_pool;
 mod exit;
+mod futarchy;
+mod futarchy_integration;
 mod join;
 mod liquidity_tree_interactions;
 mod sell;

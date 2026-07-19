@@ -36,6 +36,7 @@ use zrml_neo_swaps::Event as NeoSwapsEvent;
 use zrml_orderbook::Orders;
 
 mod buy;
+mod collateral;
 mod sell;
 
 const BASE_ASSET: Asset<MarketId> = Asset::Ztg;

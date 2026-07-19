@@ -14,7 +14,10 @@ zeitgeist-primitives = { workspace = true }
 env_logger = { workspace = true, optional = true }
 orml-currencies = { workspace = true, optional = true }
 orml-tokens = { workspace = true, optional = true }
+pallet-assets = { workspace = true, optional = true }
 pallet-balances = { workspace = true, optional = true }
+pallet-prediction-collateral = { workspace = true, optional = true }
+pallet-prediction-control = { workspace = true, optional = true }
 pallet-timestamp = { workspace = true, optional = true }
 prediction-mock-runtime = { workspace = true, optional = true }
 sp-io = { workspace = true, optional = true }
@@ -28,7 +31,10 @@ zrml-orderbook = { workspace = true, features = ["mock", "default"] }
 default = ["std"]
 mock = [
     "orml-tokens/default",
+    "pallet-assets/default",
     "pallet-balances/default",
+    "pallet-prediction-collateral/default",
+    "pallet-prediction-control/default",
     "pallet-timestamp/default",
     "prediction-mock-runtime/default",
     "zrml-market-commons/default",
@@ -47,6 +53,9 @@ std = [
     "frame-support/std",
     "frame-system/std",
     "orml-traits/std",
+    "pallet-assets?/std",
+    "pallet-prediction-collateral?/std",
+    "pallet-prediction-control?/std",
     "parity-scale-codec/std",
     "sp-runtime/std",
     "zeitgeist-primitives/std",

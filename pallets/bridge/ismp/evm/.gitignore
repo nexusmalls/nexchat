@@ -1,0 +1,11 @@
+# Foundry artifacts / Foundry 产物
+lib/
+out/
+cache/
+broadcast/
+*.lock
+
+# Node / editor / 节点与编辑器
+node_modules/
+.vscode/
+.idea/

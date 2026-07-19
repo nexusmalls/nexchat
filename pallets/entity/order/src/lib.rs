@@ -1531,13 +1531,13 @@ pub mod pallet {
                 Some(payer),
                 product_id,
                 quantity,
-                None,                        // shipping_cid
-                None,                        // use_tokens
-                Some(PaymentAsset::Native),  // payment_asset
-                None,                        // note_cid
+                None,                       // shipping_cid
+                None,                       // use_tokens
+                Some(PaymentAsset::Native), // payment_asset
+                None,                       // note_cid
                 referrer,
-                Some(max_nex_amount),        // max_nex_amount (slippage cap)
-                None,                        // max_token_amount
+                Some(max_nex_amount), // max_nex_amount (slippage cap)
+                None,                 // max_token_amount
             )?;
             Ok(order_id)
         }

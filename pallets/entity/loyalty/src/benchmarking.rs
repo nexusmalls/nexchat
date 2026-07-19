@@ -7,11 +7,11 @@
 #![cfg(feature = "runtime-benchmarks")]
 
 use super::*;
-use crate::CleanupPhase;
 use crate::pallet::{
     BalanceOf, Config, PointsCleanupCursor, PointsConfig, ShopPointsBalances, ShopPointsConfigs,
     ShopPointsExpiresAt, ShopPointsMaxSupply, ShopPointsTotalSupply, ShopPointsTtl,
 };
+use crate::CleanupPhase;
 use frame_benchmarking::v2::*;
 use frame_support::{traits::Currency, BoundedVec};
 use frame_system::RawOrigin;
@@ -90,10 +90,8 @@ mod benches {
         let caller = funded_account::<T>("owner", 0);
         setup_mock_state::<T>(&caller);
 
-        let name: BoundedVec<u8, T::MaxPointsNameLength> =
-            b"BenchPts".to_vec().try_into().unwrap();
-        let symbol: BoundedVec<u8, T::MaxPointsSymbolLength> =
-            b"BP".to_vec().try_into().unwrap();
+        let name: BoundedVec<u8, T::MaxPointsNameLength> = b"BenchPts".to_vec().try_into().unwrap();
+        let symbol: BoundedVec<u8, T::MaxPointsSymbolLength> = b"BP".to_vec().try_into().unwrap();
 
         #[extrinsic_call]
         _(
@@ -241,10 +239,7 @@ mod benches {
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), SHOP_ID, 1_000_000u32.into());
 
-        assert_eq!(
-            ShopPointsMaxSupply::<T>::get(SHOP_ID),
-            1_000_000u32.into()
-        );
+        assert_eq!(ShopPointsMaxSupply::<T>::get(SHOP_ID), 1_000_000u32.into());
     }
 
     // ==================== call_index(10): continue_cleanup ====================
