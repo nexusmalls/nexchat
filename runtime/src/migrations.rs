@@ -2,6 +2,10 @@
 //!
 //! Nexus runtime 迁移。
 
+pub mod retire_ads;
+pub mod retire_grouprobot;
+pub mod retire_prediction;
+
 #[cfg(feature = "try-runtime")]
 use alloc::vec::Vec;
 use codec::Compact;
@@ -20,9 +24,8 @@ use crate::{
     configs::ismp::{
         protocol_asset_spec, NexusProtocolAssetInspector, ProtocolAssetsAdminPalletId,
     },
-    AccountId, Assets, PredictionControl, Runtime, RuntimeOrigin,
+    AccountId, Assets, Runtime, RuntimeOrigin,
 };
-use pallet_prediction_control::{PredictionMode, PredictionModule};
 
 const MIGRATION_VERSION: u16 = 1;
 const PROTOCOL_ASSET_IDS: [u64; 3] = [900_000, 900_001, 900_002];
@@ -39,86 +42,6 @@ impl StorageInstance for ProtocolAssetsMigrationStorage {
 
 type ProtocolAssetsMigrationVersion =
     StorageValue<ProtocolAssetsMigrationStorage, u16, frame_support::pallet_prelude::ValueQuery>;
-
-pub struct PredictionWiringMigrationStorage;
-
-impl StorageInstance for PredictionWiringMigrationStorage {
-    fn pallet_prefix() -> &'static str {
-        "NexusRuntimeMigrations"
-    }
-
-    const STORAGE_PREFIX: &'static str = "PredictionWiringVersion";
-}
-
-type PredictionWiringVersion =
-    StorageValue<PredictionWiringMigrationStorage, u16, frame_support::pallet_prelude::ValueQuery>;
-
-const PREDICTION_WIRING_VERSION: u16 = 1;
-const PREDICTION_MODULES: [PredictionModule; 12] = [
-    PredictionModule::PredictionMarkets,
-    PredictionModule::Authorized,
-    PredictionModule::Court,
-    PredictionModule::GlobalDisputes,
-    PredictionModule::LegacySwaps,
-    PredictionModule::NeoSwaps,
-    PredictionModule::Orderbook,
-    PredictionModule::Parimutuel,
-    PredictionModule::HybridRouter,
-    PredictionModule::CombinatorialTokens,
-    PredictionModule::Futarchy,
-    PredictionModule::Styx,
-];
-
-/// Verifies the fresh prediction namespace is inert and records one bounded marker.
-/// 验证全新预测命名空间处于惰性状态，并写入一个有界版本标记。
-pub struct VerifyPredictionSafeDefaults;
-
-impl VerifyPredictionSafeDefaults {
-    fn defaults_are_safe() -> bool {
-        PredictionControl::prediction_mode() == PredictionMode::Disabled
-            && PREDICTION_MODULES
-                .into_iter()
-                .all(|module| !PredictionControl::module_enabled(module))
-            && pallet_prediction_collateral::WhitelistedAssets::<Runtime>::iter_keys()
-                .next()
-                .is_none()
-    }
-}
-
-impl OnRuntimeUpgrade for VerifyPredictionSafeDefaults {
-    fn on_runtime_upgrade() -> Weight {
-        if PredictionWiringVersion::get() >= PREDICTION_WIRING_VERSION {
-            return <Runtime as frame_system::Config>::DbWeight::get().reads(1);
-        }
-        assert!(
-            Self::defaults_are_safe(),
-            "prediction Phase 6 wiring must start Disabled with no modules or collateral enabled"
-        );
-        PredictionWiringVersion::put(PREDICTION_WIRING_VERSION);
-        <Runtime as frame_system::Config>::DbWeight::get().reads_writes(15, 1)
-    }
-
-    #[cfg(feature = "try-runtime")]
-    fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
-        let version = PredictionWiringVersion::get();
-        if version < PREDICTION_WIRING_VERSION && !Self::defaults_are_safe() {
-            return Err("prediction Phase 6 storage is not safely disabled".into());
-        }
-        Ok(version.encode())
-    }
-
-    #[cfg(feature = "try-runtime")]
-    fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
-        let previous = u16::decode(&mut &state[..])
-            .map_err(|_| "failed to decode prediction wiring migration state")?;
-        if previous < PREDICTION_WIRING_VERSION
-            && PredictionWiringVersion::get() != PREDICTION_WIRING_VERSION
-        {
-            return Err("prediction wiring migration version was not written".into());
-        }
-        Ok(())
-    }
-}
 
 /// Creates the reserved USDX and HFT receipt assets without activating a lane.
 /// 创建保留的 USDX 与 HFT receipt 资产，但不激活任何通道。
@@ -308,20 +231,6 @@ mod tests {
             assert_eq!(
                 InitializeUsdxProtocolAssets::preflight(),
                 Err("reserved USDX protocol asset configuration mismatch")
-            );
-        });
-    }
-
-    #[test]
-    fn prediction_wiring_marker_is_bounded_and_idempotent() {
-        sp_io::TestExternalities::default().execute_with(|| {
-            assert!(VerifyPredictionSafeDefaults::defaults_are_safe());
-            VerifyPredictionSafeDefaults::on_runtime_upgrade();
-            assert_eq!(PredictionWiringVersion::get(), PREDICTION_WIRING_VERSION);
-            let second = VerifyPredictionSafeDefaults::on_runtime_upgrade();
-            assert_eq!(
-                second,
-                <Runtime as frame_system::Config>::DbWeight::get().reads(1)
             );
         });
     }

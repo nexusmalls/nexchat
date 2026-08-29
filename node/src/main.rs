@@ -6,7 +6,6 @@ mod chain_spec;
 mod chat_rpc;
 mod cli;
 mod command;
-mod prediction_rpc;
 mod rpc;
 mod service;
 

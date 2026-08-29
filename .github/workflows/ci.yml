@@ -163,11 +163,6 @@ jobs:
             pallet_entity_order
             pallet_entity_review
             pallet_entity_market
-            # GroupRobot
-            pallet_grouprobot_registry
-            pallet_grouprobot_consensus
-            pallet_grouprobot_ceremony
-            pallet_grouprobot_rewards
           )
           mkdir -p benchmark-results
           for pallet in "${PALLETS[@]}"; do

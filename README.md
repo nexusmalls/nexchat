@@ -3,8 +3,8 @@
 **连接、聊天、共建链上社交** — 基于 [Polkadot SDK (Substrate)](https://github.com/paritytech/polkadot-sdk) 的 Layer-1 区块链，以端到端加密即时通讯（NexChat）为核心入口，在社交网络中自然延伸链上商城（Entity）与链上游戏，让关系、交易与娱乐在同一生态中发生。
 
 - **官网**：[nexuschain.network](https://nexuschain.network/)
-- **Runtime**：67 个 Pallet（42 个自定义）
-- **Workspace**：55 个 crate
+- **Runtime**：64 个 Pallet
+- **Workspace**：47 个 crate
 
 ## 生态定位
 
@@ -25,9 +25,9 @@ NEXUS 以**聊天社交**为核心，**链上商城**与**链上游戏**为自�
 | 角色 | 入口 | 能力 |
 |------|------|------|
 | 聊天用户 | NexChat | E2EE 私聊、MLS 群聊、链上身份、换机云同步 |
-| 社群建设者 | 社群增长 | 加密群组、透明分佣、活动与广告分发 |
+| 社群建设者 | 社群增长 | 加密群组、透明分佣、活动分发 |
 | 商家 / 项目方 | 链上商城 | 社群内开店、通证化商品、链上结算与治理 |
-| 运营方 | GroupRobot | TEE 保护 Bot、定价监控、治理辅助 |
+| 运营方 | 链上治理 | 定价监控、委员会辅助 |
 | 开发者 | 本仓库 | Pallet、Runtime API、RPC、E2E 集成 |
 
 ## 系统架构
@@ -37,14 +37,14 @@ NEXUS 以**聊天社交**为核心，**链上商城**与**链上游戏**为自�
 │                    Nexus Blockchain (L1)                                 │
 │         Polkadot SDK · Babe + GRANDPA · Staking · 6 s Block · WASM      │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                         Runtime — 67 Pallets                             │
+│                         Runtime — 64 Pallets                             │
 │                                                                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ │
-│  │ NexChat 聊天  │  │ Entity 商城  │  │ GroupRobot   │  │  Ads 广告   │ │
-│  │  6 pallets   │  │  20 pallets  │  │  6 pallets   │  │  3 pallets  │ │
-│  │ E2EE·MLS·   │  │ 实体·代币·   │  │ TEE Bot·     │  │ 活动投放·   │ │
-│  │ 权限·同步   │  │ 治理·分佣    │  │ 共识·订阅    │  │ 渠道结算    │ │
-│  └──────────────┘  └──────────────┘  └──────────────┘  └─────────────┘ │
+│  ┌──────────────┐  ┌──────────────┐                                     │
+│  │ NexChat 聊天  │  │ Entity 商城  │                                     │
+│  │  6 pallets   │  │  20 pallets  │                                     │
+│  │ E2EE·MLS·   │  │ 实体·代币·   │                                     │
+│  │ 权限·同步   │  │ 治理·分佣    │                                     │
+│  └──────────────┘  └──────────────┘                                     │
 │                                                                         │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────────┐ │
 │  │ NEX Market   │  │ 争议 · 存储  │  │ Substrate 基础层               │ │
@@ -53,8 +53,8 @@ NEXUS 以**聊天社交**为核心，**链上商城**与**链上游戏**为自�
 │  │ 信用·TRC20   │  │ IPFS·生命周期│  │ (技术·仲裁·财务·内容)         │ │
 │  └──────────────┘  └──────────────┘  └────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  NexChat 客户端（Web / Android）          GroupRobot TEE 离链执行        │
-│  E2EE · MLS WASM · Relay · IPFS 同步      Telegram + Discord · subxt    │
+│  NexChat 客户端（Web / Android）                                         │
+│  E2EE · MLS WASM · Relay · IPFS 同步                                     │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -135,30 +135,7 @@ NEXUS 以**聊天社交**为核心，**链上商城**与**链上游戏**为自�
 | `trading-common` | — | PricingProvider / PriceOracle / ExchangeRateProvider |
 | `trading-trc20-verifier` | — | TRC20 USDT 链上验证（OCW，TronGrid API） |
 
-### 4. GroupRobot — TEE 社群运营自动化（6 Pallets + 离链 TEE）
-
-**链上**
-
-| Pallet | Index | 功能 |
-|--------|:-----:|------|
-| `grouprobot-registry` | 150 | Bot 注册、TEE 证明（DCAP）、MRTD/MRENCLAVE 白名单 |
-| `grouprobot-consensus` | 151 | 节点注册/质押/退出、序列去重、TEE 加权 |
-| `grouprobot-community` | 152 | 群规则配置、Action Log 单条/批量提交 |
-| `grouprobot-ceremony` | 153 | RA-TLS 仪式记录/撤销、Enclave 审批 |
-| `grouprobot-subscription` | 154 | 订阅计划管理、到期处理 |
-| `grouprobot-rewards` | 155 | 节点奖励分配、Era 结算 |
-
-**离链执行（`grouprobot/`）**：Telegram + Discord 适配、TDX/SGX 双证明、Gramine SGX、subxt 链交互、规则引擎、Vault IPC。
-
-### 5. Ads 广告系统（3 Pallets）
-
-| Pallet | Index | 功能 |
-|--------|:-----:|------|
-| `ads-core` | 160 | 广告活动 CRUD、资金托管、交付验证、结算 |
-| `ads-grouprobot` | 161 | GroupRobot 渠道广告投放 |
-| `ads-entity` | 162 | Entity 渠道广告投放 |
-
-### 6. 争议解决与存储（5 Pallets）
+### 4. 争议解决与存储（5 Pallets）
 
 | Pallet | Index | 功能 |
 |--------|:-----:|------|
@@ -168,7 +145,7 @@ NEXUS 以**聊天社交**为核心，**链上商城**与**链上游戏**为自�
 | `storage-service` | 62 | IPFS 文件存储注册、Operator 管理、计费 |
 | `storage-lifecycle` | 65 | 归档管线（Active → L1 → L2 → Purge） |
 
-### 7. 链上治理
+### 5. 链上治理
 
 4 个委员会实例（`pallet-collective` + `pallet-membership`）：
 
@@ -198,14 +175,11 @@ nexus/
 │   ├── trading/                    #   NEX Market (3 crate)
 │   ├── dispute/                    #   争议解决 (3 crate)
 │   ├── storage/                    #   去中心化存储 (2 crate)
-│   ├── grouprobot/                 #   GroupRobot 链上 (7 crate)
-│   ├── ads/                        #   广告系统 (5 crate)
 │   └── inscription/                #   创世铭文
-├── grouprobot/                     # GroupRobot TEE 离链执行 (独立 workspace)
 ├── website/                        # 官网 (Next.js)
 ├── common/                         # 共享库 (crypto · media)
 ├── scripts/                        # E2E 测试框架
-│   └── e2e/                        #   entity · trading · dispute · grouprobot · storage · ads
+│   └── e2e/                        #   entity · trading · dispute · storage
 ├── docs/                           # 架构与审计文档
 └── Dockerfile                      # 节点 Docker 镜像
 ```
@@ -224,8 +198,7 @@ nexus/
 | 90 | Contracts | 智能合约 |
 | 110 | Assets | 资产 |
 | 120–139 | Entity 商业栈 + Commission 引擎 | 商城 |
-| 150–155 | GroupRobot | 社群自动化 |
-| 160–162 | AdsCore · AdsGroupRobot · AdsEntity | 广告 |
+| 150–155、160–162 | （已退役，禁止复用） | 原 GroupRobot / Ads |
 
 ## 快速开始
 
@@ -279,11 +252,6 @@ cargo test -p pallet-chat-core
 cargo test -p pallet-chat-group
 cargo test -p pallet-entity-token
 cargo test -p pallet-nex-market
-cargo test -p pallet-grouprobot-consensus
-cargo test -p pallet-ads-core
-
-# GroupRobot 离链（独立 workspace）
-cd grouprobot && cargo test
 
 # E2E（需先启动开发链）
 cd scripts && npm run e2e
@@ -315,7 +283,7 @@ cd website && npm install && npm run dev
 | **质押** | Nominated Proof-of-Stake |
 | **SS58 格式** | 42 |
 | **Runtime 名称** | nexus |
-| **Spec 版本** | 103 |
+| **Spec 版本** | 107 |
 
 ## 技术栈
 
@@ -325,7 +293,6 @@ cd website && npm install && npm run dev
 | **共识** | Babe + GRANDPA + Staking |
 | **智能合约** | pallet-contracts（ink!） |
 | **NexChat** | MLS RFC 9420 · X3DH · E2EE · ChatView Runtime API |
-| **GroupRobot** | Axum · Tokio · subxt · TDX/SGX · Gramine |
 | **存储** | IPFS 集成 · 生命周期归档 |
 | **E2E** | TypeScript · Polkadot.js API |
 | **官网** | Next.js · Tailwind CSS |
@@ -340,8 +307,6 @@ cd website && npm install && npm run dev
 | 多设备同步 | `pallets/chat/CHAT_MULTIDEVICE_MLS_SYNC_DESIGN.md` |
 | E2E 测试计划 | `scripts/docs/NEXUS_TEST_PLAN.md` |
 | NEX Market 审计 | `docs/NEX_MARKET_AUDIT.md` |
-| Ads Pallet 审计 | `docs/ADS_PALLETS_AUDIT.md` |
-| GroupRobot 审计 | `docs/GROUPROBOT_ADS_AUDIT.md` |
 | Entity 主网缺失功能 | `docs/ENTITY_MAINNET_MISSING_FEATURES.md` |
 | IPFS 存储方案 | `docs/IPFS_STORAGE_INTEGRATION_PLAN.md` |
 

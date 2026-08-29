@@ -72,10 +72,10 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 106,
+    spec_version: 107,
     impl_version: 2,
     apis: apis::RUNTIME_API_VERSIONS,
-    transaction_version: 1,
+    transaction_version: 2,
     system_version: 1,
 };
 
@@ -186,7 +186,35 @@ pub type Migrations = (
     pallet_dispute_escrow::migrations::V2RemoveLockNonces<Runtime>,
     pallet_entity_order::migration::MigrateV1ToV2<Runtime>,
     migrations::InitializeUsdxProtocolAssets,
-    migrations::VerifyPredictionSafeDefaults,
+    migrations::retire_ads::RetireAdsFunds,
+    migrations::retire_grouprobot::RetireGroupRobotFunds,
+    migrations::retire_ads::RemoveAdsCore,
+    migrations::retire_ads::RemoveAdsGroupRobot,
+    migrations::retire_ads::RemoveAdsEntity,
+    migrations::retire_grouprobot::RemoveGroupRobotRegistry,
+    migrations::retire_grouprobot::RemoveGroupRobotConsensus,
+    migrations::retire_grouprobot::RemoveGroupRobotCommunity,
+    migrations::retire_grouprobot::RemoveGroupRobotCeremony,
+    migrations::retire_grouprobot::RemoveGroupRobotSubscription,
+    migrations::retire_grouprobot::RemoveGroupRobotRewards,
+    migrations::retire_prediction::RemovePredictionControl,
+    migrations::retire_prediction::RemovePredictionCollateral,
+    migrations::retire_prediction::RemovePredictionCurrencies,
+    migrations::retire_prediction::RemovePredictionTokens,
+    migrations::retire_prediction::RemovePredictionMarketCommons,
+    migrations::retire_prediction::RemovePredictionAuthorized,
+    migrations::retire_prediction::RemovePredictionCourt,
+    migrations::retire_prediction::RemovePredictionGlobalDisputes,
+    migrations::retire_prediction::RemovePredictionMarkets,
+    migrations::retire_prediction::RemovePredictionLegacySwaps,
+    migrations::retire_prediction::RemovePredictionNeoSwaps,
+    migrations::retire_prediction::RemovePredictionOrderbook,
+    migrations::retire_prediction::RemovePredictionParimutuel,
+    migrations::retire_prediction::RemovePredictionHybridRouter,
+    migrations::retire_prediction::RemovePredictionCombinatorialTokens,
+    migrations::retire_prediction::RemovePredictionFutarchy,
+    migrations::retire_prediction::RemovePredictionStyx,
+    migrations::retire_prediction::RemovePredictionCommunityCore,
 );
 
 /// Executive: handles dispatch to the various modules.
@@ -429,40 +457,10 @@ mod runtime {
     #[runtime::pallet_index(139)]
     pub type EntityLoyalty = pallet_entity_loyalty;
 
-    // ============================================================================
-    // GroupRobot Pallets
-    // ============================================================================
-
-    #[runtime::pallet_index(150)]
-    pub type GroupRobotRegistry = pallet_grouprobot_registry;
-
-    #[runtime::pallet_index(151)]
-    pub type GroupRobotConsensus = pallet_grouprobot_consensus;
-
-    #[runtime::pallet_index(152)]
-    pub type GroupRobotCommunity = pallet_grouprobot_community;
-
-    #[runtime::pallet_index(153)]
-    pub type GroupRobotCeremony = pallet_grouprobot_ceremony;
-
-    #[runtime::pallet_index(154)]
-    pub type GroupRobotSubscription = pallet_grouprobot_subscription;
-
-    #[runtime::pallet_index(155)]
-    pub type GroupRobotRewards = pallet_grouprobot_rewards;
-
-    // ============================================================================
-    // Ads Pallets (模块化广告引擎)
-    // ============================================================================
-
-    #[runtime::pallet_index(160)]
-    pub type AdsCore = pallet_ads_core;
-
-    #[runtime::pallet_index(161)]
-    pub type AdsGroupRobot = pallet_ads_grouprobot;
-
-    #[runtime::pallet_index(162)]
-    pub type AdsEntity = pallet_ads_entity;
+    // Indexes 150–155 (GroupRobot) and 160–162 (Ads) are retired and must not
+    // be reused. Storage prefixes were cleared by spec 107.
+    // 索引 150–155（GroupRobot）与 160–162（Ads）已退役，禁止复用。
+    // 存储前缀已由 spec 107 清除。
 
     // ============================================================================
     // Hyperbridge / ISMP protocol layer (Stage 1: cross-chain messaging base)
@@ -500,65 +498,6 @@ mod runtime {
     // 审查与通道证据阻塞。
     #[runtime::pallet_index(175)]
     pub type HyperFungibleToken = pallet_hyper_fungible_token;
-
-    // ============================================================================
-    // Prediction markets (Phase 6: registered with all business paths disabled)
-    // 预测市场（Phase 6：完成注册，全部业务路径保持禁用）
-    // ============================================================================
-
-    #[runtime::pallet_index(176)]
-    pub type PredictionControl = pallet_prediction_control;
-
-    #[runtime::pallet_index(177)]
-    pub type PredictionCollateral = pallet_prediction_collateral;
-
-    #[runtime::pallet_index(178)]
-    pub type PredictionCurrencies = orml_currencies;
-
-    #[runtime::pallet_index(179)]
-    pub type PredictionTokens = orml_tokens;
-
-    #[runtime::pallet_index(180)]
-    pub type PredictionMarketCommons = zrml_market_commons;
-
-    #[runtime::pallet_index(181)]
-    pub type PredictionAuthorized = zrml_authorized;
-
-    #[runtime::pallet_index(182)]
-    pub type PredictionCourt = zrml_court;
-
-    #[runtime::pallet_index(183)]
-    pub type PredictionGlobalDisputes = zrml_global_disputes;
-
-    #[runtime::pallet_index(184)]
-    pub type PredictionMarkets = zrml_prediction_markets;
-
-    #[runtime::pallet_index(185)]
-    pub type PredictionLegacySwaps = zrml_swaps;
-
-    #[runtime::pallet_index(186)]
-    pub type PredictionNeoSwaps = zrml_neo_swaps;
-
-    #[runtime::pallet_index(187)]
-    pub type PredictionOrderbook = zrml_orderbook;
-
-    #[runtime::pallet_index(188)]
-    pub type PredictionParimutuel = zrml_parimutuel;
-
-    #[runtime::pallet_index(189)]
-    pub type PredictionHybridRouter = zrml_hybrid_router;
-
-    #[runtime::pallet_index(190)]
-    pub type PredictionCombinatorialTokens = zrml_combinatorial_tokens;
-
-    #[runtime::pallet_index(191)]
-    pub type PredictionFutarchy = zrml_futarchy;
-
-    #[runtime::pallet_index(192)]
-    pub type PredictionStyx = zrml_styx;
-
-    #[runtime::pallet_index(193)]
-    pub type PredictionCommunityCore = pallet_prediction_community_core;
 }
 
 #[cfg(test)]
@@ -655,27 +594,6 @@ mod pallet_index_compatibility_tests {
                 138,
             ),
             (EntityLoyalty::name(), EntityLoyalty::index(), 139),
-            (GroupRobotRegistry::name(), GroupRobotRegistry::index(), 150),
-            (
-                GroupRobotConsensus::name(),
-                GroupRobotConsensus::index(),
-                151,
-            ),
-            (
-                GroupRobotCommunity::name(),
-                GroupRobotCommunity::index(),
-                152,
-            ),
-            (GroupRobotCeremony::name(), GroupRobotCeremony::index(), 153),
-            (
-                GroupRobotSubscription::name(),
-                GroupRobotSubscription::index(),
-                154,
-            ),
-            (GroupRobotRewards::name(), GroupRobotRewards::index(), 155),
-            (AdsCore::name(), AdsCore::index(), 160),
-            (AdsGroupRobot::name(), AdsGroupRobot::index(), 161),
-            (AdsEntity::name(), AdsEntity::index(), 162),
             (Ismp::name(), Ismp::index(), 170),
             (Hyperbridge::name(), Hyperbridge::index(), 171),
             (IsmpGrandpa::name(), IsmpGrandpa::index(), 172),

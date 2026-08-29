@@ -24,9 +24,6 @@
   - `pallets/entity/`：Entity 平台
   - `pallets/trading/`：NEX Market
   - `pallets/dispute/`：托管/证据/仲裁
-  - `pallets/grouprobot/`：GroupRobot 链上模块
-  - `pallets/ads/`：广告系统
-- `grouprobot/`：TEE 离链执行程序，独立 workspace
 - `scripts/`：TypeScript E2E 与辅助脚本
 - `docs/`：设计、审计、方案文档
 
@@ -66,11 +63,6 @@
 - runtime API / metadata 暴露面
 - 外部脚本或前端是否依赖这些接口
 
-### 改 GroupRobot 时
-
-GroupRobot 分为链上 pallet 和 `grouprobot/` 离链程序两部分。
-如果修改接口、事件、验证、证明、订阅、奖励或链交互，确认两边是否需要同步调整。
-
 ### 改 E2E / scripts 时
 
 - 优先沿用 `scripts/e2e/` 现有 flow、runner、assertion 结构。
@@ -92,7 +84,6 @@ cargo test
 cargo test -p pallet-commission-core
 cargo test -p pallet-entity-token
 cargo test -p pallet-nex-market
-cd grouprobot && cargo test
 cd scripts && npm run e2e
 ```
 
@@ -108,8 +99,6 @@ cd scripts && npm run e2e
 - `README.md`
 - `scripts/docs/NEXUS_TEST_PLAN.md`
 - `docs/NEX_MARKET_AUDIT.md`
-- `docs/ADS_PALLETS_AUDIT.md`
-- `docs/GROUPROBOT_ADS_AUDIT.md`
 - `docs/ENTITY_ORDER_TOKENSALE_DISCLOSURE_AUDIT.md`
 - `docs/ENTITY_MAINNET_MISSING_FEATURES.md`
 

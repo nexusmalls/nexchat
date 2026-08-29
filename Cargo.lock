@@ -682,34 +682,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "anes"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
-
-[[package]]
 name = "anstream"
 version = "0.6.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43d5b281e737544384e969a5ccad3f1cdd24b48086a0fc1b2a5262a26b8f4f4a"
 dependencies = [
  "anstyle",
- "anstyle-parse 0.2.7",
- "anstyle-query",
- "anstyle-wincon",
- "colorchoice",
- "is_terminal_polyfill",
- "utf8parse",
-]
-
-[[package]]
-name = "anstream"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
-dependencies = [
- "anstyle",
- "anstyle-parse 1.0.0",
+ "anstyle-parse",
  "anstyle-query",
  "anstyle-wincon",
  "colorchoice",
@@ -728,15 +707,6 @@ name = "anstyle-parse"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7644824f0aa2c7b9384579234ef10eb7efb6a0deb83f9630a49594dd9c15c2"
-dependencies = [
- "utf8parse",
-]
-
-[[package]]
-name = "anstyle-parse"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
 dependencies = [
  "utf8parse",
 ]
@@ -795,9 +765,6 @@ name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
-dependencies = [
- "derive_arbitrary",
-]
 
 [[package]]
 name = "ark-bls12-377"
@@ -2507,12 +2474,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cast"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
-
-[[package]]
 name = "cc"
 version = "1.2.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2615,33 +2576,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ciborium"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
-dependencies = [
- "ciborium-io",
- "ciborium-ll",
- "serde",
-]
-
-[[package]]
-name = "ciborium-io"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
-
-[[package]]
-name = "ciborium-ll"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
-dependencies = [
- "ciborium-io",
- "half 2.7.1",
-]
-
-[[package]]
 name = "cid"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2708,7 +2642,7 @@ version = "4.5.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24a241312cea5059b13574bb9b3861cabf758b879c15190b37b6d6fd63ab6876"
 dependencies = [
- "anstream 0.6.21",
+ "anstream",
  "anstyle",
  "clap_lex",
  "strsim",
@@ -3189,42 +3123,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "criterion"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2b12d017a929603d80db1831cd3a24082f8137ce19c69e6447f54f5fc8d692f"
-dependencies = [
- "anes",
- "cast",
- "ciborium",
- "clap",
- "criterion-plot",
- "is-terminal",
- "itertools 0.10.5",
- "num-traits",
- "once_cell",
- "oorandom",
- "plotters",
- "rayon",
- "regex",
- "serde",
- "serde_derive",
- "serde_json",
- "tinytemplate",
- "walkdir",
-]
-
-[[package]]
-name = "criterion-plot"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
-dependencies = [
- "cast",
- "itertools 0.10.5",
 ]
 
 [[package]]
@@ -4409,37 +4307,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "defmt"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2953bfe4f93bbd20cc71198842756f77d161884c99ebbabc41d80231ded88d1"
-dependencies = [
- "bitflags 1.3.2",
- "defmt-macros",
-]
-
-[[package]]
-name = "defmt-macros"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bad9c72e7ca2137e0dc3813245a0d282fd6daad32fd800af018306a9169b5fe8"
-dependencies = [
- "defmt-parser",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "defmt-parser"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10d60334b3b2e7c9d91ef8150abfb6fa4c1c39ebbcf4a81c2e346aad939fee3e"
-dependencies = [
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4515,17 +4382,6 @@ name = "derive-where"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef941ded77d15ca19b40374869ac6000af1c9f2a4c0f3d4c70926287e6364a8f"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "derive_arbitrary"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4978,16 +4834,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_filter"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "900d271a03799a1ee8d1ca9b19893b48ca674a9284fefcfb85f05e74ed314217"
-dependencies = [
- "log",
- "regex",
-]
-
-[[package]]
 name = "env_logger"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4998,19 +4844,6 @@ dependencies = [
  "log",
  "regex",
  "termcolor",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de671bd27a75a797dc9ae289ba1e77276e75e2026408aab65185384e2d5cd3f6"
-dependencies = [
- "anstream 1.0.0",
- "anstyle",
- "env_filter 2.0.0",
- "jiff",
- "log",
 ]
 
 [[package]]
@@ -5254,19 +5087,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
-name = "fixed"
-version = "1.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36a65312835c1097a0c926ff3702df965285fadc33d948b87397ff8961bad881"
-dependencies = [
- "az",
- "bytemuck",
- "half 1.8.3",
- "num-traits",
- "typenum",
-]
-
-[[package]]
 name = "fixed-hash"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5391,7 +5211,7 @@ dependencies = [
  "comfy-table",
  "cumulus-client-parachain-inherent",
  "cumulus-primitives-proof-size-hostfunction",
- "env_filter 0.1.4",
+ "env_filter",
  "frame-benchmarking",
  "frame-storage-access-test-runtime",
  "frame-support",
@@ -6133,23 +5953,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "half"
-version = "1.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b43ede17f21864e81be2fa654110bf1e793774238d86ef8555c37e6519c0403"
-
-[[package]]
-name = "half"
-version = "2.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
-dependencies = [
- "cfg-if",
- "crunchy",
- "zerocopy",
-]
-
-[[package]]
 name = "handlebars"
 version = "5.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6509,27 +6312,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9155a582abd142abc056962c29e3ce5ff2ad5469f4246b537ed42c5deba857da"
 dependencies = [
  "typenum",
-]
-
-[[package]]
-name = "hydra-dx-math"
-version = "10.0.0"
-dependencies = [
- "approx",
- "criterion",
- "fixed",
- "num-traits",
- "parity-scale-codec",
- "primitive-types 0.13.1",
- "proptest",
- "rand 0.8.5",
- "rand_xoshiro",
- "rug",
- "scale-info",
- "serde",
- "sp-arithmetic",
- "sp-std",
- "test-case",
 ]
 
 [[package]]
@@ -7157,31 +6939,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jiff"
-version = "0.2.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "961d16382652bfdd8c6f68b223b26a8c93e0d475c672f414411db31c6c5c900e"
-dependencies = [
- "defmt",
- "jiff-static",
- "log",
- "portable-atomic",
- "portable-atomic-util",
- "serde_core",
-]
-
-[[package]]
-name = "jiff-static"
-version = "0.2.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0879bd39df99c4c5e2c6615ccc026391a423dde10532c573e6086eb94a802cc"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "jni"
 version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7530,16 +7287,6 @@ name = "libc"
 version = "0.2.182"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
-
-[[package]]
-name = "libfuzzer-sys"
-version = "0.4.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9fd2f41a1cba099f79a0b6b6c35656cf7c03351a7bae8ff0f28f25270f929d2"
-dependencies = [
- "arbitrary",
- "cc",
-]
 
 [[package]]
 name = "libm"
@@ -8574,12 +8321,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "more-asserts"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fafa6961cabd9c63bcd77a45d7e3b7f3b552b70417831fb0f56db717e72407e"
-
-[[package]]
 name = "multi-stash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8832,10 +8573,6 @@ dependencies = [
  "sp-timestamp",
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
- "zeitgeist-primitives",
- "zrml-prediction-markets-runtime-api",
- "zrml-swaps-rpc",
- "zrml-swaps-runtime-api",
 ]
 
 [[package]]
@@ -8857,14 +8594,6 @@ dependencies = [
  "ismp",
  "ismp-grandpa",
  "log",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-ads-core",
- "pallet-ads-entity",
- "pallet-ads-grouprobot",
- "pallet-ads-primitives",
- "pallet-ads-router",
  "pallet-assets",
  "pallet-authorship",
  "pallet-babe",
@@ -8905,13 +8634,6 @@ dependencies = [
  "pallet-entity-token",
  "pallet-entity-tokensale",
  "pallet-grandpa",
- "pallet-grouprobot-ceremony",
- "pallet-grouprobot-community",
- "pallet-grouprobot-consensus",
- "pallet-grouprobot-primitives",
- "pallet-grouprobot-registry",
- "pallet-grouprobot-rewards",
- "pallet-grouprobot-subscription",
  "pallet-hyper-fungible-token",
  "pallet-hyperbridge",
  "pallet-im-online",
@@ -8922,10 +8644,6 @@ dependencies = [
  "pallet-msg-identity",
  "pallet-nex-market",
  "pallet-offences",
- "pallet-prediction-collateral",
- "pallet-prediction-community-common",
- "pallet-prediction-community-core",
- "pallet-prediction-control",
  "pallet-preimage",
  "pallet-scheduler",
  "pallet-session",
@@ -8958,22 +8676,6 @@ dependencies = [
  "sp-transaction-pool",
  "sp-version",
  "substrate-wasm-builder",
- "zeitgeist-primitives",
- "zrml-authorized",
- "zrml-combinatorial-tokens",
- "zrml-court",
- "zrml-futarchy",
- "zrml-global-disputes",
- "zrml-hybrid-router",
- "zrml-market-commons",
- "zrml-neo-swaps",
- "zrml-orderbook",
- "zrml-parimutuel",
- "zrml-prediction-markets",
- "zrml-prediction-markets-runtime-api",
- "zrml-styx",
- "zrml-swaps",
- "zrml-swaps-runtime-api",
 ]
 
 [[package]]
@@ -9271,12 +8973,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
-name = "oorandom"
-version = "11.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
-
-[[package]]
 name = "opaque-debug"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9334,82 +9030,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "orml-currencies"
-version = "1.5.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "orml-tokens",
- "orml-traits",
- "orml-utilities",
- "pallet-balances",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-std",
-]
-
-[[package]]
-name = "orml-tokens"
-version = "1.5.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "orml-traits",
- "pallet-elections-phragmen",
- "pallet-treasury",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-arithmetic",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-staking",
- "sp-std",
-]
-
-[[package]]
-name = "orml-traits"
-version = "1.5.0"
-dependencies = [
- "frame-support",
- "impl-trait-for-tuples",
- "num-traits",
- "orml-utilities",
- "parity-scale-codec",
- "paste",
- "scale-info",
- "serde",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-std",
- "staging-xcm",
-]
-
-[[package]]
-name = "orml-utilities"
-version = "1.5.0"
-dependencies = [
- "frame-support",
- "frame-system",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-std",
-]
-
-[[package]]
 name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9425,89 +9045,6 @@ dependencies = [
  "elliptic-curve",
  "primeorder",
  "sha2 0.10.9",
-]
-
-[[package]]
-name = "pallet-ads-core"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "pallet-ads-primitives",
- "pallet-balances",
- "pallet-trading-common",
- "parity-scale-codec",
- "scale-info",
- "sp-api",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-ads-entity"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "pallet-ads-primitives",
- "pallet-balances",
- "pallet-entity-common",
- "pallet-trading-common",
- "parity-scale-codec",
- "scale-info",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-ads-grouprobot"
-version = "0.2.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "pallet-ads-primitives",
- "pallet-balances",
- "pallet-grouprobot-primitives",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-ads-primitives"
-version = "0.1.0"
-dependencies = [
- "frame-support",
- "parity-scale-codec",
- "scale-info",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-ads-router"
-version = "0.1.0"
-dependencies = [
- "frame-support",
- "frame-system",
- "pallet-ads-entity",
- "pallet-ads-grouprobot",
- "pallet-ads-primitives",
- "pallet-balances",
- "pallet-entity-common",
- "pallet-grouprobot-primitives",
- "parity-scale-codec",
- "scale-info",
- "sp-core",
- "sp-io",
- "sp-runtime",
 ]
 
 [[package]]
@@ -11009,114 +10546,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-grouprobot-ceremony"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "pallet-grouprobot-primitives",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-grouprobot-community"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "pallet-grouprobot-primitives",
- "parity-scale-codec",
- "scale-info",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-grouprobot-consensus"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "pallet-balances",
- "pallet-grouprobot-primitives",
- "pallet-trading-common",
- "parity-scale-codec",
- "scale-info",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-grouprobot-primitives"
-version = "0.1.0"
-dependencies = [
- "frame-support",
- "pallet-ads-primitives",
- "parity-scale-codec",
- "scale-info",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-grouprobot-registry"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "p256",
- "pallet-balances",
- "pallet-grouprobot-primitives",
- "parity-scale-codec",
- "scale-info",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-grouprobot-rewards"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "pallet-balances",
- "pallet-grouprobot-primitives",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-grouprobot-subscription"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "pallet-balances",
- "pallet-grouprobot-primitives",
- "pallet-trading-common",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
 name = "pallet-hyper-fungible-token"
 version = "2512.0.0-nexus.1"
 dependencies = [
@@ -11235,7 +10664,7 @@ version = "2512.2.0"
 dependencies = [
  "anyhow",
  "crypto-utils",
- "env_logger 0.10.2",
+ "env_logger",
  "fortuples",
  "impl-trait-for-tuples",
  "ismp",
@@ -11725,69 +11154,6 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "verifiable",
-]
-
-[[package]]
-name = "pallet-prediction-collateral"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-assets",
- "pallet-balances",
- "pallet-prediction-control",
- "parity-scale-codec",
- "proptest",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "zeitgeist-primitives",
-]
-
-[[package]]
-name = "pallet-prediction-community-common"
-version = "0.1.0"
-dependencies = [
- "frame-support",
- "parity-scale-codec",
- "scale-info",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-prediction-community-core"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-balances",
- "pallet-prediction-community-common",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "zeitgeist-primitives",
-]
-
-[[package]]
-name = "pallet-prediction-control"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
 ]
 
 [[package]]
@@ -13141,34 +12507,6 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
-
-[[package]]
-name = "plotters"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aeb6f403d7a4911efb1e33402027fc44f29b5bf6def3effcc22d7bb75f2b747"
-dependencies = [
- "num-traits",
- "plotters-backend",
- "plotters-svg",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "plotters-backend"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df42e13c12958a16b3f7f4386b9ab1f3e7933914ecea48da7139435263a4172a"
-
-[[package]]
-name = "plotters-svg"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51bae2ac328883f7acdfea3d66a7c35751187f870bc81f94563733a154d7a670"
-dependencies = [
- "plotters-backend",
-]
 
 [[package]]
 name = "polkadot-approval-distribution"
@@ -14843,15 +14181,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
 
 [[package]]
-name = "portable-atomic-util"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
-dependencies = [
- "portable-atomic",
-]
-
-[[package]]
 name = "postcard"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14911,67 +14240,6 @@ checksum = "d0de1b847b39c8131db0467e9df1ff60e6d0562ab8e9a16e568ad0fdb372e2f2"
 dependencies = [
  "predicates-core",
  "termtree",
-]
-
-[[package]]
-name = "prediction-differential"
-version = "0.1.0"
-dependencies = [
- "frame-support",
- "frame-system",
- "orml-traits",
- "sp-arithmetic",
- "sp-io",
- "sp-runtime",
- "zeitgeist-primitives",
- "zrml-authorized",
- "zrml-combinatorial-tokens",
- "zrml-court",
- "zrml-global-disputes",
- "zrml-market-commons",
- "zrml-orderbook",
- "zrml-parimutuel",
- "zrml-prediction-markets",
-]
-
-[[package]]
-name = "prediction-mock-runtime"
-version = "0.1.0"
-dependencies = [
- "env_logger 0.11.11",
- "frame-support",
- "frame-system",
- "log",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-assets",
- "pallet-balances",
- "pallet-timestamp",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "zeitgeist-primitives",
-]
-
-[[package]]
-name = "prediction-phase0-smoke"
-version = "0.1.0"
-dependencies = [
- "frame-support",
- "frame-system",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-assets",
- "pallet-balances",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "zeitgeist-primitives",
- "zrml-market-commons",
 ]
 
 [[package]]
@@ -15543,15 +14811,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_xoshiro"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f97cdb2a36ed4183de61b2f824cc45c9f1037f28afe0a322e9fff4c108b5aaa"
-dependencies = [
- "rand_core 0.6.4",
-]
-
-[[package]]
 name = "rapidhash"
 version = "4.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -15747,12 +15006,6 @@ name = "regex-syntax"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
-
-[[package]]
-name = "relative-path"
-version = "1.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
 name = "reqwest"
@@ -16198,36 +15451,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rstest"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fc39292f8613e913f7df8fa892b8944ceb47c247b78e1b1ae2f09e019be789d"
-dependencies = [
- "futures-timer",
- "futures-util",
- "rstest_macros",
- "rustc_version 0.4.1",
-]
-
-[[package]]
-name = "rstest_macros"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f168d99749d307be9de54d23fd226628d99768225ef08f6ffb52e0182a27746"
-dependencies = [
- "cfg-if",
- "glob",
- "proc-macro-crate 3.5.0",
- "proc-macro2",
- "quote",
- "regex",
- "relative-path",
- "rustc_version 0.4.1",
- "syn 2.0.117",
- "unicode-ident",
-]
-
-[[package]]
 name = "rtnetlink"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16265,8 +15488,6 @@ dependencies = [
  "gmp-mpfr-sys",
  "libc",
  "libm",
- "num-integer",
- "num-traits",
 ]
 
 [[package]]
@@ -20451,39 +19672,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
-name = "test-case"
-version = "3.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb2550dd13afcd286853192af8601920d959b14c401fcece38071d53bf0768a8"
-dependencies = [
- "test-case-macros",
-]
-
-[[package]]
-name = "test-case-core"
-version = "3.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adcb7fd841cd518e279be3d5a3eb0636409487998a4aff22f3de87b81e88384f"
-dependencies = [
- "cfg-if",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "test-case-macros"
-version = "3.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c89e72a01ed4c579669add59014b9a524d609c0c88c6a585ce37485879f6ffb"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
- "test-case-core",
-]
-
-[[package]]
 name = "testnet-parachains-constants"
 version = "18.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -20632,16 +19820,6 @@ checksum = "42d3e9c45c09de15d06dd8acf5f4e0e399e85927b7f00711024eb7ae10fa4869"
 dependencies = [
  "displaydoc",
  "zerovec",
-]
-
-[[package]]
-name = "tinytemplate"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -22919,34 +22097,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zeitgeist-macros"
-version = "0.6.1"
-
-[[package]]
-name = "zeitgeist-primitives"
-version = "0.6.1"
-dependencies = [
- "arbitrary",
- "fixed",
- "frame-support",
- "frame-system",
- "hex-literal",
- "more-asserts",
- "num-traits",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-arithmetic",
- "sp-core",
- "sp-runtime",
- "test-case",
- "typenum",
-]
-
-[[package]]
 name = "zerocopy"
 version = "0.8.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -23045,478 +22195,6 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
-
-[[package]]
-name = "zrml-authorized"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "pallet-balances",
- "pallet-timestamp",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "zeitgeist-primitives",
- "zrml-market-commons",
-]
-
-[[package]]
-name = "zrml-combinatorial-tokens"
-version = "0.6.1"
-dependencies = [
- "ark-bn254",
- "ark-ff 0.5.0",
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-assets",
- "pallet-balances",
- "pallet-prediction-collateral",
- "pallet-prediction-control",
- "pallet-timestamp",
- "parity-scale-codec",
- "prediction-mock-runtime",
- "rstest",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "test-case",
- "zeitgeist-primitives",
- "zrml-combinatorial-tokens",
- "zrml-market-commons",
-]
-
-[[package]]
-name = "zrml-combinatorial-tokens-fuzz"
-version = "0.6.1"
-dependencies = [
- "arbitrary",
- "frame-support",
- "frame-system",
- "libfuzzer-sys",
- "orml-traits",
- "rand 0.8.5",
- "sp-runtime",
- "zeitgeist-primitives",
- "zrml-combinatorial-tokens",
-]
-
-[[package]]
-name = "zrml-court"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "pallet-balances",
- "pallet-timestamp",
- "pallet-treasury",
- "parity-scale-codec",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "scale-info",
- "sp-arithmetic",
- "sp-io",
- "sp-runtime",
- "test-case",
- "zeitgeist-macros",
- "zeitgeist-primitives",
- "zrml-market-commons",
-]
-
-[[package]]
-name = "zrml-futarchy"
-version = "0.6.1"
-dependencies = [
- "arbitrary",
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "pallet-balances",
- "parity-scale-codec",
- "scale-info",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "test-case",
- "zeitgeist-primitives",
- "zrml-futarchy",
-]
-
-[[package]]
-name = "zrml-futarchy-fuzz"
-version = "0.6.1"
-dependencies = [
- "arbitrary",
- "frame-support",
- "frame-system",
- "libfuzzer-sys",
- "rand 0.8.5",
- "sp-runtime",
- "zeitgeist-primitives",
- "zrml-futarchy",
-]
-
-[[package]]
-name = "zrml-global-disputes"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "num-traits",
- "pallet-balances",
- "pallet-timestamp",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "sp-std",
- "test-case",
- "zeitgeist-primitives",
- "zrml-market-commons",
-]
-
-[[package]]
-name = "zrml-hybrid-router"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-assets",
- "pallet-balances",
- "pallet-prediction-collateral",
- "pallet-prediction-control",
- "pallet-timestamp",
- "pallet-treasury",
- "parity-scale-codec",
- "prediction-mock-runtime",
- "scale-info",
- "serde",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "test-case",
- "zeitgeist-primitives",
- "zrml-authorized",
- "zrml-combinatorial-tokens",
- "zrml-court",
- "zrml-global-disputes",
- "zrml-hybrid-router",
- "zrml-market-commons",
- "zrml-neo-swaps",
- "zrml-orderbook",
- "zrml-prediction-markets",
-]
-
-[[package]]
-name = "zrml-market-commons"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-support",
- "frame-system",
- "log",
- "pallet-balances",
- "pallet-timestamp",
- "parity-scale-codec",
- "prediction-mock-runtime",
- "scale-info",
- "sp-arithmetic",
- "sp-io",
- "sp-runtime",
- "test-case",
- "zeitgeist-primitives",
-]
-
-[[package]]
-name = "zrml-neo-swaps"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "fixed",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "hydra-dx-math",
- "log",
- "more-asserts",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-assets",
- "pallet-balances",
- "pallet-prediction-collateral",
- "pallet-prediction-control",
- "pallet-preimage",
- "pallet-scheduler",
- "pallet-timestamp",
- "pallet-treasury",
- "parity-scale-codec",
- "prediction-mock-runtime",
- "scale-info",
- "serde",
- "sp-api",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "test-case",
- "typenum",
- "zeitgeist-primitives",
- "zrml-authorized",
- "zrml-combinatorial-tokens",
- "zrml-court",
- "zrml-futarchy",
- "zrml-global-disputes",
- "zrml-market-commons",
- "zrml-neo-swaps",
- "zrml-prediction-markets",
- "zrml-prediction-markets-runtime-api",
-]
-
-[[package]]
-name = "zrml-neo-swaps-fuzz"
-version = "0.6.1"
-dependencies = [
- "arbitrary",
- "frame-support",
- "frame-system",
- "libfuzzer-sys",
- "orml-traits",
- "rand 0.8.5",
- "sp-runtime",
- "zeitgeist-primitives",
- "zrml-neo-swaps",
-]
-
-[[package]]
-name = "zrml-orderbook"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-assets",
- "pallet-balances",
- "pallet-prediction-collateral",
- "pallet-prediction-control",
- "pallet-timestamp",
- "parity-scale-codec",
- "prediction-mock-runtime",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "test-case",
- "zeitgeist-primitives",
- "zrml-market-commons",
- "zrml-orderbook",
-]
-
-[[package]]
-name = "zrml-orderbook-fuzz"
-version = "0.6.1"
-dependencies = [
- "arbitrary",
- "frame-system",
- "libfuzzer-sys",
- "zeitgeist-primitives",
- "zrml-orderbook",
-]
-
-[[package]]
-name = "zrml-parimutuel"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-assets",
- "pallet-balances",
- "pallet-prediction-collateral",
- "pallet-prediction-control",
- "pallet-timestamp",
- "parity-scale-codec",
- "prediction-mock-runtime",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "test-case",
- "zeitgeist-primitives",
- "zrml-market-commons",
- "zrml-parimutuel",
-]
-
-[[package]]
-name = "zrml-prediction-markets"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "more-asserts",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-assets",
- "pallet-balances",
- "pallet-prediction-collateral",
- "pallet-prediction-control",
- "pallet-timestamp",
- "pallet-treasury",
- "parity-scale-codec",
- "prediction-mock-runtime",
- "scale-info",
- "serde",
- "sp-api",
- "sp-arithmetic",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "test-case",
- "zeitgeist-primitives",
- "zrml-authorized",
- "zrml-court",
- "zrml-global-disputes",
- "zrml-market-commons",
- "zrml-prediction-markets-runtime-api",
-]
-
-[[package]]
-name = "zrml-prediction-markets-fuzz"
-version = "0.6.1"
-dependencies = [
- "arbitrary",
- "frame-support",
- "libfuzzer-sys",
- "sp-arithmetic",
- "zeitgeist-primitives",
- "zrml-prediction-markets",
-]
-
-[[package]]
-name = "zrml-prediction-markets-runtime-api"
-version = "0.6.1"
-dependencies = [
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-api",
- "zeitgeist-primitives",
-]
-
-[[package]]
-name = "zrml-styx"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "pallet-balances",
- "pallet-timestamp",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
- "zeitgeist-primitives",
-]
-
-[[package]]
-name = "zrml-swaps"
-version = "0.6.1"
-dependencies = [
- "env_logger 0.11.11",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "more-asserts",
- "orml-currencies",
- "orml-tokens",
- "orml-traits",
- "pallet-balances",
- "pallet-timestamp",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-api",
- "sp-arithmetic",
- "sp-io",
- "sp-runtime",
- "test-case",
- "zeitgeist-macros",
- "zeitgeist-primitives",
- "zrml-market-commons",
- "zrml-swaps",
- "zrml-swaps-runtime-api",
-]
-
-[[package]]
-name = "zrml-swaps-fuzz"
-version = "0.6.1"
-dependencies = [
- "arbitrary",
- "frame-support",
- "libfuzzer-sys",
- "orml-traits",
- "rand 0.8.5",
- "sp-runtime",
- "zeitgeist-primitives",
- "zrml-swaps",
-]
-
-[[package]]
-name = "zrml-swaps-rpc"
-version = "0.6.1"
-dependencies = [
- "jsonrpsee",
- "parity-scale-codec",
- "sp-api",
- "sp-blockchain",
- "sp-runtime",
- "zeitgeist-primitives",
- "zrml-swaps-runtime-api",
-]
-
-[[package]]
-name = "zrml-swaps-runtime-api"
-version = "0.6.1"
-dependencies = [
- "parity-scale-codec",
- "sp-api",
- "sp-runtime",
- "sp-std",
- "zeitgeist-primitives",
-]
 
 [[package]]
 name = "zstd"

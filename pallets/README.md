@@ -1,17 +1,15 @@
 # NEXUS Pallets
 
-NEXUS 区块链的模块化 Pallet 架构。基于 Substrate FRAME 框架构建，包含 7 大领域、45 个 crate。
+NEXUS 区块链的模块化 Pallet 架构。基于 Substrate FRAME 框架构建，包含 5 大领域、33 个 crate。
 
 ## 架构总览
 
 ```
 pallets/
 ├── entity/          # 实体商业系统 (16 子模块)
-├── ads/             # 通用广告系统 (5 子模块)
 ├── dispute/         # 争议解决系统 (3 子模块)
 ├── trading/         # 交易基础设施 (3 子模块)
 ├── storage/         # IPFS 存储管理 (2 子模块)
-├── grouprobot/      # 群机器人系统 (7 子模块)
 └── inscription/     # 创世铭文 (1 模块)
 ```
 
@@ -38,18 +36,6 @@ pallets/
 | [kyc](entity/kyc/) | 131 | KYC 身份验证 (5 级) |
 | [market](entity/market/) | 128 | 实体代币交易市场 |
 | [tokensale](entity/tokensale/) | 132 | 代币预售 (IDO/拍卖/白名单) |
-
-### Ads — 广告系统
-
-通用可扩展广告引擎，通过适配器支持不同业务域 (Entity / GroupRobot)。
-
-| Pallet | 索引 | 说明 |
-|--------|------|------|
-| [primitives](ads/primitives/) | — | 共享类型与 Trait |
-| [core](ads/core/) | 160 | 广告引擎 (CPM/CPC/固定/私有) |
-| [entity](ads/entity/) | 162 | Entity 域适配器 |
-| [grouprobot](ads/grouprobot/) | 161 | GroupRobot 域适配器 |
-| [router](ads/router/) | — | 域路由分发层 |
 
 ### Dispute — 争议解决
 
@@ -80,19 +66,7 @@ IPFS Pin 服务协调与多级归档生命周期管理。
 | [service](storage/service/) | 62 | IPFS Pin 服务 (三级/SLA/配额) |
 | [lifecycle](storage/lifecycle/) | 65 | 分级归档 (Active→L1→L2→Purge) |
 
-### GroupRobot — 群机器人
-
-TEE 可信节点网络，管理机器人、社区、订阅、奖励。
-
-| Pallet | 索引 | 说明 |
-|--------|------|------|
-| [primitives](grouprobot/primitives/) | — | 共享类型与 Trait |
-| [registry](grouprobot/registry/) | 150 | 机器人注册、TEE 认证 |
-| [consensus](grouprobot/consensus/) | 151 | 节点生命周期、Era 编排 |
-| [community](grouprobot/community/) | 152 | 社区治理、声誉系统 |
-| [ceremony](grouprobot/ceremony/) | 153 | RA-TLS Shamir 密钥仪式 |
-| [subscription](grouprobot/subscription/) | 154 | 订阅管理、广告承诺 |
-| [rewards](grouprobot/rewards/) | 155 | 节点奖励池分配 |
+索引 150–155（原 GroupRobot）、160–162（原 Ads）与 176–193（原 Prediction）已退役，禁止复用。
 
 ### Inscription — 创世铭文
 
