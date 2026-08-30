@@ -3,29 +3,39 @@
 //!
 //! Refunds reserved campaign escrow / placement deposits / community ad-stake
 //! and pays out claimable revenue from treasury using on-chain pallet prefixes.
-//! Leftover prefix keys are then wiped by `RemovePallet`.
+//! A failed refund does **not** write `AdsRetiredVersion`, and `on_runtime_upgrade`
+//! panics so later `RemovePallet` cannot run in the same block.
 //! 按链上 pallet 前缀退还 Campaign escrow / 广告位押金 / 社区广告质押，
-//! 并从国库发放待领收入；剩余键由 `RemovePallet` 清除。
+//! 并从国库发放待领收入。退款失败**不**写 `AdsRetiredVersion`，且
+//! `on_runtime_upgrade` 会 panic，避免同块执行后续 `RemovePallet`。
 //!
 //! Indexes 160–162 stay retired and must not be reused.
 //! 索引 160–162 永久退役，禁止复用。
 
-#[cfg(feature = "try-runtime")]
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use codec::{Decode, Encode};
 use frame_support::{
     pallet_prelude::ValueQuery,
     parameter_types,
     storage::types::{StorageDoubleMap, StorageMap},
-    traits::{
-        Currency, ExistenceRequirement, OnRuntimeUpgrade, ReservableCurrency, StorageInstance,
-    },
+    traits::{OnRuntimeUpgrade, StorageInstance},
     weights::{constants::RocksDbWeight, Weight},
     Blake2_128Concat,
 };
+#[cfg(feature = "try-runtime")]
+use frame_support::traits::{Currency, ReservableCurrency};
 use sp_runtime::traits::Zero;
 
-use crate::{configs::TreasuryAccountId, AccountId, Balance, Balances, BlockNumber};
+use super::retire_support;
+use crate::{configs::TreasuryAccountId, AccountId, Balance, BlockNumber};
+#[cfg(any(test, feature = "try-runtime"))]
+use crate::Balances;
+
+/// On-chain construct_runtime names; must match `RemovePallet` prefixes.
+/// 链上 construct_runtime 名称，必须与 `RemovePallet` 前缀一致。
+#[cfg(any(test, feature = "try-runtime"))]
+pub const PALLET_NAMES: [&str; 3] = ["AdsCore", "AdsGroupRobot", "AdsEntity"];
 
 parameter_types! {
     pub const AdsCoreName: &'static str = "AdsCore";
@@ -38,6 +48,8 @@ pub type RemoveAdsGroupRobot =
     frame_support::migrations::RemovePallet<AdsGroupRobotName, RocksDbWeight>;
 pub type RemoveAdsEntity = frame_support::migrations::RemovePallet<AdsEntityName, RocksDbWeight>;
 
+type RemoveAdsInner = (RemoveAdsCore, RemoveAdsGroupRobot, RemoveAdsEntity);
+
 const RETIRED_VERSION: u16 = 1;
 
 struct RetiredVersionStorage;
@@ -49,6 +61,19 @@ impl StorageInstance for RetiredVersionStorage {
 }
 type AdsRetiredVersion =
     frame_support::storage::types::StorageValue<RetiredVersionStorage, u16, ValueQuery>;
+
+/// Names used by prefix wipe / weight estimates.
+/// 供前缀清除与重量估算使用的名称。
+#[cfg(any(test, feature = "try-runtime"))]
+pub fn pallet_names() -> [&'static str; 3] {
+    PALLET_NAMES
+}
+
+/// True after a successful refund pass.
+/// 退款成功后为 true。
+pub fn refund_complete() -> bool {
+    AdsRetiredVersion::get() >= RETIRED_VERSION
+}
 
 struct CampaignsPrefix;
 impl StorageInstance for CampaignsPrefix {
@@ -200,26 +225,13 @@ fn decode_registered_by(raw: &[u8]) -> Option<AccountId> {
         .map(|info| info.registered_by)
 }
 
-fn unreserve(who: &AccountId, amount: Balance) -> Weight {
+fn add_amount(map: &mut BTreeMap<AccountId, Balance>, who: AccountId, amount: Balance) {
     if amount.is_zero() {
-        return Weight::zero();
+        return;
     }
-    let _ = <Balances as ReservableCurrency<AccountId>>::unreserve(who, amount);
-    RocksDbWeight::get().reads_writes(1, 1)
-}
-
-fn pay_from_treasury(who: &AccountId, amount: Balance) -> Weight {
-    if amount.is_zero() {
-        return Weight::zero();
-    }
-    let treasury = TreasuryAccountId::get();
-    let _ = <Balances as Currency<AccountId>>::transfer(
-        &treasury,
-        who,
-        amount,
-        ExistenceRequirement::AllowDeath,
-    );
-    RocksDbWeight::get().reads_writes(2, 2)
+    map.entry(who)
+        .and_modify(|v| *v = v.saturating_add(amount))
+        .or_insert(amount);
 }
 
 fn placement_claim_recipient(placement_id: &[u8; 32]) -> Option<AccountId> {
@@ -228,10 +240,57 @@ fn placement_claim_recipient(placement_id: &[u8; 32]) -> Option<AccountId> {
             return Some(who);
         }
     }
-    if let Some(admin) = CommunityAdminMap::get(placement_id) {
-        return Some(admin);
+    CommunityAdminMap::get(placement_id)
+}
+
+struct AdsPlan {
+    unreserve: BTreeMap<AccountId, Balance>,
+    payout: BTreeMap<AccountId, Balance>,
+    collect_weight: Weight,
+}
+
+/// Estimated DB weight of the ads refund pass (row iteration).
+/// Ads 退款扫描的估算 DB 重量。
+#[cfg(any(test, feature = "try-runtime"))]
+pub fn estimated_refund_weight() -> Weight {
+    if refund_complete() {
+        return RocksDbWeight::get().reads(1);
     }
-    None
+    let rows = CampaignEscrowMap::iter()
+        .count()
+        .saturating_add(PlacementDepositsMap::iter().count())
+        .saturating_add(PlacementClaimableMap::iter().count())
+        .saturating_add(ReferrerClaimableMap::iter().count())
+        .saturating_add(CommunityStakersMap::iter().count())
+        .saturating_add(UnbondingRequestsMap::iter().count())
+        .saturating_add(StakerClaimableMap::iter().count()) as u64;
+    RocksDbWeight::get().reads_writes(rows.saturating_mul(4), rows.saturating_mul(2))
+}
+
+/// Wipes Ads prefixes only after refunds succeeded.
+/// 仅在退款成功后清除 Ads 前缀。
+pub struct RemoveAdsAfterRefund;
+
+impl OnRuntimeUpgrade for RemoveAdsAfterRefund {
+    fn on_runtime_upgrade() -> Weight {
+        if !refund_complete() {
+            retire_support::panic_blocked_wipe("ads");
+        }
+        <RemoveAdsInner as OnRuntimeUpgrade>::on_runtime_upgrade()
+    }
+
+    #[cfg(feature = "try-runtime")]
+    fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
+        if !refund_complete() {
+            return Err("ads refund must complete before RemovePallet".into());
+        }
+        <RemoveAdsInner as OnRuntimeUpgrade>::pre_upgrade()
+    }
+
+    #[cfg(feature = "try-runtime")]
+    fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
+        <RemoveAdsInner as OnRuntimeUpgrade>::post_upgrade(state)
+    }
 }
 
 /// Refunds Ads user funds, then marks retirement complete.
@@ -239,115 +298,233 @@ fn placement_claim_recipient(placement_id: &[u8; 32]) -> Option<AccountId> {
 pub struct RetireAdsFunds;
 
 impl RetireAdsFunds {
-    fn refund() -> Weight {
-        let mut weight = RocksDbWeight::get().reads(1);
-        if AdsRetiredVersion::get() >= RETIRED_VERSION {
-            return weight;
-        }
+    fn collect_plan() -> Result<AdsPlan, &'static str> {
+        let mut unreserve = BTreeMap::<AccountId, Balance>::new();
+        let mut payout = BTreeMap::<AccountId, Balance>::new();
+        let mut collect_weight = RocksDbWeight::get().reads(1);
 
         for (campaign_id, escrow) in CampaignEscrowMap::iter() {
-            weight = weight.saturating_add(RocksDbWeight::get().reads(2));
+            collect_weight = collect_weight.saturating_add(RocksDbWeight::get().reads(2));
             if escrow.is_zero() {
                 continue;
             }
-            let Some(raw) = CampaignsMap::get(campaign_id) else {
-                log::warn!(
-                    target: "runtime::retire_ads",
-                    "CampaignEscrow {campaign_id} has no Campaigns row"
-                );
-                continue;
-            };
-            let Some(advertiser) = decode_advertiser(&raw) else {
-                log::warn!(
-                    target: "runtime::retire_ads",
-                    "failed to decode advertiser for campaign {campaign_id}"
-                );
-                continue;
-            };
-            weight = weight.saturating_add(unreserve(&advertiser, escrow));
+            let raw = CampaignsMap::get(campaign_id).ok_or("CampaignEscrow has no Campaigns row")?;
+            let advertiser =
+                decode_advertiser(&raw).ok_or("failed to decode advertiser for campaign")?;
+            add_amount(&mut unreserve, advertiser, escrow);
         }
 
         for (placement_id, deposit) in PlacementDepositsMap::iter() {
-            weight = weight.saturating_add(RocksDbWeight::get().reads(2));
+            collect_weight = collect_weight.saturating_add(RocksDbWeight::get().reads(2));
             if deposit.is_zero() {
                 continue;
             }
-            let Some(raw) = RegisteredPlacementsMap::get(placement_id) else {
-                log::warn!(
-                    target: "runtime::retire_ads",
-                    "PlacementDeposits has no RegisteredPlacements row"
-                );
-                continue;
-            };
-            let Some(who) = decode_registered_by(&raw) else {
-                log::warn!(
-                    target: "runtime::retire_ads",
-                    "failed to decode registered_by for placement deposit"
-                );
-                continue;
-            };
-            weight = weight.saturating_add(unreserve(&who, deposit));
+            let raw = RegisteredPlacementsMap::get(placement_id)
+                .ok_or("PlacementDeposits has no RegisteredPlacements row")?;
+            let who = decode_registered_by(&raw)
+                .ok_or("failed to decode registered_by for placement deposit")?;
+            add_amount(&mut unreserve, who, deposit);
         }
 
         for (placement_id, claimable) in PlacementClaimableMap::iter() {
-            weight = weight.saturating_add(RocksDbWeight::get().reads(3));
+            collect_weight = collect_weight.saturating_add(RocksDbWeight::get().reads(3));
             if claimable.is_zero() {
                 continue;
             }
-            let Some(who) = placement_claim_recipient(&placement_id) else {
-                log::warn!(
-                    target: "runtime::retire_ads",
-                    "PlacementClaimable has no recipient; leaving funds in treasury"
-                );
-                continue;
-            };
-            weight = weight.saturating_add(pay_from_treasury(&who, claimable));
+            let who = placement_claim_recipient(&placement_id)
+                .ok_or("PlacementClaimable has no recipient")?;
+            add_amount(&mut payout, who, claimable);
         }
 
         for (referrer, claimable) in ReferrerClaimableMap::iter() {
-            weight = weight.saturating_add(RocksDbWeight::get().reads(1));
-            weight = weight.saturating_add(pay_from_treasury(&referrer, claimable));
+            collect_weight = collect_weight.saturating_add(RocksDbWeight::get().reads(1));
+            add_amount(&mut payout, referrer, claimable);
         }
 
         for (_community, staker, amount) in CommunityStakersMap::iter() {
-            weight = weight.saturating_add(RocksDbWeight::get().reads(1));
-            weight = weight.saturating_add(unreserve(&staker, amount));
+            collect_weight = collect_weight.saturating_add(RocksDbWeight::get().reads(1));
+            add_amount(&mut unreserve, staker, amount);
         }
 
         for (_community, staker, queue) in UnbondingRequestsMap::iter() {
-            weight = weight.saturating_add(RocksDbWeight::get().reads(1));
-            let locked: Balance = queue.iter().fold(Balance::zero(), |acc, (amount, _)| {
-                acc.saturating_add(*amount)
-            });
-            weight = weight.saturating_add(unreserve(&staker, locked));
+            collect_weight = collect_weight.saturating_add(RocksDbWeight::get().reads(1));
+            let locked: Balance = queue
+                .iter()
+                .fold(Balance::zero(), |acc, (amount, _)| acc.saturating_add(*amount));
+            add_amount(&mut unreserve, staker, locked);
         }
 
         for (_community, staker, claimable) in StakerClaimableMap::iter() {
-            weight = weight.saturating_add(RocksDbWeight::get().reads(1));
-            weight = weight.saturating_add(pay_from_treasury(&staker, claimable));
+            collect_weight = collect_weight.saturating_add(RocksDbWeight::get().reads(1));
+            add_amount(&mut payout, staker, claimable);
         }
 
+        for (who, amount) in unreserve.iter() {
+            retire_support::ensure_reserved(who, *amount)?;
+        }
+
+        let total_payout: Balance = payout.values().copied().fold(Balance::zero(), |a, b| {
+            a.saturating_add(b)
+        });
+        retire_support::ensure_keep_alive_source(&TreasuryAccountId::get(), total_payout)?;
+
+        Ok(AdsPlan {
+            unreserve,
+            payout,
+            collect_weight,
+        })
+    }
+
+    fn apply_plan(plan: &AdsPlan) -> Result<Weight, &'static str> {
+        let mut weight = plan.collect_weight;
+        for (who, amount) in plan.unreserve.iter() {
+            weight = weight.saturating_add(retire_support::unreserve_exact(who, *amount)?);
+        }
+        let treasury = TreasuryAccountId::get();
+        for (who, amount) in plan.payout.iter() {
+            weight = weight.saturating_add(retire_support::transfer_keep_alive(
+                &treasury, who, *amount,
+            )?);
+        }
+        Ok(weight)
+    }
+
+    fn try_refund() -> Result<Weight, &'static str> {
+        let mut weight = RocksDbWeight::get().reads(1);
+        if refund_complete() {
+            return Ok(weight);
+        }
+
+        let plan = Self::collect_plan()?;
+        weight = Self::apply_plan(&plan)?;
         AdsRetiredVersion::put(RETIRED_VERSION);
-        weight.saturating_add(RocksDbWeight::get().writes(1))
+        Ok(weight.saturating_add(RocksDbWeight::get().writes(1)))
+    }
+
+    #[cfg(feature = "try-runtime")]
+    fn snapshot(plan: &AdsPlan) -> Vec<u8> {
+        let reserved_before: Vec<(AccountId, Balance)> = plan
+            .unreserve
+            .keys()
+            .map(|who| {
+                (
+                    who.clone(),
+                    <Balances as ReservableCurrency<AccountId>>::reserved_balance(who),
+                )
+            })
+            .collect();
+        let mut free_before: Vec<(AccountId, Balance)> = plan
+            .payout
+            .keys()
+            .map(|who| {
+                (
+                    who.clone(),
+                    <Balances as Currency<AccountId>>::free_balance(who),
+                )
+            })
+            .collect();
+        let treasury = TreasuryAccountId::get();
+        free_before.push((
+            treasury.clone(),
+            <Balances as Currency<AccountId>>::free_balance(&treasury),
+        ));
+        (
+            1u8,
+            AdsRetiredVersion::get(),
+            reserved_before,
+            free_before,
+            plan.unreserve
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect::<Vec<_>>(),
+            plan.payout
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect::<Vec<_>>(),
+        )
+            .encode()
     }
 }
 
 impl OnRuntimeUpgrade for RetireAdsFunds {
     fn on_runtime_upgrade() -> Weight {
-        Self::refund()
+        Self::try_refund().unwrap_or_else(|err| retire_support::panic_refund("ads", err))
     }
 
     #[cfg(feature = "try-runtime")]
     fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
-        Ok(AdsRetiredVersion::get().encode())
+        retire_support::ensure_weight_fits(retire_support::estimate_full_retirement_weight())
+            .map_err(sp_runtime::DispatchError::Other)?;
+        if refund_complete() {
+            return Ok((0u8, AdsRetiredVersion::get()).encode());
+        }
+        let plan = Self::collect_plan().map_err(sp_runtime::DispatchError::Other)?;
+        Ok(Self::snapshot(&plan))
     }
 
     #[cfg(feature = "try-runtime")]
     fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
-        let previous = u16::decode(&mut &state[..])
-            .map_err(|_| "failed to decode ads retirement migration state")?;
-        if previous < RETIRED_VERSION && AdsRetiredVersion::get() != RETIRED_VERSION {
+        let mut input = &state[..];
+        let tag = u8::decode(&mut input).map_err(|_| "failed to decode ads retirement tag")?;
+        if tag == 0 {
+            let previous = u16::decode(&mut input)
+                .map_err(|_| "failed to decode ads retirement migration state")?;
+            if previous < RETIRED_VERSION && !refund_complete() {
+                return Err("ads retirement version was not written".into());
+            }
+            return Ok(());
+        }
+
+        let (previous, reserved_before, free_before, unreserve, payout): (
+            u16,
+            Vec<(AccountId, Balance)>,
+            Vec<(AccountId, Balance)>,
+            Vec<(AccountId, Balance)>,
+            Vec<(AccountId, Balance)>,
+        ) = Decode::decode(&mut input).map_err(|_| "failed to decode ads retirement snapshot")?;
+
+        if previous < RETIRED_VERSION && !refund_complete() {
             return Err("ads retirement version was not written".into());
+        }
+
+        for (who, amount) in unreserve {
+            let before = reserved_before
+                .iter()
+                .find(|(a, _)| a == &who)
+                .map(|(_, b)| *b)
+                .unwrap_or(Balance::zero());
+            let after = <Balances as ReservableCurrency<AccountId>>::reserved_balance(&who);
+            if after != before.saturating_sub(amount) {
+                return Err("ads reserved balance was not fully unreserved".into());
+            }
+        }
+
+        let treasury = TreasuryAccountId::get();
+        let total_payout: Balance = payout.iter().fold(Balance::zero(), |acc, (_, n)| {
+            acc.saturating_add(*n)
+        });
+        for (who, amount) in payout {
+            if who == treasury {
+                continue;
+            }
+            let before = free_before
+                .iter()
+                .find(|(a, _)| a == &who)
+                .map(|(_, b)| *b)
+                .unwrap_or(Balance::zero());
+            let after = <Balances as Currency<AccountId>>::free_balance(&who);
+            if after != before.saturating_add(amount) {
+                return Err("ads claimable was not paid from treasury".into());
+            }
+        }
+        let treasury_before = free_before
+            .iter()
+            .find(|(a, _)| a == &treasury)
+            .map(|(_, b)| *b)
+            .unwrap_or(Balance::zero());
+        let treasury_after = <Balances as Currency<AccountId>>::free_balance(&treasury);
+        if treasury_after != treasury_before.saturating_sub(total_payout) {
+            return Err("ads treasury debit does not match claimable payouts".into());
         }
         Ok(())
     }
@@ -357,7 +534,7 @@ impl OnRuntimeUpgrade for RetireAdsFunds {
 mod tests {
     use super::*;
     use crate::EXISTENTIAL_DEPOSIT;
-    use frame_support::traits::Currency as CurrencyT;
+    use frame_support::traits::{Currency as CurrencyT, ReservableCurrency};
 
     fn account(b: u8) -> AccountId {
         AccountId::new([b; 32])
@@ -365,6 +542,24 @@ mod tests {
 
     fn fund(who: &AccountId, amount: Balance) {
         let _ = <Balances as CurrencyT<AccountId>>::deposit_creating(who, amount);
+    }
+
+    fn placement_info(owner: AccountId) -> PlacementInfoLite {
+        PlacementInfoLite {
+            _entity_id: 1,
+            _shop_id: 0,
+            _level: PlacementLevelLite::Entity,
+            _daily_impression_cap: 0,
+            _daily_click_cap: 0,
+            registered_by: owner,
+        }
+    }
+
+    #[test]
+    fn pallet_names_match_remove_prefixes() {
+        assert_eq!(AdsCoreName::get(), PALLET_NAMES[0]);
+        assert_eq!(AdsGroupRobotName::get(), PALLET_NAMES[1]);
+        assert_eq!(AdsEntityName::get(), PALLET_NAMES[2]);
     }
 
     #[test]
@@ -395,19 +590,11 @@ mod tests {
             let deposit = 10 * EXISTENTIAL_DEPOSIT;
             let claimable = 5 * EXISTENTIAL_DEPOSIT;
             fund(&owner, deposit * 2);
-            fund(&treasury, claimable * 2);
+            fund(&treasury, claimable + EXISTENTIAL_DEPOSIT * 2);
             assert_eq!(Balances::reserve(&owner, deposit), Ok(()));
 
             let pid = [9u8; 32];
-            let info = PlacementInfoLite {
-                _entity_id: 1,
-                _shop_id: 0,
-                _level: PlacementLevelLite::Entity,
-                _daily_impression_cap: 0,
-                _daily_click_cap: 0,
-                registered_by: owner.clone(),
-            };
-            RegisteredPlacementsMap::insert(pid, info.encode());
+            RegisteredPlacementsMap::insert(pid, placement_info(owner.clone()).encode());
             PlacementDepositsMap::insert(pid, deposit);
             PlacementClaimableMap::insert(pid, claimable);
 
@@ -426,7 +613,7 @@ mod tests {
             let unbonding = 4 * EXISTENTIAL_DEPOSIT;
             let claimable = 3 * EXISTENTIAL_DEPOSIT;
             fund(&staker, (stake + unbonding) * 2);
-            fund(&treasury, claimable * 2);
+            fund(&treasury, claimable + EXISTENTIAL_DEPOSIT * 2);
             assert_eq!(Balances::reserve(&staker, stake + unbonding), Ok(()));
 
             let community = [4u8; 32];
@@ -437,6 +624,102 @@ mod tests {
             RetireAdsFunds::on_runtime_upgrade();
             assert_eq!(Balances::reserved_balance(&staker), 0);
             assert!(Balances::free_balance(&staker) >= stake + unbonding + claimable);
+        });
+    }
+
+    #[test]
+    fn try_refund_does_not_write_version_on_decode_failure() {
+        sp_io::TestExternalities::default().execute_with(|| {
+            let advertiser = account(1);
+            let escrow = 10 * EXISTENTIAL_DEPOSIT;
+            fund(&advertiser, escrow * 2);
+            assert_eq!(Balances::reserve(&advertiser, escrow), Ok(()));
+            CampaignsMap::insert(7u64, vec![1, 2, 3]);
+            CampaignEscrowMap::insert(7u64, escrow);
+
+            assert_eq!(
+                RetireAdsFunds::try_refund(),
+                Err("failed to decode advertiser for campaign")
+            );
+            assert_eq!(AdsRetiredVersion::get(), 0);
+            assert_eq!(Balances::reserved_balance(&advertiser), escrow);
+        });
+    }
+
+    #[test]
+    fn try_refund_does_not_write_version_when_campaign_row_missing() {
+        sp_io::TestExternalities::default().execute_with(|| {
+            CampaignEscrowMap::insert(7u64, 10 * EXISTENTIAL_DEPOSIT);
+            assert_eq!(
+                RetireAdsFunds::try_refund(),
+                Err("CampaignEscrow has no Campaigns row")
+            );
+            assert_eq!(AdsRetiredVersion::get(), 0);
+        });
+    }
+
+    #[test]
+    fn try_refund_does_not_write_version_when_treasury_cannot_keep_alive() {
+        sp_io::TestExternalities::default().execute_with(|| {
+            let owner = account(2);
+            let pid = [9u8; 32];
+            RegisteredPlacementsMap::insert(pid, placement_info(owner.clone()).encode());
+            PlacementClaimableMap::insert(pid, 5 * EXISTENTIAL_DEPOSIT);
+
+            assert_eq!(
+                RetireAdsFunds::try_refund(),
+                Err("source cannot KeepAlive after paying retirement claimables")
+            );
+            assert_eq!(AdsRetiredVersion::get(), 0);
+        });
+    }
+
+    #[test]
+    fn try_refund_does_not_write_version_when_claimable_has_no_recipient() {
+        sp_io::TestExternalities::default().execute_with(|| {
+            PlacementClaimableMap::insert([9u8; 32], 5 * EXISTENTIAL_DEPOSIT);
+            assert_eq!(
+                RetireAdsFunds::try_refund(),
+                Err("PlacementClaimable has no recipient")
+            );
+            assert_eq!(AdsRetiredVersion::get(), 0);
+        });
+    }
+
+    #[test]
+    fn try_refund_does_not_write_version_when_reserved_is_short() {
+        sp_io::TestExternalities::default().execute_with(|| {
+            let advertiser = account(1);
+            fund(&advertiser, EXISTENTIAL_DEPOSIT * 2);
+            CampaignsMap::insert(7u64, advertiser.encode());
+            CampaignEscrowMap::insert(7u64, 10 * EXISTENTIAL_DEPOSIT);
+
+            assert_eq!(
+                RetireAdsFunds::try_refund(),
+                Err("account reserved balance is below the retirement unreserve amount")
+            );
+            assert_eq!(AdsRetiredVersion::get(), 0);
+        });
+    }
+
+    #[cfg(feature = "try-runtime")]
+    #[test]
+    fn try_runtime_hooks_reject_undecodable_campaign_and_accept_clean_refund() {
+        sp_io::TestExternalities::default().execute_with(|| {
+            let advertiser = account(1);
+            let escrow = 50 * EXISTENTIAL_DEPOSIT;
+            fund(&advertiser, escrow * 2);
+            assert_eq!(Balances::reserve(&advertiser, escrow), Ok(()));
+            CampaignsMap::insert(7u64, vec![1, 2, 3]);
+            CampaignEscrowMap::insert(7u64, escrow);
+            assert!(RetireAdsFunds::pre_upgrade().is_err());
+
+            CampaignsMap::insert(7u64, advertiser.encode());
+            let state = RetireAdsFunds::pre_upgrade().expect("pre_upgrade");
+            RetireAdsFunds::on_runtime_upgrade();
+            RetireAdsFunds::post_upgrade(state).expect("post_upgrade");
+            assert_eq!(Balances::reserved_balance(&advertiser), 0);
+            assert!(refund_complete());
         });
     }
 }

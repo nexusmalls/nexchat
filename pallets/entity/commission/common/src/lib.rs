@@ -8,7 +8,6 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use codec::{Decode, Encode, MaxEncodedLen};
-use frame_support::pallet_prelude::*;
 use pallet_entity_common::PoolRewardLevelClaimRule;
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;

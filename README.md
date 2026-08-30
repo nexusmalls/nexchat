@@ -309,6 +309,8 @@ cd website && npm install && npm run dev
 | NEX Market 审计 | `docs/NEX_MARKET_AUDIT.md` |
 | Entity 主网缺失功能 | `docs/ENTITY_MAINNET_MISSING_FEATURES.md` |
 | IPFS 存储方案 | `docs/IPFS_STORAGE_INTEGRATION_PLAN.md` |
+| Entity 商城链下配合 | `docs/ENTITY_MALL_OFFCHAIN_DEV_SPEC.md` |
+| 法币 OTC 可行性 | `docs/NEX_FIAT_OTC_FEASIBILITY.md` |
 
 ## CI/CD
 

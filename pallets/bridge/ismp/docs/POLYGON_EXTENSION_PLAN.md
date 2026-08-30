@@ -2,7 +2,7 @@
 
 > 状态：Plan（待开工）
 > 范围：`pallets/bridge/ismp/`（Substrate 侧，~零代码改动）+ EVM 侧 NEX 合约部署 + relayer/运维配置
-> 关联：`docs/HYPERBRIDGE_DEV_ROADMAP.md` Stage 2、`pallets/prediction/docs/PREDICTION_PALLET_DESIGN.md`（Polygon USDC 桥的 NEX 侧基础）
+> 关联：`docs/HYPERBRIDGE_DEV_ROADMAP.md` Stage 2
 
 ---
 
@@ -259,9 +259,9 @@ off-chain keeper 周期性断言：
 
 ---
 
-## 7. 与预测市场的战略衔接
+## 7. 与链内稳定资产 / DeFi 的衔接
 
-把 NEX 桥到 Polygon 后，打开了一条与预测市场设计直接相关的路径：
+把 NEX 桥到 Polygon 后，打开一条与链内稳定资产无关、但互补的路径：NEX 进入 Polygon DeFi。
 
 ```
 NEX (Nexus native)
@@ -270,18 +270,12 @@ NEX (Nexus native)
 wNEX (ERC-6160 on Polygon)
    │ QuickSwap / Uniswap swap
    ▼
-USDC (Polygon)
-   │ 桥回 nexus（nUSDC IOU，见 PREDICTION_PALLET_DESIGN.md §B）
-   ▼
-nUSDC (nexus 链内)
-   │ complete-set 铸造
-   ▼
-Outcome Token (预测市场持仓)
+USDC / 其他 Polygon DeFi
 ```
 
-即：**NEX 桥到 Polygon 是"NEX ↔ Polygon USDC 兑换"长路径的第一段**。用户拿 NEX → 桥到 Polygon → DEX 换 USDC → 桥回 nexus nUSDC → 下注。
+反向入金（Polygon/Ethereum USDC → Nexus USDX）由 Hyperbridge HFT + `pallet-usdx` 承担，见 `docs/USDX_USDC_HYPERBRIDGE_DEV_SPEC.md`。预测市场模块已退役，不再作为该桥的下游消费方。
 
-> 短路径（P2P NEX/USDC 直接兑换、或链内 NEX/nUSDC 订单簿）在 `PREDICTION_PALLET_DESIGN.md` 已规划。NEX→Polygon 桥是补充路径，也服务于"NEX 进入 Polygon DeFi 生态"这个独立目标。
+> NEX→Polygon 桥服务于「NEX 进入 Polygon DeFi 生态」这一独立目标，不依赖已删除的预测市场设计。
 
 ---
 
@@ -330,7 +324,6 @@ Outcome Token (预测市场持仓)
 - `pallets/bridge/ismp/evm/README.md` — EVM 侧对接规范
 - `docs/HYPERBRIDGE_DEV_ROADMAP.md` — Stage 0-4 路线图
 - `docs/HYPERBRIDGE_INTEGRATION.md` — 集成设计主文档
-- `pallets/prediction/docs/PREDICTION_PALLET_DESIGN.md` — 预测市场设计（Polygon USDC 桥的下游消费方）
 
 ---
 

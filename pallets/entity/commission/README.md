@@ -1,6 +1,8 @@
 # pallet-entity-commission
 
 > Entity 返佣管理模块 — 插件化架构，支持 NEX + Entity Token 双资产全管线返佣
+>
+> 首版主网（ML + SL + 沉淀池）参数模板与上链顺序见 [`docs/COMMISSION_ML_SL_POOL_MAINNET_TEMPLATE.md`](../../../docs/COMMISSION_ML_SL_POOL_MAINNET_TEMPLATE.md)。插件 README 中 `level_ratios` / ML `max_total_rate` 已过时，以该规格 + 源码为准。
 
 ## 概述
 
@@ -344,5 +346,6 @@ pallet-commission-referral = { path = "pallets/entity/commission/referral", defa
 | 拉新活动 | 直推 + 首单奖励 + 固定金额 | 快速拉新，首单额外激励 |
 | 复购型 | 直推 + 复购奖励 | 提高复购率 |
 | 被动收益型 | 单线上线 + 单线下线 | 无需推荐即可获益 |
-| 高等级回馈 | 上述任意 + 沉淀池奖励 | 未分配佣金按等级比率回馈高级会员 |
+| 高等级回馈 | 上述任意 + 沉淀池奖励 | 未分配佣金按等级 cap + 全池等额回馈（不是按比率切池） |
+| **首版主网（推荐）** | **多级 + 单线上下 + 沉淀池** | **货款 20% / ML cap 8% / SL cap 4% / 目标进池 8%；见仓库 `docs/COMMISSION_ML_SL_POOL_MAINNET_TEMPLATE.md`** |
 | 创建人激励 | 上述任意 + 创建人收益 | 从佣金预算中优先给创建人分成 |

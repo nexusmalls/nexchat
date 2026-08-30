@@ -5,6 +5,7 @@
 pub mod retire_ads;
 pub mod retire_grouprobot;
 pub mod retire_prediction;
+pub mod retire_support;
 
 #[cfg(feature = "try-runtime")]
 use alloc::vec::Vec;

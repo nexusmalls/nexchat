@@ -188,33 +188,11 @@ pub type Migrations = (
     migrations::InitializeUsdxProtocolAssets,
     migrations::retire_ads::RetireAdsFunds,
     migrations::retire_grouprobot::RetireGroupRobotFunds,
-    migrations::retire_ads::RemoveAdsCore,
-    migrations::retire_ads::RemoveAdsGroupRobot,
-    migrations::retire_ads::RemoveAdsEntity,
-    migrations::retire_grouprobot::RemoveGroupRobotRegistry,
-    migrations::retire_grouprobot::RemoveGroupRobotConsensus,
-    migrations::retire_grouprobot::RemoveGroupRobotCommunity,
-    migrations::retire_grouprobot::RemoveGroupRobotCeremony,
-    migrations::retire_grouprobot::RemoveGroupRobotSubscription,
-    migrations::retire_grouprobot::RemoveGroupRobotRewards,
-    migrations::retire_prediction::RemovePredictionControl,
-    migrations::retire_prediction::RemovePredictionCollateral,
-    migrations::retire_prediction::RemovePredictionCurrencies,
-    migrations::retire_prediction::RemovePredictionTokens,
-    migrations::retire_prediction::RemovePredictionMarketCommons,
-    migrations::retire_prediction::RemovePredictionAuthorized,
-    migrations::retire_prediction::RemovePredictionCourt,
-    migrations::retire_prediction::RemovePredictionGlobalDisputes,
-    migrations::retire_prediction::RemovePredictionMarkets,
-    migrations::retire_prediction::RemovePredictionLegacySwaps,
-    migrations::retire_prediction::RemovePredictionNeoSwaps,
-    migrations::retire_prediction::RemovePredictionOrderbook,
-    migrations::retire_prediction::RemovePredictionParimutuel,
-    migrations::retire_prediction::RemovePredictionHybridRouter,
-    migrations::retire_prediction::RemovePredictionCombinatorialTokens,
-    migrations::retire_prediction::RemovePredictionFutarchy,
-    migrations::retire_prediction::RemovePredictionStyx,
-    migrations::retire_prediction::RemovePredictionCommunityCore,
+    migrations::retire_prediction::AssertPredictionNamespaceIdle,
+    migrations::retire_support::AssertRetiredWipeFitsBlock,
+    migrations::retire_ads::RemoveAdsAfterRefund,
+    migrations::retire_grouprobot::RemoveGroupRobotAfterRefund,
+    migrations::retire_prediction::RemovePredictionAfterIdle,
 );
 
 /// Executive: handles dispatch to the various modules.
@@ -457,10 +435,11 @@ mod runtime {
     #[runtime::pallet_index(139)]
     pub type EntityLoyalty = pallet_entity_loyalty;
 
-    // Indexes 150–155 (GroupRobot) and 160–162 (Ads) are retired and must not
-    // be reused. Storage prefixes were cleared by spec 107.
-    // 索引 150–155（GroupRobot）与 160–162（Ads）已退役，禁止复用。
-    // 存储前缀已由 spec 107 清除。
+    // Indexes 150–155 (GroupRobot), 160–162 (Ads), and 176–193 (Prediction)
+    // are retired and must not be reused. Spec 107 refunds user funds then
+    // wipes leftover prefixes; do not recycle these indexes later.
+    // 索引 150–155（GroupRobot）、160–162（Ads）与 176–193（Prediction）已退役，禁止复用。
+    // spec 107 先退用户资金再清除剩余前缀；后续不得回收这些索引。
 
     // ============================================================================
     // Hyperbridge / ISMP protocol layer (Stage 1: cross-chain messaging base)
@@ -604,6 +583,15 @@ mod pallet_index_compatibility_tests {
 
         for (name, actual, stable) in expected {
             assert_eq!(actual, stable, "{name} index changed");
+        }
+
+        let used: Vec<usize> = expected.iter().map(|(_, actual, _)| *actual).collect();
+        let retired: Vec<usize> = (150..=155).chain(160..=162).chain(176..=193).collect();
+        for index in used {
+            assert!(
+                !retired.contains(&index),
+                "retired pallet index {index} must not be reused"
+            );
         }
     }
 }

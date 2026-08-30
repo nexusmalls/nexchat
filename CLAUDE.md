@@ -101,6 +101,7 @@ cd scripts && npm run e2e
 - `docs/NEX_MARKET_AUDIT.md`
 - `docs/ENTITY_ORDER_TOKENSALE_DISCLOSURE_AUDIT.md`
 - `docs/ENTITY_MAINNET_MISSING_FEATURES.md`
+- `docs/COMMISSION_ML_SL_POOL_MAINNET_TEMPLATE.md`（佣金首版主网：ML + SL + 沉淀池参数）
 
 如果进入某个子系统工作，优先继续读该子系统文档，而不是重复扫全仓。
 
